@@ -91,9 +91,6 @@ python_files = "test_*.py"
 python_classes = "Test*"
 python_functions = "test_*"
 addopts = [
-    "--cov=inkwell",
-    "--cov-report=term-missing",
-    "--cov-report=html",
     "-v",
 ]
 asyncio_mode = "auto"

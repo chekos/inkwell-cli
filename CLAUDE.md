@@ -130,3 +130,5 @@ When implementing features:
 4. **Experiment:** Record experiments/benchmarks in `docs/experiments/`
 5. **Reflect:** Add lessons learned to `docs/lessons/` when complete
 6. **Update:** Keep this CLAUDE.md updated as the architecture evolves
+
+**Before committing:** Verify pre-commit hooks are installed once (`pre-commit install`). See [ADR-007](./docs/adr/007-enforce-pre-commit-hooks.md).

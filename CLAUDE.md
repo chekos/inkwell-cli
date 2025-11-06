@@ -106,7 +106,7 @@ This project uses a structured documentation system in `docs/`. You MUST use it.
 - Add lessons learned to `docs/lessons/YYYY-MM-DD-topic.md`
 - Update any related ADRs if decisions changed during implementation
 
-### DKS Templates
+### Templates
 
 All templates are in their respective directories:
 - `docs/adr/000-template.md`
@@ -119,12 +119,7 @@ All templates are in their respective directories:
 
 ### DKS Overview
 
-See [docs/README.md](./docs/README.md) for full DKS documentation and the five pillars:
-1. Engineering Logs - Daily/weekly progress
-2. Architecture Decision Records - Significant technical decisions
-3. Research & Experiments - Empirical tests and POCs
-4. Research Documentation - External research on frameworks/best practices
-5. Lessons Learned - Retrospectives and insights
+See [docs/README.md](./docs/README.md) for full DKS documentation.
 
 ## Development Workflow
 

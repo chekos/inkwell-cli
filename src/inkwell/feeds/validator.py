@@ -6,7 +6,7 @@ import httpx
 from pydantic import HttpUrl, ValidationError
 
 from inkwell.config.schema import AuthConfig
-from inkwell.utils.errors import AuthenticationError, NetworkError
+from inkwell.utils.errors import AuthenticationError, InvalidConfigError, NetworkError
 
 
 class FeedValidator:
@@ -33,7 +33,7 @@ class FeedValidator:
             True if URL is valid and accessible
 
         Raises:
-            ValidationError: If URL format is invalid
+            InvalidConfigError: If URL format is invalid
             NetworkError: If URL is not accessible
             AuthenticationError: If authentication is required but not provided/invalid
         """
@@ -41,7 +41,7 @@ class FeedValidator:
         try:
             HttpUrl(url)
         except ValidationError as e:
-            raise ValidationError(f"Invalid URL format: {url}") from e
+            raise InvalidConfigError(f"Invalid URL format: {url}") from e
 
         # Check if URL is accessible
         try:
@@ -128,7 +128,7 @@ class FeedValidator:
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 401:
                 raise AuthenticationError(
-                    "Invalid credentials for {url}"
+                    f"Invalid credentials for {url}"
                 ) from e
             raise NetworkError(f"HTTP error: {e.response.status_code}") from e
         except httpx.RequestError as e:

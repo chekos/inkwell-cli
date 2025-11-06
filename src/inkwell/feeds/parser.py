@@ -327,6 +327,7 @@ class RSSParser:
                 else:
                     return int(duration)
             except (ValueError, TypeError):
+                # Invalid duration format, return None to indicate unknown duration
                 pass
 
         return None

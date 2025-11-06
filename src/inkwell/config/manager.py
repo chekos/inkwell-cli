@@ -11,9 +11,8 @@ from inkwell.config.defaults import (
     get_default_config_content,
     get_default_feeds_content,
 )
-from inkwell.config.schema import AuthConfig, FeedConfig, Feeds, GlobalConfig
+from inkwell.config.schema import FeedConfig, Feeds, GlobalConfig
 from inkwell.utils.errors import (
-    ConfigNotFoundError,
     DuplicateFeedError,
     FeedNotFoundError,
     InvalidConfigError,
@@ -55,7 +54,6 @@ class ConfigManager:
             Validated GlobalConfig instance
 
         Raises:
-            ConfigNotFoundError: If config file doesn't exist
             InvalidConfigError: If config is invalid
         """
         if not self.config_file.exists():

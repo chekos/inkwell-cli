@@ -8,8 +8,6 @@ from typing import Optional
 from rich.console import Console
 from rich.logging import RichHandler
 
-from inkwell.utils.paths import get_log_file
-
 
 def setup_logging(
     level: str = "INFO", log_file: Optional[Path] = None, rich_console: bool = True

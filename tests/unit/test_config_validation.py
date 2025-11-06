@@ -3,7 +3,6 @@
 from pathlib import Path
 
 import pytest
-import yaml
 
 from inkwell.config.manager import ConfigManager
 from inkwell.utils.errors import InvalidConfigError

@@ -67,13 +67,13 @@ class NetworkError(InkwellError):
     pass
 
 
-class ConnectionError(NetworkError):
+class NetworkConnectionError(NetworkError):
     """Connection failures."""
 
     pass
 
 
-class TimeoutError(NetworkError):
+class NetworkTimeoutError(NetworkError):
     """Request timeout."""
 
     pass

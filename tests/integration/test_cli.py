@@ -47,10 +47,10 @@ class TestCLIAdd:
         """Test that adding duplicate feed fails."""
         manager = ConfigManager(config_dir=tmp_path)
 
+        import pytest
+
         from inkwell.config.schema import AuthConfig, FeedConfig
         from inkwell.utils.errors import DuplicateFeedError
-
-        import pytest
 
         feed_config = FeedConfig(
             url="https://example.com/feed.rss",  # type: ignore
@@ -144,9 +144,9 @@ class TestCLIRemove:
         """Test that removing nonexistent feed fails."""
         manager = ConfigManager(config_dir=tmp_path)
 
-        from inkwell.utils.errors import FeedNotFoundError
-
         import pytest
+
+        from inkwell.utils.errors import FeedNotFoundError
 
         with pytest.raises(FeedNotFoundError):
             manager.remove_feed("nonexistent")

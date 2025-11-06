@@ -1,6 +1,5 @@
 """Feed URL and authentication validator."""
 
-from typing import Optional
 
 import httpx
 from pydantic import HttpUrl, ValidationError
@@ -21,7 +20,7 @@ class FeedValidator:
         self.timeout = timeout
 
     async def validate_feed_url(
-        self, url: str, auth: Optional[AuthConfig] = None
+        self, url: str, auth: AuthConfig | None = None
     ) -> bool:
         """Check if URL is valid and accessible.
 
@@ -135,7 +134,7 @@ class FeedValidator:
             raise NetworkError(f"Network error: {e}") from e
 
     def _build_auth_headers(
-        self, auth: Optional[AuthConfig] = None
+        self, auth: AuthConfig | None = None
     ) -> dict[str, str]:
         """Build HTTP headers for authentication.
 

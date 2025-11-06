@@ -2,7 +2,6 @@
 
 from datetime import datetime
 from email.utils import parsedate_to_datetime
-from typing import Optional
 
 import feedparser
 import httpx
@@ -24,7 +23,7 @@ class RSSParser:
         self.timeout = timeout
 
     async def fetch_feed(
-        self, url: str, auth: Optional[AuthConfig] = None
+        self, url: str, auth: AuthConfig | None = None
     ) -> feedparser.FeedParserDict:
         """Fetch and parse RSS/Atom feed with authentication support.
 
@@ -87,7 +86,7 @@ class RSSParser:
             raise NetworkError(f"Network error fetching {url}: {e}") from e
 
     def _build_auth_headers(
-        self, auth: Optional[AuthConfig] = None
+        self, auth: AuthConfig | None = None
     ) -> dict[str, str]:
         """Build HTTP headers for authentication.
 
@@ -221,7 +220,7 @@ class RSSParser:
             guid=guid,
         )
 
-    def _extract_enclosure_url(self, entry: dict) -> Optional[str]:
+    def _extract_enclosure_url(self, entry: dict) -> str | None:
         """Extract audio/video URL from entry enclosures.
 
         Args:
@@ -300,7 +299,7 @@ class RSSParser:
 
         return ""
 
-    def _extract_duration(self, entry: dict) -> Optional[int]:
+    def _extract_duration(self, entry: dict) -> int | None:
         """Extract duration in seconds from entry.
 
         Args:
@@ -332,7 +331,7 @@ class RSSParser:
 
         return None
 
-    def _extract_episode_number(self, entry: dict) -> Optional[int]:
+    def _extract_episode_number(self, entry: dict) -> int | None:
         """Extract episode number from entry.
 
         Args:
@@ -351,7 +350,7 @@ class RSSParser:
 
         return None
 
-    def _extract_season_number(self, entry: dict) -> Optional[int]:
+    def _extract_season_number(self, entry: dict) -> int | None:
         """Extract season number from entry.
 
         Args:

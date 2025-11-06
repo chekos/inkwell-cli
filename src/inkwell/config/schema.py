@@ -1,7 +1,7 @@
 """Configuration schema models using Pydantic."""
 
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Literal
 
 from pydantic import BaseModel, Field, HttpUrl
 
@@ -13,9 +13,9 @@ class AuthConfig(BaseModel):
     """Authentication configuration for a feed."""
 
     type: AuthType = "none"
-    username: Optional[str] = None  # Encrypted when stored
-    password: Optional[str] = None  # Encrypted when stored
-    token: Optional[str] = None  # Encrypted when stored (for bearer)
+    username: str | None = None  # Encrypted when stored
+    password: str | None = None  # Encrypted when stored
+    token: str | None = None  # Encrypted when stored (for bearer)
 
 
 class FeedConfig(BaseModel):
@@ -23,7 +23,7 @@ class FeedConfig(BaseModel):
 
     url: HttpUrl
     auth: AuthConfig = Field(default_factory=AuthConfig)
-    category: Optional[str] = None
+    category: str | None = None
     custom_templates: list[str] = Field(default_factory=list)
 
 

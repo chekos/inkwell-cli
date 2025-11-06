@@ -2,7 +2,6 @@
 
 import re
 from datetime import datetime
-from typing import Optional
 
 from pydantic import BaseModel, HttpUrl
 
@@ -40,11 +39,11 @@ class Episode(BaseModel):
     url: HttpUrl  # Direct audio/video URL
     published: datetime
     description: str
-    duration_seconds: Optional[int] = None
+    duration_seconds: int | None = None
     podcast_name: str
-    episode_number: Optional[int] = None
-    season_number: Optional[int] = None
-    guid: Optional[str] = None  # Episode unique identifier
+    episode_number: int | None = None
+    season_number: int | None = None
+    guid: str | None = None  # Episode unique identifier
 
     @property
     def slug(self) -> str:

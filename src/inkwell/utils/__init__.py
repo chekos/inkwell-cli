@@ -4,7 +4,6 @@ from inkwell.utils.errors import (
     AuthenticationError,
     ConfigError,
     ConfigNotFoundError,
-    ConnectionError,
     DuplicateFeedError,
     EncryptionError,
     FeedError,
@@ -12,8 +11,9 @@ from inkwell.utils.errors import (
     FeedParseError,
     InkwellError,
     InvalidConfigError,
+    NetworkConnectionError,
     NetworkError,
-    TimeoutError,
+    NetworkTimeoutError,
 )
 from inkwell.utils.paths import (
     ensure_config_files_exist,
@@ -39,8 +39,8 @@ __all__ = [
     "FeedParseError",
     "AuthenticationError",
     "NetworkError",
-    "ConnectionError",
-    "TimeoutError",
+    "NetworkConnectionError",
+    "NetworkTimeoutError",
     # Paths
     "get_config_dir",
     "get_data_dir",

@@ -72,7 +72,7 @@ class ConfigManager:
                 field = " -> ".join(str(loc) for loc in error["loc"])
                 msg = error["msg"]
                 error_lines.append(f"  • {field}: {msg}")
-            error_lines.append(f"\nRun 'inkwell config edit' to fix")
+            error_lines.append("\nRun 'inkwell config edit' to fix")
             raise InvalidConfigError("\n".join(error_lines)) from e
         except yaml.YAMLError as e:
             raise InvalidConfigError(
@@ -124,7 +124,7 @@ class ConfigManager:
 
             # Decrypt credentials in feed configs
             if "feeds" in data:
-                for feed_name, feed_data in data["feeds"].items():
+                for _feed_name, feed_data in data["feeds"].items():
                     if "auth" in feed_data:
                         auth = feed_data["auth"]
                         if auth.get("username"):
@@ -142,7 +142,7 @@ class ConfigManager:
                 field = " -> ".join(str(loc) for loc in error["loc"])
                 msg = error["msg"]
                 error_lines.append(f"  • {field}: {msg}")
-            error_lines.append(f"\nRun 'inkwell config edit' to fix feeds.yaml")
+            error_lines.append("\nRun 'inkwell config edit' to fix feeds.yaml")
             raise InvalidConfigError("\n".join(error_lines)) from e
         except yaml.YAMLError as e:
             raise InvalidConfigError(
@@ -165,7 +165,7 @@ class ConfigManager:
 
         # Encrypt credentials
         if "feeds" in data:
-            for feed_name, feed_data in data["feeds"].items():
+            for _feed_name, feed_data in data["feeds"].items():
                 if "auth" in feed_data:
                     auth = feed_data["auth"]
                     if auth.get("username"):

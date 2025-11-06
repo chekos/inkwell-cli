@@ -3,14 +3,13 @@
 import logging
 import sys
 from pathlib import Path
-from typing import Optional
 
 from rich.console import Console
 from rich.logging import RichHandler
 
 
 def setup_logging(
-    level: str = "INFO", log_file: Optional[Path] = None, rich_console: bool = True
+    level: str = "INFO", log_file: Path | None = None, rich_console: bool = True
 ) -> logging.Logger:
     """Configure logging for Inkwell.
 

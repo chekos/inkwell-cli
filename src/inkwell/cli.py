@@ -2,7 +2,6 @@
 
 import sys
 from pathlib import Path
-from typing import Optional
 
 import typer
 from rich.console import Console
@@ -39,7 +38,7 @@ def add_feed(
     url: str = typer.Argument(..., help="RSS feed URL"),
     name: str = typer.Option(..., "--name", "-n", help="Feed identifier name"),
     auth: bool = typer.Option(False, "--auth", help="Prompt for authentication"),
-    category: Optional[str] = typer.Option(
+    category: str | None = typer.Option(
         None, "--category", "-c", help="Feed category (e.g., tech, interview)"
     ),
 ) -> None:
@@ -204,8 +203,8 @@ def config_command(
     action: str = typer.Argument(
         ..., help="Action: show, edit, or set <key> <value>"
     ),
-    key: Optional[str] = typer.Argument(None, help="Config key (for 'set' action)"),
-    value: Optional[str] = typer.Argument(None, help="Config value (for 'set' action)"),
+    key: str | None = typer.Argument(None, help="Config key (for 'set' action)"),
+    value: str | None = typer.Argument(None, help="Config value (for 'set' action)"),
 ) -> None:
     """Manage Inkwell configuration.
 
@@ -278,9 +277,9 @@ def config_command(
                 # Get the field type to do proper conversion
                 field_type = type(getattr(config, key))
 
-                if field_type == bool:
+                if field_type is bool:
                     value_converted = value.lower() in ("true", "yes", "1")
-                elif field_type == Path:
+                elif field_type is Path:
                     value_converted = Path(value)
                 else:
                     value_converted = value

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Developer Insights</title>
+  <link href="https://example.com/atom-feed"/>
+  <updated>2024-11-06T10:00:00Z</updated>
+  <author>
+    <name>John Developer</name>
+  </author>
+  <id>https://example.com/atom-feed</id>
+
+  <entry>
+    <title>Understanding Microservices</title>
+    <link href="https://example.com/atom/ep50"/>
+    <id>https://example.com/atom/ep50</id>
+    <updated>2024-11-06T10:00:00Z</updated>
+    <summary>A deep dive into microservices architecture patterns.</summary>
+    <link rel="enclosure" type="audio/mpeg" href="https://example.com/audio/atom-ep50.mp3" length="50000000"/>
+  </entry>
+
+  <entry>
+    <title>Database Design Patterns</title>
+    <link href="https://example.com/atom/ep49"/>
+    <id>https://example.com/atom/ep49</id>
+    <updated>2024-10-30T10:00:00Z</updated>
+    <summary>Essential database design patterns for modern applications.</summary>
+    <link rel="enclosure" type="audio/mpeg" href="https://example.com/audio/atom-ep49.mp3" length="48000000"/>
+  </entry>
+</feed>

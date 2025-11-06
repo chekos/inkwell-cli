@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Broken Podcast</title>
+    <item>
+      <title>Episode with no enclosure</title>
+      <pubDate>Invalid date format</pubDate>
+      <!-- Missing required fields -->
+    </item>
+  </channel>
+  <!-- Unclosed tags and malformed XML -->
+  <broken>

@@ -34,20 +34,32 @@ See [docs/PRD_v0.md](./docs/PRD_v0.md) for complete product requirements.
 
 ## Development Setup
 
-**Note:** No code has been implemented yet. This section will be updated as the project develops.
-
-Once implemented, typical commands will include:
+Install dependencies:
 ```bash
-# Development environment (TBD)
-# python -m venv .venv && source .venv/bin/activate
-# pip install -e ".[dev]"
-
-# Testing (TBD)
-# pytest
-
-# Linting (TBD)
-# ruff check .
+# Install project dependencies
+uv sync --dev
 ```
+
+Run tests:
+```bash
+uv run pytest
+```
+
+Run linter:
+```bash
+uv run ruff check .
+```
+
+## Python Tooling
+
+**IMPORTANT:** Always use `uv` for package management. Never use `pip install` or manual venv activation.
+
+- `uv add <package>` - Add production dependency
+- `uv add --dev <package>` - Add dev dependency
+- `uv run <command>` - Run commands in project venv
+- `uv sync --dev` - Install all dependencies
+
+See [ADR-008](./docs/adr/008-use-uv-for-python-tooling.md) for rationale.
 
 ## Architecture
 
@@ -130,3 +142,5 @@ When implementing features:
 4. **Experiment:** Record experiments/benchmarks in `docs/experiments/`
 5. **Reflect:** Add lessons learned to `docs/lessons/` when complete
 6. **Update:** Keep this CLAUDE.md updated as the architecture evolves
+
+**Before committing:** Verify pre-commit hooks are installed once (`pre-commit install`). See [ADR-007](./docs/adr/007-enforce-pre-commit-hooks.md).

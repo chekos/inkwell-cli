@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+  <channel>
+    <title>Tech Talks Podcast</title>
+    <link>https://example.com/podcast</link>
+    <description>A podcast about technology and software development</description>
+    <language>en-us</language>
+    <itunes:author>Jane Developer</itunes:author>
+
+    <item>
+      <title>Episode 100: The Future of AI</title>
+      <link>https://example.com/episodes/100</link>
+      <guid>https://example.com/episodes/100</guid>
+      <pubDate>Wed, 06 Nov 2024 10:00:00 GMT</pubDate>
+      <description>We discuss the future of artificial intelligence and its impact on software development.</description>
+      <enclosure url="https://example.com/audio/ep100.mp3" length="52428800" type="audio/mpeg"/>
+      <itunes:duration>3600</itunes:duration>
+      <itunes:episodeType>full</itunes:episodeType>
+      <itunes:episode>100</itunes:episode>
+    </item>
+
+    <item>
+      <title>Episode 99: Building Scalable Systems</title>
+      <link>https://example.com/episodes/99</link>
+      <guid>https://example.com/episodes/99</guid>
+      <pubDate>Wed, 30 Oct 2024 10:00:00 GMT</pubDate>
+      <description>Best practices for building systems that scale to millions of users.</description>
+      <enclosure url="https://example.com/audio/ep99.mp3" length="48234567" type="audio/mpeg"/>
+      <itunes:duration>3300</itunes:duration>
+      <itunes:episode>99</itunes:episode>
+    </item>
+
+    <item>
+      <title>Episode 98: Python Deep Dive</title>
+      <link>https://example.com/episodes/98</link>
+      <guid>https://example.com/episodes/98</guid>
+      <pubDate>Wed, 23 Oct 2024 10:00:00 GMT</pubDate>
+      <description>Advanced Python programming techniques and best practices.</description>
+      <enclosure url="https://example.com/audio/ep98.mp3" length="45678901" type="audio/mpeg"/>
+      <itunes:duration>3150</itunes:duration>
+      <itunes:episode>98</itunes:episode>
+    </item>
+  </channel>
+</rss>

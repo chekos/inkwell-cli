@@ -3,6 +3,7 @@
 from pathlib import Path
 
 import yaml
+from pydantic import ValidationError
 
 from inkwell.config.crypto import CredentialEncryptor
 from inkwell.config.defaults import (
@@ -66,9 +67,23 @@ class ConfigManager:
             with open(self.config_file) as f:
                 data = yaml.safe_load(f) or {}
             return GlobalConfig(**data)
+        except ValidationError as e:
+            # Format Pydantic validation errors nicely
+            error_lines = ["Invalid configuration in config.yaml:"]
+            for error in e.errors():
+                field = " -> ".join(str(loc) for loc in error["loc"])
+                msg = error["msg"]
+                error_lines.append(f"  • {field}: {msg}")
+            error_lines.append(f"\nRun 'inkwell config edit' to fix")
+            raise InvalidConfigError("\n".join(error_lines)) from e
+        except yaml.YAMLError as e:
+            raise InvalidConfigError(
+                f"Invalid YAML syntax in config.yaml:\n{e}\n\n"
+                f"Run 'inkwell config edit' to fix"
+            ) from e
         except Exception as e:
             raise InvalidConfigError(
-                f"Invalid configuration in {self.config_file}: {e}"
+                f"Error loading configuration: {e}"
             ) from e
 
     def save_config(self, config: GlobalConfig) -> None:
@@ -122,9 +137,23 @@ class ConfigManager:
                             auth["token"] = self.encryptor.decrypt(auth["token"])
 
             return Feeds(**data)
+        except ValidationError as e:
+            # Format Pydantic validation errors nicely
+            error_lines = ["Invalid feeds configuration in feeds.yaml:"]
+            for error in e.errors():
+                field = " -> ".join(str(loc) for loc in error["loc"])
+                msg = error["msg"]
+                error_lines.append(f"  • {field}: {msg}")
+            error_lines.append(f"\nRun 'inkwell config edit' to fix feeds.yaml")
+            raise InvalidConfigError("\n".join(error_lines)) from e
+        except yaml.YAMLError as e:
+            raise InvalidConfigError(
+                f"Invalid YAML syntax in feeds.yaml:\n{e}\n\n"
+                f"Check feeds.yaml for syntax errors"
+            ) from e
         except Exception as e:
             raise InvalidConfigError(
-                f"Invalid feeds configuration in {self.feeds_file}: {e}"
+                f"Error loading feeds configuration: {e}"
             ) from e
 
     def save_feeds(self, feeds: Feeds) -> None:

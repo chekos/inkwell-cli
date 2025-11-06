@@ -256,7 +256,7 @@ class TestConfigManager:
 
         manager = ConfigManager(config_dir=tmp_path)
 
-        with pytest.raises(InvalidConfigError, match="Invalid configuration"):
+        with pytest.raises(InvalidConfigError, match="YAML"):
             manager.load_config()
 
     def test_config_roundtrip_preserves_data(self, tmp_path: Path) -> None:

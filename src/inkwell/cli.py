@@ -10,6 +10,7 @@ from rich.table import Table
 
 from inkwell.config.manager import ConfigManager
 from inkwell.config.schema import AuthConfig, FeedConfig
+from inkwell.utils.display import truncate_url
 from inkwell.utils.errors import (
     DuplicateFeedError,
     FeedNotFoundError,
@@ -134,13 +135,7 @@ def list_feeds() -> None:
         for name, feed in feeds.items():
             auth_status = "✓" if feed.auth.type != "none" else "—"
             category_display = feed.category or "—"
-
-            # Truncate long URLs
-            url_str = str(feed.url)
-            if len(url_str) > 50:
-                url_display = url_str[:47] + "..."
-            else:
-                url_display = url_str
+            url_display = truncate_url(str(feed.url), max_length=50)
 
             table.add_row(name, url_display, auth_status, category_display)
 

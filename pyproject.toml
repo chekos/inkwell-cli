@@ -26,6 +26,9 @@ dependencies = [
     "cryptography>=42.0.0",
     "httpx>=0.27.0",
     "platformdirs>=4.0.0",
+    "youtube-transcript-api>=1.2.3",
+    "yt-dlp>=2025.10.22",
+    "google-generativeai>=0.8.5",
 ]
 
 [project.optional-dependencies]
@@ -73,6 +76,7 @@ ignore = []
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = ["S101"]  # Allow assert in tests
+"src/inkwell/cli.py" = ["B008"]  # Allow typer.Option in function defaults (Typer pattern)
 
 [tool.mypy]
 python_version = "3.10"

@@ -28,6 +28,7 @@ dependencies = [
     "platformdirs>=4.0.0",
     "youtube-transcript-api>=1.2.3",
     "yt-dlp>=2025.10.22",
+    "google-generativeai>=0.8.5",
 ]
 
 [project.optional-dependencies]

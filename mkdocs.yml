@@ -74,6 +74,7 @@ nav:
       - Phase 1 Days 4-5: lessons/2025-11-06-phase-1-days-4-5.md
       - Phase 1 Days 6-7: lessons/2025-11-06-phase-1-days-6-7.md
       - Pre-commit Hooks Enforcement: lessons/2025-11-06-pre-commit-hooks-enforcement.md
+      - MkDocs Material ADR Theme Config: lessons/2025-11-07-mkdocs-material-adr-theme-config.md
 
 plugins:
   - search

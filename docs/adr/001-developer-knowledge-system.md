@@ -1,3 +1,11 @@
+---
+title: ADR 001 - Adopt Developer Knowledge System (DKS) for Documentation
+adr:
+  author: Claude
+  created: 05-Nov-2025
+  status: accepted
+---
+
 # ADR 001: Adopt Developer Knowledge System (DKS) for Documentation
 
 **Date:** 2025-11-05

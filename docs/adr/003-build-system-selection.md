@@ -1,3 +1,11 @@
+---
+title: ADR 003 - Build System Selection (Setuptools vs Hatchling)
+adr:
+  author: Claude
+  created: 06-Nov-2025
+  status: accepted
+---
+
 # ADR-003: Build System Selection (Setuptools vs Hatchling)
 
 **Status**: Accepted

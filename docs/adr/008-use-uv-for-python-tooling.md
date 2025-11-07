@@ -1,3 +1,11 @@
+---
+title: ADR 008 - Use uv for All Python Package and Environment Management
+adr:
+  author: Claude
+  created: 06-Nov-2025
+  status: accepted
+---
+
 # ADR 008: Use uv for All Python Package and Environment Management
 
 **Date:** 2025-11-06

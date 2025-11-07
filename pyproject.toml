@@ -114,5 +114,8 @@ exclude_lines = [
 
 [dependency-groups]
 dev = [
+    "mkdocs>=1.6.1",
+    "mkdocs-material>=9.6.23",
+    "mkdocs-material-adr>=1.2.1",
     "ruff>=0.14.4",
 ]

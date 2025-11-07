@@ -53,3 +53,9 @@ Don't write ADRs for:
 - What alternatives we considered
 - What trade-offs we accepted
 - Links to relevant resources
+
+## ADR Relationships
+
+The following graph shows relationships between ADRs:
+
+[GRAPH]

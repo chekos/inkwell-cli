@@ -13,6 +13,7 @@ Key components:
 - manager: High-level orchestration
 """
 
+from inkwell.transcription.cache import CacheError, TranscriptCache
 from inkwell.transcription.gemini import (
     CostEstimate,
     GeminiTranscriber,
@@ -26,10 +27,12 @@ from inkwell.transcription.models import (
 from inkwell.transcription.youtube import TranscriptionError, YouTubeTranscriber
 
 __all__ = [
+    "CacheError",
     "CostEstimate",
     "GeminiTranscriber",
     "GeminiTranscriberWithSegments",
     "Transcript",
+    "TranscriptCache",
     "TranscriptSegment",
     "TranscriptionResult",
     "TranscriptionError",

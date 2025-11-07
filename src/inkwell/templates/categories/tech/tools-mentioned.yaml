@@ -1,0 +1,75 @@
+# Tools Mentioned Extraction Template (Tech Category)
+# Extracts tools, frameworks, and libraries mentioned in tech podcasts
+
+name: tools-mentioned
+version: "1.0"
+description: "Extract tools, frameworks, and libraries mentioned in tech podcasts"
+category: tech
+
+system_prompt: |
+  You are a technical expert analyzing technology podcasts.
+
+  Your task is to identify and catalog all tools, frameworks, libraries,
+  and technologies mentioned in the discussion.
+
+  Include:
+  - Programming languages
+  - Frameworks and libraries
+  - Development tools and IDEs
+  - Cloud platforms and services
+  - Databases
+  - Other technical tools
+
+  Focus on accuracy - only extract tools that are explicitly mentioned.
+
+user_prompt_template: |
+  Identify all technical tools mentioned in this tech podcast.
+
+  Transcript:
+  {{ transcript }}
+
+  For each tool, provide:
+  - Name (official name of the tool)
+  - Category (language, framework, library, tool, service, database, platform)
+  - Context (brief description of how it was discussed)
+  - Timestamp (if mentioned at a specific time, format MM:SS)
+
+  Return as JSON:
+  {
+    "tools": [
+      {
+        "name": "Tool Name",
+        "category": "framework",
+        "context": "How it was discussed",
+        "timestamp": "12:34"
+      }
+    ]
+  }
+
+expected_format: json
+output_schema:
+  type: object
+  required: [tools]
+  properties:
+    tools:
+      type: array
+      items:
+        type: object
+        required: [name, category]
+        properties:
+          name:
+            type: string
+          category:
+            type: string
+            enum: [language, framework, library, tool, service, database, platform, other]
+          context:
+            type: string
+          timestamp:
+            type: string
+            pattern: "^\\d+:\\d+$"
+
+max_tokens: 3000
+temperature: 0.2
+priority: 15
+applies_to: [tech, programming]
+model_preference: claude

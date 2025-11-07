@@ -1,3 +1,13 @@
+---
+title: ADR NNN - [Decision Title]
+adr:
+  author: [Your Name]
+  created: DD-Mon-YYYY
+  status: proposed | accepted | superseded
+  superseded_by: NNN-title  # Optional: only if status is superseded
+  extends: [NNN-first, NNN-second]  # Optional: list of related ADRs
+---
+
 # ADR NNNN: [Decision Title]
 
 **Date:** YYYY-MM-DD

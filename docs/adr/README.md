@@ -10,6 +10,25 @@ ADRs document significant technical decisions made in this project. Each ADR cap
 
 Use the template: [000-template.md](./000-template.md)
 
+ADRs include YAML frontmatter for enhanced visualization in MkDocs Material:
+
+```yaml
+---
+title: ADR NNN - Decision Title
+adr:
+  author: Your Name
+  created: DD-Mon-YYYY
+  status: proposed | accepted | superseded
+  superseded_by: NNN-title  # Optional
+  extends: [NNN-first, NNN-second]  # Optional
+---
+```
+
+This frontmatter enables:
+- Visual headers with metadata
+- Status badges (draft, proposed, accepted, rejected, superseded)
+- Auto-generated relationship graphs between related ADRs
+
 ## Numbering
 
 ADRs are numbered sequentially with leading zeros:

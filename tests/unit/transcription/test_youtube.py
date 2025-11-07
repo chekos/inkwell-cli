@@ -1,8 +1,8 @@
 """Tests for YouTube transcript extraction."""
 
-import pytest
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
+from unittest.mock import Mock, patch
 
+import pytest
 from youtube_transcript_api._errors import (
     CouldNotRetrieveTranscript,
     NoTranscriptFound,

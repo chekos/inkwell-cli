@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 import pytest
 from pydantic import ValidationError
 
-from inkwell.transcription.models import Transcript, TranscriptSegment, TranscriptionResult
+from inkwell.transcription.models import Transcript, TranscriptionResult, TranscriptSegment
 
 
 class TestTranscriptSegment:

@@ -5,7 +5,7 @@ including individual segments with timing information and complete transcripts.
 """
 
 from datetime import datetime, timedelta
-from typing import Literal, Optional
+from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -72,13 +72,13 @@ class Transcript(BaseModel):
     )
 
     # Optional metadata
-    duration_seconds: Optional[float] = Field(
+    duration_seconds: float | None = Field(
         None, ge=0, description="Total duration of audio in seconds"
     )
-    word_count: Optional[int] = Field(
+    word_count: int | None = Field(
         None, ge=0, description="Total word count in transcript"
     )
-    cost_usd: Optional[float] = Field(
+    cost_usd: float | None = Field(
         None, ge=0, description="Cost in USD for this transcription (if applicable)"
     )
 
@@ -125,7 +125,7 @@ class Transcript(BaseModel):
         """Check if this transcript was free (YouTube) or cost money (Gemini)."""
         return self.source in ("youtube", "cached")
 
-    def get_segment_at_time(self, time_seconds: float) -> Optional[TranscriptSegment]:
+    def get_segment_at_time(self, time_seconds: float) -> TranscriptSegment | None:
         """Get segment containing a specific timestamp.
 
         Args:
@@ -200,10 +200,10 @@ class TranscriptionResult(BaseModel):
     """
 
     success: bool = Field(..., description="Whether transcription succeeded")
-    transcript: Optional[Transcript] = Field(
+    transcript: Transcript | None = Field(
         None, description="The transcript if successful"
     )
-    error: Optional[str] = Field(None, description="Error message if failed")
+    error: str | None = Field(None, description="Error message if failed")
     attempts: list[str] = Field(
         default_factory=list,
         description="List of transcription methods attempted (e.g., ['youtube', 'gemini'])",
@@ -223,8 +223,8 @@ class TranscriptionResult(BaseModel):
     @field_validator("transcript")
     @classmethod
     def transcript_required_if_success(
-        cls, v: Optional[Transcript], info
-    ) -> Optional[Transcript]:
+        cls, v: Transcript | None, info
+    ) -> Transcript | None:
         """Validate that transcript is provided if success is True."""
         if info.data.get("success") and v is None:
             raise ValueError("transcript is required when success is True")
@@ -232,14 +232,14 @@ class TranscriptionResult(BaseModel):
 
     @field_validator("error")
     @classmethod
-    def error_required_if_failure(cls, v: Optional[str], info) -> Optional[str]:
+    def error_required_if_failure(cls, v: str | None, info) -> str | None:
         """Validate that error is provided if success is False."""
         if not info.data.get("success") and not v:
             raise ValueError("error message is required when success is False")
         return v
 
     @property
-    def primary_source(self) -> Optional[str]:
+    def primary_source(self) -> str | None:
         """Get the primary source that succeeded.
 
         Returns:

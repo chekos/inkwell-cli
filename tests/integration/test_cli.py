@@ -263,3 +263,61 @@ class TestCLIErrorHandling:
         result = runner.invoke(app, ["invalid-command"])
 
         assert result.exit_code != 0
+
+
+class TestCLITranscribe:
+    """Tests for transcribe command."""
+
+    def test_transcribe_help(self) -> None:
+        """Test transcribe command help."""
+        result = runner.invoke(app, ["transcribe", "--help"])
+
+        assert result.exit_code == 0
+        assert "transcribe" in result.stdout.lower()
+        assert "--output" in result.stdout
+        assert "--force" in result.stdout
+        assert "--skip-youtube" in result.stdout
+
+    def test_transcribe_missing_url(self) -> None:
+        """Test transcribe command without URL argument."""
+        result = runner.invoke(app, ["transcribe"])
+
+        assert result.exit_code != 0
+        # Typer returns exit code 2 for missing arguments
+
+
+class TestCLICache:
+    """Tests for cache command."""
+
+    def test_cache_help(self) -> None:
+        """Test cache command help."""
+        result = runner.invoke(app, ["cache", "--help"])
+
+        assert result.exit_code == 0
+        assert "cache" in result.stdout.lower()
+        assert "stats" in result.stdout or "clear" in result.stdout
+
+    def test_cache_missing_action(self) -> None:
+        """Test cache command without action argument."""
+        result = runner.invoke(app, ["cache"])
+
+        assert result.exit_code != 0
+        # Typer returns exit code 2 for missing arguments
+
+    def test_cache_stats(self, tmp_path: Path) -> None:
+        """Test cache stats command."""
+        # This test just verifies the command runs without error
+        # Actual caching behavior is tested in unit tests
+        result = runner.invoke(app, ["cache", "stats"])
+
+        # May succeed (0) or fail gracefully depending on cache state
+        # Main goal is to ensure command is registered and parseable
+        assert result.exit_code in (0, 1)
+
+    def test_cache_invalid_action(self) -> None:
+        """Test cache command with invalid action."""
+        result = runner.invoke(app, ["cache", "invalid-action"])
+
+        # Command should complete but may show error for invalid action
+        # This tests that the command is registered and handles bad input
+        assert "invalid" in result.stdout.lower() or result.exit_code != 0

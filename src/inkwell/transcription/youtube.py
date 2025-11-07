@@ -6,7 +6,6 @@ YouTube videos using the youtube-transcript-api library.
 
 import logging
 import re
-from typing import Optional
 from urllib.parse import parse_qs, urlparse
 
 from youtube_transcript_api import YouTubeTranscriptApi
@@ -42,7 +41,7 @@ class YouTubeTranscriber:
             transcript = await transcriber.transcribe(url)
     """
 
-    def __init__(self, preferred_languages: Optional[list[str]] = None):
+    def __init__(self, preferred_languages: list[str] | None = None):
         """Initialize YouTube transcriber.
 
         Args:
@@ -86,7 +85,7 @@ class YouTubeTranscriber:
         ]
         return any(re.search(pattern, url, re.IGNORECASE) for pattern in patterns)
 
-    def _extract_video_id(self, url: str) -> Optional[str]:
+    def _extract_video_id(self, url: str) -> str | None:
         """Extract video ID from various YouTube URL formats.
 
         Args:
@@ -125,7 +124,7 @@ class YouTubeTranscriber:
         return None
 
     async def transcribe(
-        self, url: str, audio_path: Optional[str] = None
+        self, url: str, audio_path: str | None = None
     ) -> Transcript:
         """Fetch transcript from YouTube.
 
@@ -171,13 +170,13 @@ class YouTubeTranscriber:
                         self.preferred_languages
                     )
                     logger.info("Using auto-generated transcript")
-                except NoTranscriptFound:
+                except NoTranscriptFound as e:
                     raise TranscriptionError(
                         f"No transcript found for video {video_id} in languages: "
                         f"{', '.join(self.preferred_languages)}. "
                         "Available languages: "
                         f"{', '.join(t.language_code for t in transcript_list)}"
-                    )
+                    ) from e
 
             # Fetch transcript data
             transcript_data = transcript_obj.fetch()
@@ -206,23 +205,23 @@ class YouTubeTranscriber:
         except TranscriptsDisabled as e:
             logger.warning(f"Transcripts disabled for video {video_id}")
             raise TranscriptionError(
-                f"Transcripts are disabled for this video. "
-                f"The video owner has disabled transcript access."
+                "Transcripts are disabled for this video. "
+                "The video owner has disabled transcript access."
             ) from e
 
         except VideoUnavailable as e:
             logger.warning(f"Video unavailable: {video_id}")
             raise TranscriptionError(
-                f"Video is unavailable. It may be private, deleted, or region-restricted."
+                "Video is unavailable. It may be private, deleted, or region-restricted."
             ) from e
 
         except CouldNotRetrieveTranscript as e:
             # This includes 403 errors and other network issues
             logger.warning(f"Could not retrieve transcript for {video_id}: {e}")
             raise TranscriptionError(
-                f"Failed to retrieve transcript from YouTube. "
-                f"This may be due to network issues, rate limiting, or access restrictions. "
-                f"Will fall back to audio download + Gemini transcription."
+                "Failed to retrieve transcript from YouTube. "
+                "This may be due to network issues, rate limiting, or access restrictions. "
+                "Will fall back to audio download + Gemini transcription."
             ) from e
 
         except Exception as e:

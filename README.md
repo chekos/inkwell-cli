@@ -8,7 +8,7 @@ Transform podcast episodes into structured, searchable markdown notes.
 
 ## Status
 
-🚧 **Phase 1 Complete** - Feed management and configuration system ready.
+🎉 **Phase 2 Complete** - Full transcription pipeline ready!
 
 Current capabilities:
 - ✅ Podcast feed management (add, list, remove)
@@ -16,9 +16,14 @@ Current capabilities:
 - ✅ Secure credential encryption
 - ✅ Configuration management
 - ✅ XDG-compliant paths
+- ✅ **YouTube transcript extraction** (free, instant)
+- ✅ **Audio download** with yt-dlp
+- ✅ **Gemini transcription** (paid fallback)
+- ✅ **Multi-tier transcription** (cache → YouTube → Gemini)
+- ✅ **Transcript caching** (30-day TTL)
+- ✅ **CLI transcription commands**
 
-Coming in Phase 2:
-- 🔄 Audio transcription (YouTube API + Gemini fallback)
+Coming in Phase 3:
 - 🔄 LLM-based content extraction
 - 🔄 Interactive interview mode with Claude
 - 🔄 Markdown output generation
@@ -38,6 +43,8 @@ uv sync --dev
 
 ### Basic Usage
 
+#### Feed Management
+
 ```bash
 # Add a podcast feed
 inkwell add https://example.com/feed.rss --name my-podcast
@@ -53,12 +60,68 @@ inkwell remove my-podcast
 
 # View configuration
 inkwell config show
+```
 
+#### Transcription
+
+```bash
+# Transcribe a YouTube video (free, uses YouTube transcripts)
+inkwell transcribe https://youtube.com/watch?v=VIDEO_ID
+
+# Transcribe any audio URL (downloads audio, uses Gemini)
+inkwell transcribe https://example.com/podcast.mp3
+
+# Save transcript to file
+inkwell transcribe https://youtube.com/watch?v=VIDEO_ID --output transcript.txt
+
+# Force re-transcription (bypass cache)
+inkwell transcribe https://youtube.com/watch?v=VIDEO_ID --force
+
+# Skip YouTube, use Gemini directly (for better quality)
+inkwell transcribe https://youtube.com/watch?v=VIDEO_ID --skip-youtube
+```
+
+#### Cache Management
+
+```bash
+# View cache statistics
+inkwell cache stats
+
+# Clear all cached transcripts
+inkwell cache clear
+
+# Remove only expired transcripts
+inkwell cache clear-expired
+```
+
+#### Help
+
+```bash
 # Get help
 inkwell --help
+
+# Get command-specific help
+inkwell transcribe --help
+inkwell cache --help
 ```
 
 ## Features
+
+### Multi-Tier Transcription System
+
+Inkwell uses an intelligent multi-tier transcription strategy that optimizes for both cost and quality:
+
+1. **Cache (Free)**: Check local cache first (30-day TTL)
+2. **YouTube Transcripts (Free)**: Extract existing transcripts from YouTube videos
+3. **Gemini Transcription (Paid)**: Download audio and transcribe with Gemini API as fallback
+
+**Key Features:**
+- **Cost Optimization**: Always tries free methods first
+- **Quality Control**: Gemini fallback ensures transcription always succeeds
+- **Caching**: Avoids redundant API calls and downloads
+- **Progress Indicators**: Real-time progress with Rich terminal UI
+- **Cost Confirmation**: Interactive approval before spending money on Gemini
+- **Metadata Tracking**: Records source, cost, duration, and language
 
 ### Secure Feed Management
 
@@ -79,7 +142,7 @@ inkwell --help
 - **Rich Terminal Output**: Colorful tables and formatted output using rich library
 - **Helpful Error Messages**: Clear, actionable error messages
 - **Type Safety**: Full type hints with mypy validation
-- **Comprehensive Tests**: 154 tests with 100% pass rate
+- **Comprehensive Tests**: 313 tests with 100% pass rate
 
 ## Requirements
 
@@ -141,23 +204,49 @@ feeds:
 
 ## Architecture
 
-### Phase 1 Components (Current)
+### Current Components (Phase 1-2)
 
 1. **Feed Management**: Add/list/remove podcast feeds with auth support
 2. **Configuration Layer**: YAML config with Pydantic validation
 3. **Credential Encryption**: Fernet symmetric encryption for credentials
 4. **RSS Parser**: Async feed fetching with feedparser
 5. **CLI Interface**: Typer-based CLI with rich terminal output
+6. **Transcription System**: Multi-tier transcription (Cache → YouTube → Gemini)
+7. **Audio Downloader**: yt-dlp wrapper for audio extraction
+8. **Transcript Cache**: Local caching with TTL management
 
-### Planned Architecture (Phase 2+)
+### Transcription Pipeline (Implemented)
 
 ```
-RSS Feed → Parse → Check YouTube → Download Audio
-         → Transcribe (YouTube API or Gemini)
-         → LLM Extraction Pipeline
-         → [Optional] Interactive Interview
-         → Generate Markdown Files
-         → Save to Output Directory
+Episode URL
+    ↓
+[1] Check Cache (30-day TTL)
+    ↓ (miss)
+[2] Check if YouTube URL
+    ↓ (yes)
+    Extract YouTube Transcript (FREE)
+    ↓ (no or fail)
+[3] Download Audio (yt-dlp)
+    ↓
+[4] Transcribe with Gemini (PAID, with cost confirmation)
+    ↓
+[5] Cache Result
+    ↓
+Return Transcript + Metadata
+```
+
+### Planned Architecture (Phase 3+)
+
+```
+Transcript
+    ↓
+LLM Extraction Pipeline
+    ↓
+[Optional] Interactive Interview
+    ↓
+Generate Markdown Files
+    ↓
+Save to Output Directory
 ```
 
 ### Output Structure (Phase 2)
@@ -199,30 +288,43 @@ uv run ruff format .
 
 ```
 inkwell-cli/
-├── src/inkwell/          # Main package
-│   ├── cli.py           # CLI entry point
-│   ├── config/          # Configuration management
-│   │   ├── manager.py   # ConfigManager
-│   │   ├── schema.py    # Pydantic models
-│   │   ├── crypto.py    # Credential encryption
-│   │   └── defaults.py  # Default configuration
-│   ├── feeds/           # RSS parsing
-│   │   ├── parser.py    # RSSParser
-│   │   ├── models.py    # Episode model
-│   │   └── validator.py # Feed validation
-│   └── utils/           # Utilities
-│       ├── paths.py     # XDG paths
-│       ├── errors.py    # Custom exceptions
-│       ├── display.py   # Terminal output helpers
-│       └── logging.py   # Logging setup
-├── tests/               # Test suite
-│   ├── unit/           # Unit tests
-│   └── integration/    # Integration tests
-└── docs/               # Documentation
-    ├── adr/            # Architecture Decision Records
-    ├── devlog/         # Development logs
-    ├── lessons/        # Lessons learned
-    └── research/       # Research notes
+├── src/inkwell/            # Main package
+│   ├── cli.py             # CLI entry point
+│   ├── config/            # Configuration management
+│   │   ├── manager.py     # ConfigManager
+│   │   ├── schema.py      # Pydantic models
+│   │   ├── crypto.py      # Credential encryption
+│   │   └── defaults.py    # Default configuration
+│   ├── feeds/             # RSS parsing
+│   │   ├── parser.py      # RSSParser
+│   │   ├── models.py      # Episode model
+│   │   └── validator.py   # Feed validation
+│   ├── transcription/     # Transcription system (NEW in Phase 2)
+│   │   ├── manager.py     # TranscriptionManager (orchestrator)
+│   │   ├── youtube.py     # YouTubeTranscriber
+│   │   ├── gemini.py      # GeminiTranscriber
+│   │   ├── cache.py       # TranscriptCache
+│   │   ├── models.py      # Transcript models
+│   │   └── __init__.py    # Public API
+│   ├── audio/             # Audio download (NEW in Phase 2)
+│   │   └── downloader.py  # AudioDownloader (yt-dlp wrapper)
+│   └── utils/             # Utilities
+│       ├── paths.py       # XDG paths
+│       ├── errors.py      # Custom exceptions
+│       ├── display.py     # Terminal output helpers
+│       └── logging.py     # Logging setup
+├── tests/                 # Test suite (313 tests)
+│   ├── unit/             # Unit tests
+│   │   ├── audio/        # Audio tests
+│   │   ├── transcription/ # Transcription tests
+│   │   └── ...           # Other unit tests
+│   └── integration/      # Integration tests
+└── docs/                 # Documentation (DKS)
+    ├── adr/              # Architecture Decision Records
+    ├── devlog/           # Development logs
+    ├── lessons/          # Lessons learned
+    ├── research/         # Research notes
+    └── experiments/      # Performance benchmarks
 ```
 
 ### Running Tests
@@ -289,12 +391,15 @@ See [docs/README.md](./docs/README.md) for full documentation.
 - ✅ CLI with rich terminal output
 - ✅ Comprehensive test suite (154 tests)
 
-### Phase 2: Transcription (Next)
+### Phase 2: Transcription ✅ (Complete)
 
-- 🔄 YouTube transcript API integration
-- 🔄 Google Gemini fallback transcription
-- 🔄 Audio download with yt-dlp
-- 🔄 Transcript caching and storage
+- ✅ YouTube transcript API integration
+- ✅ Google Gemini fallback transcription
+- ✅ Audio download with yt-dlp
+- ✅ Transcript caching and storage (30-day TTL)
+- ✅ Multi-tier orchestration with cost optimization
+- ✅ CLI commands (transcribe, cache)
+- ✅ Test suite expanded (313 tests, 77% coverage)
 
 ### Phase 3: LLM Extraction
 

@@ -22,8 +22,8 @@ from inkwell.transcription.gemini import (
 from inkwell.transcription.manager import TranscriptionManager
 from inkwell.transcription.models import (
     Transcript,
-    TranscriptSegment,
     TranscriptionResult,
+    TranscriptSegment,
 )
 from inkwell.transcription.youtube import TranscriptionError, YouTubeTranscriber
 

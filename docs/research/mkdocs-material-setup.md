@@ -52,6 +52,16 @@ adr:
 pip install mkdocs-material-adr
 ```
 
+**Important Note on Theme Configuration:**
+
+There is a discrepancy between the README documentation and actual implementation:
+- **README says**: Use `theme: name: mkdocs-material-adr`
+- **Actual implementation**: The project itself uses `theme: name: material`
+
+**Correct approach**: Use `material` as the theme name. The ADR functionality comes from the plugin, not a custom theme.
+
+See: [Lesson Learned - mkdocs-material-adr Theme Configuration](../lessons/2025-11-07-mkdocs-material-adr-theme-config.md)
+
 ### 3. **Configuration Requirements**
 
 Minimal setup needed - just create `mkdocs.yml` at project root:

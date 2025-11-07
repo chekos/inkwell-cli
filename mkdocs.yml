@@ -7,7 +7,7 @@ repo_name: chekos/inkwell-cli
 docs_dir: docs
 
 theme:
-  name: mkdocs-material-adr
+  name: material
   palette:
     # Light mode
     - media: "(prefers-color-scheme: light)"

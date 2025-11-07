@@ -17,10 +17,10 @@ ADRs include YAML frontmatter for enhanced visualization in MkDocs Material:
 title: ADR NNN - Decision Title
 adr:
   author: Your Name
-  created: DD-Mon-YYYY
-  status: proposed | accepted | superseded
-  superseded_by: NNN-title  # Optional
-  extends: [NNN-first, NNN-second]  # Optional
+  created: 01-Jan-2025  # Format: DD-Mon-YYYY
+  status: proposed  # or: accepted, superseded
+  # superseded_by: NNN-title  # Optional: only if superseded
+  # extends: [NNN-first, NNN-second]  # Optional: list of related ADRs
 ---
 ```
 

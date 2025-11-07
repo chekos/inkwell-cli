@@ -4,10 +4,12 @@ This package handles markdown generation, frontmatter formatting,
 and file writing for extracted podcast content.
 """
 
+from .markdown import MarkdownGenerator
 from .models import EpisodeMetadata, EpisodeOutput, OutputFile
 
 __all__ = [
     "EpisodeMetadata",
     "OutputFile",
     "EpisodeOutput",
+    "MarkdownGenerator",
 ]

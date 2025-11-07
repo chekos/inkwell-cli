@@ -1,14 +1,17 @@
 """CLI entry point for Inkwell."""
 
+import asyncio
 import sys
 from pathlib import Path
 
 import typer
 from rich.console import Console
+from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
 
 from inkwell.config.manager import ConfigManager
 from inkwell.config.schema import AuthConfig, FeedConfig
+from inkwell.transcription import CostEstimate, TranscriptionManager
 from inkwell.utils.display import truncate_url
 from inkwell.utils.errors import (
     DuplicateFeedError,
@@ -302,6 +305,173 @@ def config_command(
                 f"[red]✗[/red] Unknown action: {action}"
             )
             console.print("Valid actions: show, edit, set")
+            sys.exit(1)
+
+    except InkwellError as e:
+        console.print(f"[red]✗[/red] Error: {e}")
+        sys.exit(1)
+
+
+@app.command("transcribe")
+def transcribe_command(
+    url: str = typer.Argument(..., help="Episode URL to transcribe"),
+    output: Path | None = typer.Option(
+        None, "--output", "-o", help="Output file path (default: print to stdout)"
+    ),
+    force: bool = typer.Option(
+        False, "--force", "-f", help="Force re-transcription (bypass cache)"
+    ),
+    skip_youtube: bool = typer.Option(
+        False, "--skip-youtube", help="Skip YouTube, use Gemini directly"
+    ),
+) -> None:
+    """Transcribe a podcast episode.
+
+    Uses multi-tier strategy:
+    1. Check cache (unless --force)
+    2. Try YouTube transcript (free, unless --skip-youtube)
+    3. Fall back to audio download + Gemini (costs money)
+
+    Examples:
+        inkwell transcribe https://youtube.com/watch?v=xyz
+
+        inkwell transcribe https://example.com/episode.mp3 --output transcript.txt
+
+        inkwell transcribe https://youtube.com/watch?v=xyz --force
+    """
+
+    def confirm_cost(estimate: CostEstimate) -> bool:
+        """Confirm Gemini transcription cost with user."""
+        console.print(
+            f"\n[yellow]⚠[/yellow] Gemini transcription will cost approximately "
+            f"[bold]{estimate.formatted_cost}[/bold]"
+        )
+        console.print(f"[dim]File size: {estimate.file_size_mb:.1f} MB[/dim]")
+        return typer.confirm("Proceed with transcription?")
+
+    async def run_transcription() -> None:
+        try:
+            # Initialize manager with cost confirmation
+            manager = TranscriptionManager(cost_confirmation_callback=confirm_cost)
+
+            # Run transcription with progress indicator
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                console=console,
+            ) as progress:
+                task = progress.add_task("Transcribing...", total=None)
+
+                result = await manager.transcribe(
+                    url, use_cache=not force, skip_youtube=skip_youtube
+                )
+
+                progress.update(task, completed=True)
+
+            # Handle result
+            if not result.success:
+                console.print(f"[red]✗[/red] Transcription failed: {result.error}")
+                sys.exit(1)
+
+            assert result.transcript is not None
+
+            # Display metadata
+            console.print("\n[green]✓[/green] Transcription complete")
+            console.print(f"[dim]Source: {result.transcript.source}[/dim]")
+            console.print(f"[dim]Language: {result.transcript.language}[/dim]")
+            console.print(f"[dim]Duration: {result.duration_seconds:.1f}s[/dim]")
+
+            if result.cost_usd > 0:
+                console.print(f"[dim]Cost: ${result.cost_usd:.4f}[/dim]")
+
+            if result.from_cache:
+                console.print("[dim]✓ Retrieved from cache[/dim]")
+
+            # Get transcript text
+            transcript_text = result.transcript.full_text
+
+            # Output
+            if output:
+                output.parent.mkdir(parents=True, exist_ok=True)
+                output.write_text(transcript_text)
+                console.print(f"\n[cyan]→[/cyan] Saved to {output}")
+            else:
+                console.print("\n" + "=" * 80)
+                console.print(transcript_text)
+                console.print("=" * 80)
+
+        except KeyboardInterrupt:
+            console.print("\n[yellow]Cancelled by user[/yellow]")
+            sys.exit(130)
+        except Exception as e:
+            console.print(f"[red]✗[/red] Error: {e}")
+            sys.exit(1)
+
+    # Run async function
+    asyncio.run(run_transcription())
+
+
+@app.command("cache")
+def cache_command(
+    action: str = typer.Argument(..., help="Action: stats, clear, clear-expired"),
+) -> None:
+    """Manage transcript cache.
+
+    Actions:
+        stats:         Show cache statistics
+        clear:         Clear all cached transcripts
+        clear-expired: Remove expired cache entries
+
+    Examples:
+        inkwell cache stats
+
+        inkwell cache clear
+    """
+    try:
+        manager = TranscriptionManager()
+
+        if action == "stats":
+            stats = manager.cache_stats()
+
+            console.print("\n[bold]Transcript Cache Statistics[/bold]\n")
+
+            table = Table(show_header=False, box=None)
+            table.add_column("Key", style="cyan")
+            table.add_column("Value", style="white")
+
+            table.add_row("Total entries", str(stats["total"]))
+            table.add_row("Valid", str(stats["valid"]))
+            table.add_row("Expired", str(stats["expired"]))
+            table.add_row(
+                "Size", f"{stats['size_bytes'] / 1024 / 1024:.2f} MB"
+            )
+            table.add_row("Cache directory", stats["cache_dir"])
+
+            console.print(table)
+
+            if stats["sources"]:
+                console.print("\n[bold]By Source:[/bold]")
+                for source, count in stats["sources"].items():
+                    console.print(f"  • {source}: {count}")
+
+        elif action == "clear":
+            confirm = typer.confirm("\nAre you sure you want to clear all cached transcripts?")
+            if not confirm:
+                console.print("[yellow]Cancelled[/yellow]")
+                return
+
+            count = manager.clear_cache()
+            console.print(f"[green]✓[/green] Cleared {count} cache entries")
+
+        elif action == "clear-expired":
+            count = manager.clear_expired_cache()
+            console.print(
+                f"[green]✓[/green] Removed {count} expired cache entries"
+            )
+
+        else:
+            console.print(f"[red]✗[/red] Unknown action: {action}")
+            console.print("Valid actions: stats, clear, clear-expired")
             sys.exit(1)
 
     except InkwellError as e:

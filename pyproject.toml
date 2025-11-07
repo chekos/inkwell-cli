@@ -76,6 +76,7 @@ ignore = []
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = ["S101"]  # Allow assert in tests
+"src/inkwell/cli.py" = ["B008"]  # Allow typer.Option in function defaults (Typer pattern)
 
 [tool.mypy]
 python_version = "3.10"

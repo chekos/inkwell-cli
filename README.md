@@ -32,12 +32,8 @@ Coming in Phase 2:
 git clone https://github.com/your-username/inkwell-cli.git
 cd inkwell-cli
 
-# Create virtual environment
-python3 -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-
-# Install in development mode
-pip install -e .
+# Install dependencies using uv
+uv sync --dev
 ```
 
 ### Basic Usage
@@ -184,19 +180,19 @@ podcast-name-YYYY-MM-DD-episode-title/
 
 ```bash
 # Install development dependencies
-pip install -e ".[dev]"
+uv sync --dev
 
 # Install pre-commit hooks
-pre-commit install
+uv run pre-commit install
 
 # Run tests
-make test
+uv run pytest
 
 # Run linting
-make lint
+uv run ruff check .
 
 # Format code
-make format
+uv run ruff format .
 ```
 
 ### Project Structure
@@ -233,29 +229,29 @@ inkwell-cli/
 
 ```bash
 # Run all tests
-python3 -m pytest
+uv run pytest
 
 # Run with verbose output
-python3 -m pytest -v
+uv run pytest -v
 
 # Run specific test file
-python3 -m pytest tests/unit/test_config_manager.py
+uv run pytest tests/unit/test_config_manager.py
 
 # Run with coverage
-python3 -m pytest --cov=inkwell --cov-report=html
+uv run pytest --cov=inkwell --cov-report=html
 ```
 
 ### Code Quality
 
 ```bash
 # Type checking
-mypy src/
+uv run mypy src/
 
 # Linting
-ruff check .
+uv run ruff check .
 
 # Formatting
-ruff format .
+uv run ruff format .
 ```
 
 ## Documentation

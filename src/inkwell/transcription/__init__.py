@@ -18,9 +18,12 @@ from inkwell.transcription.models import (
     TranscriptSegment,
     TranscriptionResult,
 )
+from inkwell.transcription.youtube import TranscriptionError, YouTubeTranscriber
 
 __all__ = [
     "Transcript",
     "TranscriptSegment",
     "TranscriptionResult",
+    "TranscriptionError",
+    "YouTubeTranscriber",
 ]

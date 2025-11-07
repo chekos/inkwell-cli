@@ -19,6 +19,7 @@ from inkwell.transcription.gemini import (
     GeminiTranscriber,
     GeminiTranscriberWithSegments,
 )
+from inkwell.transcription.manager import TranscriptionManager
 from inkwell.transcription.models import (
     Transcript,
     TranscriptSegment,
@@ -33,6 +34,7 @@ __all__ = [
     "GeminiTranscriberWithSegments",
     "Transcript",
     "TranscriptCache",
+    "TranscriptionManager",
     "TranscriptSegment",
     "TranscriptionResult",
     "TranscriptionError",

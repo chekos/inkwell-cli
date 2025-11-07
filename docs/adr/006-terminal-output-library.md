@@ -1,3 +1,11 @@
+---
+title: ADR 006 - Terminal Output Enhancement Library
+adr:
+  author: Claude
+  created: 06-Nov-2025
+  status: accepted
+---
+
 # ADR-006: Terminal Output Enhancement Library
 
 **Status**: Accepted

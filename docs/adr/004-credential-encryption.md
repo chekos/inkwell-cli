@@ -1,3 +1,11 @@
+---
+title: ADR 004 - Credential Encryption Implementation
+adr:
+  author: Claude
+  created: 06-Nov-2025
+  status: accepted
+---
+
 # ADR-004: Credential Encryption Implementation
 
 **Status**: Accepted

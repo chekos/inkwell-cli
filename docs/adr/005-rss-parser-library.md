@@ -1,3 +1,11 @@
+---
+title: ADR 005 - RSS Parser Library Selection
+adr:
+  author: Claude
+  created: 06-Nov-2025
+  status: accepted
+---
+
 # ADR-005: RSS Parser Library Selection
 
 **Status**: Accepted

@@ -1,3 +1,11 @@
+---
+title: ADR 002 - Phase 1 Architecture & Technology Decisions
+adr:
+  author: Claude
+  created: 06-Nov-2025
+  status: proposed
+---
+
 # ADR-002: Phase 1 Architecture & Technology Decisions
 
 **Status**: Proposed

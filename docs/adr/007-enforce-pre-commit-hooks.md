@@ -1,3 +1,11 @@
+---
+title: ADR 007 - Enforce Pre-commit Hooks for Code Quality
+adr:
+  author: Claude
+  created: 06-Nov-2025
+  status: accepted
+---
+
 # ADR 007: Enforce Pre-commit Hooks for Code Quality
 
 **Date:** 2025-11-06

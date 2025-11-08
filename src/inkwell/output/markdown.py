@@ -129,16 +129,16 @@ class MarkdownGenerator:
         Returns:
             Formatted markdown content
         """
-        content = result.content
+        if not result.extracted_content:
+            return "# Error\n\nNo content extracted."
 
-        # Dispatch to format-specific formatter
-        if content.format == "json":
+        content = result.extracted_content
+
+        # Check if content is dict (structured data) or string (text)
+        if isinstance(content.content, dict):
             return self._format_json_content(result.template_name, content)
-        elif content.format == "markdown":
-            return self._format_markdown_content(content)
-        elif content.format == "yaml":
-            return self._format_yaml_content(content)
-        else:  # text
+        else:
+            # String content - return as-is
             return self._format_text_content(content)
 
     def _format_json_content(self, template_name: str, content: ExtractedContent) -> str:
@@ -153,18 +153,20 @@ class MarkdownGenerator:
         Returns:
             Formatted markdown
         """
+        data = content.content if isinstance(content.content, dict) else {}
+
         # Use template-specific formatter if available
         if "quote" in template_name.lower():
-            return self._format_quotes(content.data)
+            return self._format_quotes(data)
         elif "concept" in template_name.lower():
-            return self._format_concepts(content.data)
+            return self._format_concepts(data)
         elif "tool" in template_name.lower():
-            return self._format_tools(content.data)
+            return self._format_tools(data)
         elif "book" in template_name.lower():
-            return self._format_books(content.data)
+            return self._format_books(data)
         else:
             # Generic JSON formatting
-            return self._format_generic_json(content.data)
+            return self._format_generic_json(data)
 
     def _format_quotes(self, data: dict[str, Any]) -> str:
         """Format quotes as markdown list.
@@ -303,7 +305,7 @@ class MarkdownGenerator:
         Returns:
             Markdown content (as-is)
         """
-        return content.data.get("text", "")
+        return str(content.content)
 
     def _format_yaml_content(self, content: ExtractedContent) -> str:
         """Format YAML content as markdown code block.
@@ -315,7 +317,8 @@ class MarkdownGenerator:
             Formatted markdown
         """
         lines = ["# Extracted Data\n"]
-        yaml_str = yaml.dump(content.data, default_flow_style=False)
+        data = content.content if isinstance(content.content, dict) else {}
+        yaml_str = yaml.dump(data, default_flow_style=False)
         lines.append("```yaml")
         lines.append(yaml_str)
         lines.append("```")
@@ -330,4 +333,4 @@ class MarkdownGenerator:
         Returns:
             Text content
         """
-        return content.data.get("text", "")
+        return str(content.content)

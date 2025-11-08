@@ -34,21 +34,23 @@ def extraction_results() -> list[ExtractionResult]:
     """Create sample extraction results."""
     return [
         ExtractionResult(
+            episode_url="https://example.com/ep1",
             template_name="summary",
-            content=ExtractedContent(
-                format="text",
-                data={"text": "Episode summary"},
-                raw="Episode summary",
+            success=True,
+            extracted_content=ExtractedContent(
+                template_name="summary",
+                content="Episode summary",
             ),
             cost_usd=0.01,
             provider="gemini",
         ),
         ExtractionResult(
+            episode_url="https://example.com/ep1",
             template_name="quotes",
-            content=ExtractedContent(
-                format="json",
-                data={"quotes": [{"text": "Test quote", "speaker": "John"}]},
-                raw='{"quotes": [...]}',
+            success=True,
+            extracted_content=ExtractedContent(
+                template_name="quotes",
+                content={"quotes": [{"text": "Test quote", "speaker": "John"}]},
             ),
             cost_usd=0.05,
             provider="claude",

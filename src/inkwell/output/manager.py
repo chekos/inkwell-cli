@@ -92,7 +92,7 @@ class OutputManager:
                 OutputFile(
                     template_name=result.template_name,
                     filename=filename,
-                    file_path=file_path,
+                    content=markdown_content,
                     size_bytes=len(markdown_content.encode("utf-8")),
                 )
             )

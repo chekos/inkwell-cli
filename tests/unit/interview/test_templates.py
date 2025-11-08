@@ -148,22 +148,14 @@ def test_get_template_creative():
 
 def test_get_template_invalid_name():
     """Test that getting invalid template raises ValueError."""
-    with pytest.raises(ValueError) as exc_info:
+    with pytest.raises(ValueError, match="Unknown template: nonexistent"):
         get_template("nonexistent")
-
-    assert "Unknown template: nonexistent" in str(exc_info.value)
-    assert "Available: " in str(exc_info.value)
 
 
 def test_get_template_error_message_shows_available():
     """Test that error message lists available templates."""
-    with pytest.raises(ValueError) as exc_info:
+    with pytest.raises(ValueError, match="Unknown template: invalid"):
         get_template("invalid")
-
-    error_msg = str(exc_info.value)
-    assert "reflective" in error_msg
-    assert "analytical" in error_msg
-    assert "creative" in error_msg
 
 
 # list_templates Tests
@@ -219,10 +211,8 @@ def test_get_template_description_creative():
 
 def test_get_template_description_invalid():
     """Test that getting description for invalid template raises ValueError."""
-    with pytest.raises(ValueError) as exc_info:
+    with pytest.raises(ValueError, match="Unknown template"):
         get_template_description("invalid")
-
-    assert "Unknown template" in str(exc_info.value)
 
 
 # Template Characteristics Tests

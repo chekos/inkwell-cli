@@ -27,6 +27,40 @@ class FeedConfig(BaseModel):
     custom_templates: list[str] = Field(default_factory=list)
 
 
+class InterviewConfig(BaseModel):
+    """Interview mode configuration."""
+
+    enabled: bool = True
+    auto_start: bool = False  # If true, always interview (no --interview flag needed)
+
+    # Style
+    default_template: str = "reflective"  # reflective, analytical, creative
+    question_count: int = 5
+    max_depth: int = 3
+
+    # User preferences
+    guidelines: str = ""
+
+    # Session
+    save_raw_transcript: bool = True
+    resume_enabled: bool = True
+    session_timeout_minutes: int = 60
+
+    # Output
+    include_action_items: bool = True
+    include_key_insights: bool = True
+    format_style: Literal["structured", "narrative", "qa"] = "structured"
+
+    # Cost
+    max_cost_per_interview: float = 0.50
+    confirm_high_cost: bool = True
+
+    # Advanced
+    model: str = "claude-sonnet-4-5"
+    temperature: float = 0.7
+    streaming: bool = True
+
+
 class GlobalConfig(BaseModel):
     """Global Inkwell configuration."""
 
@@ -45,6 +79,7 @@ class GlobalConfig(BaseModel):
             "interview": ["books-mentioned", "people-mentioned"],
         }
     )
+    interview: InterviewConfig = Field(default_factory=InterviewConfig)
 
 
 class Feeds(BaseModel):

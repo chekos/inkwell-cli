@@ -3,6 +3,7 @@
 from inkwell.interview import ui
 from inkwell.interview.agent import InterviewAgent
 from inkwell.interview.context_builder import InterviewContextBuilder
+from inkwell.interview.formatter import TranscriptFormatter
 from inkwell.interview.models import (
     Exchange,
     InterviewContext,
@@ -32,6 +33,7 @@ __all__ = [
     "Question",
     "Response",
     "SessionManager",
+    "TranscriptFormatter",
     "get_template",
     "get_template_description",
     "list_templates",

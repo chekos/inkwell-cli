@@ -2,6 +2,7 @@
 
 import asyncio
 import sys
+from datetime import datetime
 from pathlib import Path
 
 import typer
@@ -14,6 +15,7 @@ from inkwell.config.schema import AuthConfig, FeedConfig
 from inkwell.extraction import ExtractionEngine
 from inkwell.extraction.template_selector import TemplateSelector
 from inkwell.extraction.templates import TemplateLoader
+from inkwell.feeds.models import Episode
 from inkwell.output import EpisodeMetadata, OutputManager
 from inkwell.transcription import CostEstimate, TranscriptionManager
 from inkwell.utils.display import truncate_url
@@ -568,17 +570,26 @@ def fetch_command(
             if templates:
                 custom_template_list = [t.strip() for t in templates.split(",")]
 
-            # Create episode metadata
-            episode_metadata = EpisodeMetadata(
+            # Create episode object for template selection
+            episode = Episode(
+                title=f"Episode from {url}",
+                url=url,  # type: ignore
+                published=datetime.now(),
+                description="",
                 podcast_name="Unknown Podcast",  # Would come from RSS in real implementation
-                episode_title=f"Episode from {url}",
+            )
+
+            # Create episode metadata for output
+            episode_metadata = EpisodeMetadata(
+                podcast_name=episode.podcast_name,
+                episode_title=episode.title,
                 episode_url=url,
                 transcription_source=result.transcript.source,
             )
 
             # Select templates
             selected_templates = selector.select_templates(
-                episode_metadata=episode_metadata.model_dump(),
+                episode=episode,
                 category=category,
                 custom_templates=custom_template_list,
                 transcript=result.transcript.full_text,

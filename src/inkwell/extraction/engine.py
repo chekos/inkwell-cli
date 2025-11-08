@@ -76,6 +76,9 @@ class ExtractionEngine:
         Raises:
             ExtractionError: If extraction fails
         """
+        # Get episode URL from metadata
+        episode_url = metadata.get("episode_url", "")
+
         # Check cache first
         if use_cache:
             cached = self.cache.get(template.name, template.version, transcript)
@@ -83,10 +86,13 @@ class ExtractionEngine:
                 # Parse cached result
                 content = self._parse_output(cached, template)
                 return ExtractionResult(
+                    episode_url=episode_url,
                     template_name=template.name,
-                    content=content,
+                    success=True,
+                    extracted_content=content,
                     cost_usd=0.0,  # Cached, no cost
                     provider="cache",
+                    from_cache=True,
                 )
 
         # Select provider
@@ -111,17 +117,25 @@ class ExtractionEngine:
             self.total_cost_usd += estimated_cost
 
             return ExtractionResult(
+                episode_url=episode_url,
                 template_name=template.name,
-                content=content,
+                success=True,
+                extracted_content=content,
                 cost_usd=estimated_cost,
                 provider=provider_name,
             )
 
         except Exception as e:
-            # Wrap errors
-            if isinstance(e, ExtractionError):
-                raise
-            raise ExtractionError(f"Extraction failed: {str(e)}") from e
+            # Return failed result instead of raising
+            return ExtractionResult(
+                episode_url=episode_url,
+                template_name=template.name,
+                success=False,
+                extracted_content=None,
+                error=str(e),
+                cost_usd=0.0,
+                provider=provider_name,
+            )
 
     async def extract_all(
         self,
@@ -238,18 +252,16 @@ class ExtractionEngine:
             try:
                 data = json.loads(raw_output)
                 return ExtractedContent(
-                    format="json",
-                    data=data,
-                    raw=raw_output,
+                    template_name=template.name,
+                    content=data,
                 )
             except json.JSONDecodeError as e:
                 raise ValidationError(f"Invalid JSON output: {str(e)}") from e
 
         elif template.expected_format == "markdown":
             return ExtractedContent(
-                format="markdown",
-                data={"text": raw_output},
-                raw=raw_output,
+                template_name=template.name,
+                content=raw_output,
             )
 
         elif template.expected_format == "yaml":
@@ -258,18 +270,16 @@ class ExtractionEngine:
             try:
                 data = yaml.safe_load(raw_output)
                 return ExtractedContent(
-                    format="yaml",
-                    data=data,
-                    raw=raw_output,
+                    template_name=template.name,
+                    content=data,
                 )
             except yaml.YAMLError as e:
                 raise ValidationError(f"Invalid YAML output: {str(e)}") from e
 
         else:  # text
             return ExtractedContent(
-                format="text",
-                data={"text": raw_output},
-                raw=raw_output,
+                template_name=template.name,
+                content=raw_output,
             )
 
     def get_total_cost(self) -> float:

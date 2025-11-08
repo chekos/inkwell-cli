@@ -248,21 +248,8 @@ class EpisodeOutput(BaseModel):
         Returns:
             Filesystem-safe directory name
         """
-        import re
-
-        # Slugify podcast name
-        podcast_slug = re.sub(r"[^\w\s-]", "", self.metadata.podcast_name.lower())
-        podcast_slug = re.sub(r"[-\s]+", "-", podcast_slug).strip("-")
-
-        # Slugify episode title
-        title_slug = re.sub(r"[^\w\s-]", "", self.metadata.episode_title.lower())
-        title_slug = re.sub(r"[-\s]+", "-", title_slug).strip("-")
-
-        # Truncate if too long
-        if len(title_slug) > 50:
-            title_slug = title_slug[:50].rstrip("-")
-
-        return f"{podcast_slug}-{self.metadata.date_slug}-{title_slug}"
+        # Delegate to metadata's directory_name property (DRY)
+        return self.metadata.directory_name
 
     @property
     def size_formatted(self) -> str:

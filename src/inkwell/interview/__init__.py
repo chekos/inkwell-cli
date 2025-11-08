@@ -4,6 +4,7 @@ from inkwell.interview import ui
 from inkwell.interview.agent import InterviewAgent
 from inkwell.interview.context_builder import InterviewContextBuilder
 from inkwell.interview.formatter import TranscriptFormatter
+from inkwell.interview.manager import InterviewManager
 from inkwell.interview.models import (
     Exchange,
     InterviewContext,
@@ -27,6 +28,7 @@ __all__ = [
     "InterviewContext",
     "InterviewContextBuilder",
     "InterviewGuidelines",
+    "InterviewManager",
     "InterviewResult",
     "InterviewSession",
     "InterviewTemplate",

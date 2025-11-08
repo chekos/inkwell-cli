@@ -143,6 +143,29 @@ class ExtractedContent(BaseModel):
         ...     content={"summary": "...", "takeaways": [...]},
         ...     confidence=0.95
         ... )
+
+    Technical Debt:
+        The 'content' field accepts both str and dict[str, Any], which requires
+        runtime type checking everywhere it's used. Consider refactoring to use
+        discriminated unions in Phase 4:
+
+        Option 1 - Tagged Union:
+            class TextContent(BaseModel):
+                type: Literal["text"] = "text"
+                template_name: str
+                text: str
+
+            class StructuredContent(BaseModel):
+                type: Literal["structured"] = "structured"
+                template_name: str
+                data: dict[str, Any]
+
+            ExtractedContentType = TextContent | StructuredContent
+
+        This would provide compile-time type safety and eliminate the need for
+        isinstance() checks in consumers (markdown.py, etc.).
+
+        See: https://docs.pydantic.dev/latest/concepts/unions/#discriminated-unions
     """
 
     template_name: str = Field(..., description="Name of template that produced this")

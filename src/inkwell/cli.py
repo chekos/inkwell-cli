@@ -661,6 +661,14 @@ def fetch_command(
             # Summary
             console.print("\n[bold green]✓ Complete![/bold green]")
 
+            # Format output directory path for display
+            try:
+                # Try to show path relative to current directory
+                output_display = str(episode_output.directory.relative_to(Path.cwd()))
+            except ValueError:
+                # If not under cwd, show absolute path
+                output_display = str(episode_output.directory)
+
             table = Table(show_header=False, box=None, padding=(0, 2))
             table.add_column("Key", style="dim")
             table.add_column("Value", style="white")
@@ -668,7 +676,7 @@ def fetch_command(
             table.add_row("Episode:", episode_metadata.episode_title)
             table.add_row("Templates:", f"{len(extraction_results)}")
             table.add_row("Total cost:", f"${engine.get_total_cost():.4f}")
-            table.add_row("Output:", str(episode_output.directory.relative_to(Path.cwd() if output_path == Path.cwd() else output_path.parent)))
+            table.add_row("Output:", output_display)
 
             console.print(table)
 

@@ -12,6 +12,7 @@ from inkwell.interview.models import (
     Question,
     Response,
 )
+from inkwell.interview.session_manager import SessionManager
 from inkwell.interview.templates import (
     get_template,
     get_template_description,
@@ -29,6 +30,7 @@ __all__ = [
     "InterviewTemplate",
     "Question",
     "Response",
+    "SessionManager",
     "get_template",
     "get_template_description",
     "list_templates",

@@ -1,0 +1,39 @@
+# Summary Extraction Template
+# Generates a comprehensive episode summary with key takeaways
+
+name: summary
+version: "1.0"
+description: "Generate a comprehensive 2-3 paragraph summary with key takeaways"
+
+system_prompt: |
+  You are an expert podcast analyst specializing in creating clear, concise summaries.
+
+  Your task is to distill podcast episodes into digestible summaries that capture:
+  - Main topics and themes discussed
+  - Key insights and takeaways
+  - Important conclusions or recommendations
+
+  Focus on being accurate and concise. Do not add information not present in the transcript.
+
+user_prompt_template: |
+  Summarize the following podcast episode.
+
+  Podcast: {{ metadata.podcast_name }}
+  Episode: {{ metadata.episode_title }}
+  {% if metadata.duration %}Duration: {{ metadata.duration }}{% endif %}
+
+  Transcript:
+  {{ transcript }}
+
+  Provide:
+  1. A 2-3 paragraph summary capturing the main discussion
+  2. A bulleted list of 3-5 key takeaways
+
+  Format as clean markdown with clear sections.
+
+expected_format: markdown
+max_tokens: 2000
+temperature: 0.3
+priority: 0
+applies_to: [all]
+model_preference: auto

@@ -2,6 +2,7 @@
 
 import asyncio
 import sys
+from datetime import datetime
 from pathlib import Path
 
 import typer
@@ -11,6 +12,11 @@ from rich.table import Table
 
 from inkwell.config.manager import ConfigManager
 from inkwell.config.schema import AuthConfig, FeedConfig
+from inkwell.extraction import ExtractionEngine
+from inkwell.extraction.template_selector import TemplateSelector
+from inkwell.extraction.templates import TemplateLoader
+from inkwell.feeds.models import Episode
+from inkwell.output import EpisodeMetadata, OutputManager
 from inkwell.transcription import CostEstimate, TranscriptionManager
 from inkwell.utils.display import truncate_url
 from inkwell.utils.errors import (
@@ -477,6 +483,217 @@ def cache_command(
     except InkwellError as e:
         console.print(f"[red]✗[/red] Error: {e}")
         sys.exit(1)
+
+
+@app.command("fetch")
+def fetch_command(
+    url: str = typer.Argument(..., help="Episode URL to process"),
+    output_dir: Path | None = typer.Option(
+        None, "--output", "-o", help="Output directory (default: ~/inkwell-notes)"
+    ),
+    templates: str | None = typer.Option(
+        None, "--templates", "-t", help="Comma-separated template names (default: auto)"
+    ),
+    category: str | None = typer.Option(
+        None, "--category", "-c", help="Episode category (auto-detected if not specified)"
+    ),
+    provider: str | None = typer.Option(
+        None, "--provider", "-p", help="LLM provider: claude, gemini, auto (default: auto)"
+    ),
+    skip_cache: bool = typer.Option(
+        False, "--skip-cache", help="Skip extraction cache"
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Show cost estimate without extracting"
+    ),
+    overwrite: bool = typer.Option(
+        False, "--overwrite", help="Overwrite existing episode directory"
+    ),
+) -> None:
+    """Fetch and process a podcast episode.
+
+    Complete pipeline: transcribe → extract → generate markdown → write files
+
+    Examples:
+        inkwell fetch https://youtube.com/watch?v=xyz
+
+        inkwell fetch https://example.com/ep1.mp3 --templates summary,quotes
+
+        inkwell fetch https://... --category tech --provider claude
+
+        inkwell fetch https://... --dry-run  # Cost estimate only
+    """
+
+    async def run_fetch() -> None:
+        try:
+            config = ConfigManager().load_config()
+            output_path = output_dir or config.default_output_dir
+
+            console.print("[bold cyan]Inkwell Extraction Pipeline[/bold cyan]\n")
+
+            # Step 1: Transcribe
+            console.print("[bold]Step 1/4:[/bold] Transcribing episode...")
+
+            transcription_manager = TranscriptionManager()
+
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                console=console,
+            ) as progress:
+                task = progress.add_task("Transcribing...", total=None)
+
+                result = await transcription_manager.transcribe(
+                    url, use_cache=True, skip_youtube=False
+                )
+
+                progress.update(task, completed=True)
+
+            if not result.success:
+                console.print(f"[red]✗[/red] Transcription failed: {result.error}")
+                sys.exit(1)
+
+            assert result.transcript is not None
+
+            console.print(f"[green]✓[/green] Transcribed ({result.transcript.source})")
+            console.print(f"  Duration: {result.duration_seconds:.1f}s")
+            console.print(f"  Words: ~{len(result.transcript.full_text.split())}")
+
+            # Step 2: Select templates
+            console.print("\n[bold]Step 2/4:[/bold] Selecting templates...")
+
+            loader = TemplateLoader()
+            selector = TemplateSelector(loader=loader)
+
+            # Parse custom templates if provided
+            custom_template_list = None
+            if templates:
+                custom_template_list = [t.strip() for t in templates.split(",")]
+
+            # Create episode object for template selection
+            episode = Episode(
+                title=f"Episode from {url}",
+                url=url,  # type: ignore
+                published=datetime.now(),
+                description="",
+                podcast_name="Unknown Podcast",  # Would come from RSS in real implementation
+            )
+
+            # Create episode metadata for output
+            episode_metadata = EpisodeMetadata(
+                podcast_name=episode.podcast_name,
+                episode_title=episode.title,
+                episode_url=url,
+                transcription_source=result.transcript.source,
+            )
+
+            # Select templates
+            selected_templates = selector.select_templates(
+                episode=episode,
+                category=category,
+                custom_templates=custom_template_list,
+                transcript=result.transcript.full_text,
+            )
+
+            console.print(f"[green]✓[/green] Selected {len(selected_templates)} templates:")
+            for tmpl in selected_templates:
+                console.print(f"  • {tmpl.name} (priority: {tmpl.priority})")
+
+            # Step 3: Extract
+            console.print("\n[bold]Step 3/4:[/bold] Extracting content...")
+
+            # Initialize extraction engine
+            engine = ExtractionEngine(
+                default_provider=provider or "gemini"
+            )
+
+            # Estimate cost
+            estimated_cost = engine.estimate_total_cost(
+                templates=selected_templates,
+                transcript=result.transcript.full_text,
+            )
+
+            console.print(f"  Estimated cost: [yellow]${estimated_cost:.4f}[/yellow]")
+
+            if dry_run:
+                console.print("\n[yellow]Dry run mode - stopping here[/yellow]")
+                console.print(f"Total estimated cost: ${estimated_cost:.4f}")
+                return
+
+            # Extract with progress
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                console=console,
+            ) as progress:
+                task = progress.add_task("Extracting content...", total=None)
+
+                extraction_results = await engine.extract_all(
+                    templates=selected_templates,
+                    transcript=result.transcript.full_text,
+                    metadata=episode_metadata.model_dump(),
+                    use_cache=not skip_cache,
+                )
+
+                progress.update(task, completed=True)
+
+            # Report extraction results
+            cached_count = sum(1 for r in extraction_results if r.provider == "cache")
+            console.print(f"[green]✓[/green] Extracted {len(extraction_results)} templates")
+            if cached_count > 0:
+                console.print(f"  • {cached_count} from cache (saved ${engine.get_total_cost():.4f})")
+            console.print(f"  • Total cost: [yellow]${engine.get_total_cost():.4f}[/yellow]")
+
+            # Step 4: Write output
+            console.print("\n[bold]Step 4/4:[/bold] Writing markdown files...")
+
+            output_manager = OutputManager(output_dir=output_path)
+
+            episode_output = output_manager.write_episode(
+                episode_metadata=episode_metadata,
+                extraction_results=extraction_results,
+                overwrite=overwrite,
+            )
+
+            console.print(f"[green]✓[/green] Wrote {len(episode_output.output_files)} files")
+            console.print(f"  Directory: [cyan]{episode_output.directory}[/cyan]")
+
+            # Summary
+            console.print("\n[bold green]✓ Complete![/bold green]")
+
+            # Format output directory path for display
+            try:
+                # Try to show path relative to current directory
+                output_display = str(episode_output.directory.relative_to(Path.cwd()))
+            except ValueError:
+                # If not under cwd, show absolute path
+                output_display = str(episode_output.directory)
+
+            table = Table(show_header=False, box=None, padding=(0, 2))
+            table.add_column("Key", style="dim")
+            table.add_column("Value", style="white")
+
+            table.add_row("Episode:", episode_metadata.episode_title)
+            table.add_row("Templates:", f"{len(extraction_results)}")
+            table.add_row("Total cost:", f"${engine.get_total_cost():.4f}")
+            table.add_row("Output:", output_display)
+
+            console.print(table)
+
+        except KeyboardInterrupt:
+            console.print("\n[yellow]Cancelled by user[/yellow]")
+            sys.exit(130)
+        except FileExistsError as e:
+            console.print(f"\n[red]✗[/red] {e}")
+            sys.exit(1)
+        except Exception as e:
+            console.print(f"\n[red]✗[/red] Error: {e}")
+            import traceback
+            console.print(f"[dim]{traceback.format_exc()}[/dim]")
+            sys.exit(1)
+
+    # Run async function
+    asyncio.run(run_fetch())
 
 
 if __name__ == "__main__":

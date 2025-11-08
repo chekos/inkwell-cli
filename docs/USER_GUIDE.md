@@ -8,8 +8,9 @@ Complete guide to using Inkwell for podcast note-taking.
 2. [Getting Started](#getting-started)
 3. [Managing Feeds](#managing-feeds)
 4. [Configuration](#configuration)
-5. [Troubleshooting](#troubleshooting)
-6. [Advanced Usage](#advanced-usage)
+5. [Content Extraction](#content-extraction)
+6. [Troubleshooting](#troubleshooting)
+7. [Advanced Usage](#advanced-usage)
 
 ## Installation
 
@@ -254,6 +255,347 @@ Inkwell follows XDG Base Directory specifications:
 ~/.cache/inkwell/
 └── (future: transcripts, downloads)
 ```
+
+## Content Extraction
+
+### Overview
+
+Inkwell transforms podcast episodes into structured markdown notes using an AI-powered extraction pipeline:
+
+```
+Podcast URL → Transcribe → Select Templates → Extract Content → Write Markdown
+```
+
+**Key features:**
+- **Auto-transcription**: YouTube transcripts or Gemini fallback
+- **Template-based extraction**: Quotes, summaries, key concepts, tools mentioned, etc.
+- **Smart provider selection**: Claude for precision, Gemini for cost efficiency
+- **Cost transparency**: Estimates before extraction, actual costs reported
+- **Caching**: Saves time and money on re-processing
+- **Concurrent processing**: Fast parallel template extraction
+
+### Basic Usage
+
+Extract content from any podcast episode:
+
+```bash
+inkwell fetch https://youtube.com/watch?v=xyz
+```
+
+**Output:**
+```
+Inkwell Extraction Pipeline
+
+Step 1/4: Transcribing episode...
+✓ Transcribed (youtube)
+  Duration: 3600.0s
+  Words: ~9500
+
+Step 2/4: Selecting templates...
+✓ Selected 3 templates:
+  • summary (priority: 0)
+  • quotes (priority: 5)
+  • key-concepts (priority: 10)
+
+Step 3/4: Extracting content...
+  Estimated cost: $0.0090
+✓ Extracted 3 templates
+  • 0 from cache (saved $0.0000)
+  • Total cost: $0.0090
+
+Step 4/4: Writing markdown files...
+✓ Wrote 3 files
+  Directory: ./output/episode-2025-11-07-title/
+
+✓ Complete!
+
+Episode:    Episode from URL
+Templates:  3
+Total cost: $0.0090
+Output:     episode-2025-11-07-title
+```
+
+### Command Options
+
+| Option | Short | Description | Default |
+|--------|-------|-------------|---------|
+| `--output` | `-o` | Output directory | `~/inkwell-notes` |
+| `--templates` | `-t` | Comma-separated template list | Auto-select |
+| `--category` | `-c` | Episode category (tech, business, interview) | Auto-detect |
+| `--provider` | `-p` | LLM provider (claude, gemini) | Smart selection |
+| `--skip-cache` | | Skip extraction cache | `false` |
+| `--dry-run` | | Cost estimate only (no extraction) | `false` |
+| `--overwrite` | | Overwrite existing episode directory | `false` |
+
+### Custom Templates
+
+By default, Inkwell auto-selects templates based on episode category. Override with `--templates`:
+
+```bash
+# Extract specific templates
+inkwell fetch URL --templates summary,quotes
+
+# Extract all available templates
+inkwell fetch URL --templates summary,quotes,key-concepts,tools-mentioned,books-mentioned
+```
+
+**Available templates:**
+- `summary` - Episode overview and key takeaways
+- `quotes` - Notable quotes with speaker attribution
+- `key-concepts` - Main ideas and concepts discussed
+- `tools-mentioned` - Software, apps, products mentioned
+- `books-mentioned` - Books and resources referenced
+
+### Provider Selection
+
+Inkwell uses smart provider selection by default:
+
+- **Gemini (Google AI)**: Default for most templates (40x cheaper)
+- **Claude (Anthropic)**: Used for precision tasks (quotes, book extraction)
+
+**Cost comparison:**
+```
+Gemini: $0.003 per template (~1M tokens)
+Claude: $0.120 per template (~1M tokens)
+```
+
+**Force a specific provider:**
+
+```bash
+# Use Gemini for all templates (lowest cost)
+inkwell fetch URL --provider gemini
+
+# Use Claude for all templates (highest quality)
+inkwell fetch URL --provider claude
+```
+
+**Cost estimation with dry-run:**
+
+```bash
+inkwell fetch URL --dry-run
+```
+
+This shows estimated costs without performing extraction.
+
+### Category Specification
+
+Categories determine which templates are auto-selected:
+
+```bash
+# Tech podcast (auto-selects: summary, quotes, tools-mentioned)
+inkwell fetch URL --category tech
+
+# Business podcast (auto-selects: summary, quotes, key-concepts)
+inkwell fetch URL --category business
+
+# Interview podcast (auto-selects: summary, quotes)
+inkwell fetch URL --category interview
+```
+
+### Output Structure
+
+Each episode creates a self-contained directory:
+
+```
+~/inkwell-notes/
+└── deep-questions-2025-11-07-on-focus/
+    ├── .metadata.yaml       # Episode metadata
+    ├── summary.md           # Episode summary
+    ├── quotes.md            # Notable quotes
+    ├── key-concepts.md      # Main concepts
+    └── tools-mentioned.md   # Tools and products
+```
+
+**Directory naming pattern:**
+```
+{podcast-name}-{YYYY-MM-DD}-{episode-title}/
+```
+
+**Metadata file (`.metadata.yaml`):**
+```yaml
+podcast_name: Deep Questions
+episode_title: Episode 42 - On Focus
+episode_url: https://youtube.com/watch?v=xyz
+transcription_source: youtube
+templates_applied:
+  - summary
+  - quotes
+  - key-concepts
+total_cost_usd: 0.009
+timestamp: 2025-11-07T10:30:00
+```
+
+### Markdown Files
+
+Each template generates a markdown file with YAML frontmatter:
+
+```markdown
+---
+template: summary
+podcast: Deep Questions
+episode: Episode 42 - On Focus
+date: 2025-11-07
+source: https://youtube.com/watch?v=xyz
+---
+
+# Summary
+
+Episode overview and key takeaways...
+```
+
+**Frontmatter fields:**
+- `template` - Template name
+- `podcast` - Podcast name
+- `episode` - Episode title
+- `date` - Extraction date (YYYY-MM-DD)
+- `source` - Episode URL
+
+### Example Workflows
+
+#### Quick Extract with Defaults
+
+```bash
+inkwell fetch https://youtube.com/watch?v=abc123
+```
+
+Uses:
+- Auto-detected category
+- Auto-selected templates
+- Smart provider selection
+- Default output directory (`~/inkwell-notes`)
+
+#### Custom Output Location
+
+```bash
+inkwell fetch URL --output ~/Documents/podcast-notes
+```
+
+#### Tech Podcast with Custom Templates
+
+```bash
+inkwell fetch URL \
+  --category tech \
+  --templates summary,quotes,tools-mentioned,key-concepts
+```
+
+#### Cost-Conscious Extraction
+
+```bash
+# Check cost first
+inkwell fetch URL --dry-run
+
+# If acceptable, extract with Gemini
+inkwell fetch URL --provider gemini
+```
+
+#### Re-extract with Different Templates
+
+```bash
+# Initial extraction
+inkwell fetch URL --templates summary,quotes
+
+# Add more templates later (requires --overwrite)
+inkwell fetch URL \
+  --templates summary,quotes,key-concepts,tools-mentioned \
+  --overwrite
+```
+
+### Performance & Costs
+
+**Caching:**
+- Extractions are cached for 30 days
+- Cache key includes transcript + template version
+- Re-running same extraction costs $0 (cache hit)
+- Clear cache with `--skip-cache`
+
+**Concurrency:**
+- Templates extracted in parallel (5x speedup)
+- Multiple episodes can be processed sequentially
+
+**Typical costs per episode:**
+```
+Small episode (30 min, ~5k words):
+  • 3 templates with Gemini: $0.003
+  • 3 templates with Claude: $0.045
+
+Large episode (120 min, ~20k words):
+  • 5 templates with Gemini: $0.012
+  • 5 templates with Claude: $0.180
+```
+
+### Obsidian Integration
+
+Inkwell's output is Obsidian-compatible:
+
+1. **Point Obsidian to output directory:**
+   - Open Obsidian settings
+   - Add vault or folder: `~/inkwell-notes`
+
+2. **Browse notes:**
+   - Each episode is a folder
+   - Each template is a linked note
+   - Frontmatter fields are searchable
+
+3. **Link between notes:**
+   ```markdown
+   See also: [[episode-name/quotes]]
+   Related concept: [[another-episode/key-concepts]]
+   ```
+
+4. **Search across episodes:**
+   - Use Obsidian search for quotes, concepts, tools
+   - Filter by podcast name or date in frontmatter
+
+### Error Handling
+
+**Network errors:**
+```
+✗ Failed to transcribe episode
+  Reason: Network connection timeout
+
+Suggestion: Check internet connection and retry
+```
+
+**Invalid URL:**
+```
+✗ Invalid episode URL
+  URL: not-a-valid-url
+
+Suggestion: Provide a valid YouTube or podcast URL
+```
+
+**Insufficient API credits:**
+```
+✗ LLM provider error (gemini)
+  Status: 429 (Rate limit exceeded)
+
+Suggestion: Wait a few minutes or use --provider claude
+```
+
+**Directory already exists:**
+```
+✗ Episode directory already exists
+  Directory: ./output/podcast-2025-11-07-title/
+
+Suggestion: Use --overwrite to replace, or delete manually
+```
+
+### Advanced: Template Versioning
+
+Templates include version numbers to ensure cache invalidation:
+
+```yaml
+# templates/summary.yaml
+name: summary
+version: 2  # Incremented when prompt changes
+expected_format: text
+# ...
+```
+
+**When a template is updated:**
+- New version number invalidates cache
+- Next extraction uses updated prompt
+- Old cached results are ignored
 
 ## Troubleshooting
 
@@ -503,18 +845,29 @@ Once Phase 2 is complete:
 
 ## Next Steps
 
-### Phase 2 Features (Coming Soon)
+### Available Features
 
-- **Transcription**: Automatic audio transcription
-- **Content Extraction**: AI-powered key information extraction
-- **Markdown Generation**: Structured notes in markdown format
-- **Interview Mode**: Interactive Q&A to capture your insights
+✅ **Feed Management** - Add, list, and remove podcast feeds
+✅ **Configuration** - Flexible YAML-based configuration
+✅ **Transcription** - Automatic audio transcription (YouTube API + Gemini fallback)
+✅ **Content Extraction** - AI-powered key information extraction
+✅ **Markdown Generation** - Structured notes in markdown format
+✅ **Template System** - Customizable extraction templates
+✅ **Cost Optimization** - Smart provider selection and caching
+
+### Upcoming Features (Phase 4)
+
+🔜 **Interview Mode**: Interactive Q&A to capture your insights
+🔜 **RSS Feed Processing**: Process full podcast feeds, not just single episodes
+🔜 **Batch Processing**: Extract multiple episodes in one run
+🔜 **Custom Templates**: Create your own extraction templates
 
 ### Stay Updated
 
 - Check the [README](../README.md) for latest updates
 - Review [roadmap](../README.md#roadmap) for upcoming features
 - See [docs/](.) for technical documentation
+- Read [devlogs](./devlog/) for development progress
 
 ---
 

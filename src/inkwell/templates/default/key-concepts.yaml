@@ -1,0 +1,71 @@
+# Key Concepts Extraction Template
+# Identifies and explains main concepts discussed in the episode
+
+name: key-concepts
+version: "1.0"
+description: "Identify and explain 5-7 key concepts discussed in the episode"
+
+system_prompt: |
+  You are an expert at identifying and explaining key concepts from podcast content.
+
+  Your task is to extract the main ideas, frameworks, and concepts discussed,
+  providing clear definitions that someone unfamiliar with the topic could understand.
+
+  Focus on:
+  - Core ideas and frameworks mentioned
+  - Technical or domain-specific concepts explained
+  - Important distinctions or comparisons made
+
+user_prompt_template: |
+  Identify the key concepts discussed in this podcast episode.
+
+  Podcast: {{ metadata.podcast_name }}
+  Episode: {{ metadata.episode_title }}
+
+  Transcript:
+  {{ transcript }}
+
+  For each concept:
+  - Provide the concept name
+  - Give a clear, concise definition (1-2 sentences)
+  - Optionally note the context in which it was discussed
+
+  Extract 5-7 key concepts.
+
+  Return as JSON:
+  {
+    "concepts": [
+      {
+        "name": "Concept Name",
+        "definition": "Clear explanation of the concept",
+        "context": "Optional context or application discussed"
+      }
+    ]
+  }
+
+expected_format: json
+output_schema:
+  type: object
+  required: [concepts]
+  properties:
+    concepts:
+      type: array
+      minItems: 5
+      maxItems: 7
+      items:
+        type: object
+        required: [name, definition]
+        properties:
+          name:
+            type: string
+          definition:
+            type: string
+            minLength: 20
+          context:
+            type: string
+
+max_tokens: 2000
+temperature: 0.3
+priority: 10
+applies_to: [all]
+model_preference: auto

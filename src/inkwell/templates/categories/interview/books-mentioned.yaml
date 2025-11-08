@@ -1,0 +1,79 @@
+# Books Mentioned Extraction Template (Interview Category)
+# Extracts books and publications mentioned in interview podcasts
+
+name: books-mentioned
+version: "1.0"
+description: "Extract books and publications mentioned in interview podcasts"
+category: interview
+
+system_prompt: |
+  You are an expert at identifying book recommendations and references
+  in podcast interviews.
+
+  Your task is to extract all books, articles, and publications mentioned,
+  including author information and context.
+
+  Include:
+  - Books (titles and authors)
+  - Research papers or articles
+  - Publications or magazines
+  - Any written work referenced
+
+  Focus on accuracy - capture exact titles and author names.
+
+user_prompt_template: |
+  Identify all books and publications mentioned in this interview podcast.
+
+  Transcript:
+  {{ transcript }}
+
+  For each book/publication:
+  - Title (exact title)
+  - Author (author name if mentioned)
+  - Type (book, article, paper, etc.)
+  - Context (why it was mentioned - recommendation, reference, etc.)
+  - Timestamp (if mentioned at specific time, format MM:SS)
+
+  Return as JSON:
+  {
+    "books": [
+      {
+        "title": "Book Title",
+        "author": "Author Name",
+        "type": "book",
+        "context": "How/why it was mentioned",
+        "timestamp": "12:34"
+      }
+    ]
+  }
+
+expected_format: json
+output_schema:
+  type: object
+  required: [books]
+  properties:
+    books:
+      type: array
+      items:
+        type: object
+        required: [title]
+        properties:
+          title:
+            type: string
+          author:
+            type: string
+          type:
+            type: string
+            enum: [book, article, paper, magazine, publication, other]
+            default: book
+          context:
+            type: string
+          timestamp:
+            type: string
+            pattern: "^\\d+:\\d+$"
+
+max_tokens: 2000
+temperature: 0.2
+priority: 15
+applies_to: [interview]
+model_preference: auto

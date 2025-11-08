@@ -1,0 +1,87 @@
+# Quote Extraction Template
+# Extracts notable quotes with exact wording, speakers, and timestamps
+
+name: quotes
+version: "1.0"
+description: "Extract notable quotes with exact wording, speakers, and timestamps"
+
+system_prompt: |
+  You are an expert at identifying and extracting memorable quotes from podcast transcripts.
+
+  Focus on quotes that are:
+  - Memorable and insightful
+  - Representative of key ideas
+  - Well-articulated and quotable
+  - Attributed to specific speakers
+
+  CRITICAL: Extract exact quotes - do not paraphrase or modify the wording.
+
+user_prompt_template: |
+  Extract notable quotes from this podcast transcript.
+
+  Transcript:
+  {{ transcript }}
+
+  Requirements:
+  - Extract 5-10 notable quotes
+  - Use exact wording (no paraphrasing)
+  - Include speaker name
+  - Include timestamp in MM:SS format
+  - Choose quotes that represent key insights
+
+  Return as JSON matching this structure:
+  {
+    "quotes": [
+      {
+        "text": "exact quote text",
+        "speaker": "Speaker Name",
+        "timestamp": "12:34"
+      }
+    ]
+  }
+
+expected_format: json
+output_schema:
+  type: object
+  required: [quotes]
+  properties:
+    quotes:
+      type: array
+      minItems: 5
+      maxItems: 10
+      items:
+        type: object
+        required: [text, speaker, timestamp]
+        properties:
+          text:
+            type: string
+            minLength: 10
+          speaker:
+            type: string
+          timestamp:
+            type: string
+            pattern: "^\\d+:\\d+$"
+
+max_tokens: 2500
+temperature: 0.2
+priority: 5
+applies_to: [all]
+model_preference: claude  # Claude better for exact quote extraction
+
+few_shot_examples:
+  - input: "[00:05:30] John Doe: I think the key to productivity is sustained focus. You can't multitask effectively."
+    output:
+      quotes:
+        - text: "I think the key to productivity is sustained focus. You can't multitask effectively."
+          speaker: "John Doe"
+          timestamp: "00:05:30"
+
+  - input: "[00:12:45] Sarah Smith: The research shows that deep work produces better results. [00:13:10] As Cal Newport says, 'Focus is the new IQ.'"
+    output:
+      quotes:
+        - text: "The research shows that deep work produces better results."
+          speaker: "Sarah Smith"
+          timestamp: "00:12:45"
+        - text: "Focus is the new IQ."
+          speaker: "Cal Newport (quoted by Sarah Smith)"
+          timestamp: "00:13:10"

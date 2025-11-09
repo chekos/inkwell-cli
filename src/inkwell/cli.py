@@ -1,11 +1,13 @@
 """CLI entry point for Inkwell."""
 
 import asyncio
+import os
 import sys
 from datetime import datetime
 from pathlib import Path
 
 import typer
+import yaml
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
@@ -16,6 +18,8 @@ from inkwell.extraction import ExtractionEngine
 from inkwell.extraction.template_selector import TemplateSelector
 from inkwell.extraction.templates import TemplateLoader
 from inkwell.feeds.models import Episode
+from inkwell.interview import InterviewManager
+from inkwell.interview.models import InterviewGuidelines
 from inkwell.output import EpisodeMetadata, OutputManager
 from inkwell.transcription import CostEstimate, TranscriptionManager
 from inkwell.utils.display import truncate_url
@@ -509,10 +513,25 @@ def fetch_command(
     overwrite: bool = typer.Option(
         False, "--overwrite", help="Overwrite existing episode directory"
     ),
+    interview: bool = typer.Option(
+        False, "--interview", help="Conduct interactive interview after extraction"
+    ),
+    interview_template: str | None = typer.Option(
+        None, "--interview-template", help="Interview template: reflective, analytical, creative (default: from config)"
+    ),
+    interview_format: str | None = typer.Option(
+        None, "--interview-format", help="Output format: structured, narrative, qa (default: from config)"
+    ),
+    max_questions: int | None = typer.Option(
+        None, "--max-questions", help="Maximum number of interview questions (default: from config)"
+    ),
+    no_resume: bool = typer.Option(
+        False, "--no-resume", help="Don't resume previous interview session"
+    ),
 ) -> None:
     """Fetch and process a podcast episode.
 
-    Complete pipeline: transcribe → extract → generate markdown → write files
+    Complete pipeline: transcribe → extract → generate markdown → write files → [optional interview]
 
     Examples:
         inkwell fetch https://youtube.com/watch?v=xyz
@@ -522,6 +541,10 @@ def fetch_command(
         inkwell fetch https://... --category tech --provider claude
 
         inkwell fetch https://... --dry-run  # Cost estimate only
+
+        inkwell fetch https://... --interview  # With interactive interview
+
+        inkwell fetch https://... --interview --interview-template analytical
     """
 
     async def run_fetch() -> None:
@@ -529,10 +552,14 @@ def fetch_command(
             config = ConfigManager().load_config()
             output_path = output_dir or config.default_output_dir
 
+            # Determine total steps
+            will_interview = interview or config.interview.auto_start
+            total_steps = 5 if will_interview else 4
+
             console.print("[bold cyan]Inkwell Extraction Pipeline[/bold cyan]\n")
 
             # Step 1: Transcribe
-            console.print("[bold]Step 1/4:[/bold] Transcribing episode...")
+            console.print(f"[bold]Step 1/{total_steps}:[/bold] Transcribing episode...")
 
             transcription_manager = TranscriptionManager()
 
@@ -560,7 +587,7 @@ def fetch_command(
             console.print(f"  Words: ~{len(result.transcript.full_text.split())}")
 
             # Step 2: Select templates
-            console.print("\n[bold]Step 2/4:[/bold] Selecting templates...")
+            console.print(f"\n[bold]Step 2/{total_steps}:[/bold] Selecting templates...")
 
             loader = TemplateLoader()
             selector = TemplateSelector(loader=loader)
@@ -600,7 +627,7 @@ def fetch_command(
                 console.print(f"  • {tmpl.name} (priority: {tmpl.priority})")
 
             # Step 3: Extract
-            console.print("\n[bold]Step 3/4:[/bold] Extracting content...")
+            console.print(f"\n[bold]Step 3/{total_steps}:[/bold] Extracting content...")
 
             # Initialize extraction engine
             engine = ExtractionEngine(
@@ -645,7 +672,7 @@ def fetch_command(
             console.print(f"  • Total cost: [yellow]${engine.get_total_cost():.4f}[/yellow]")
 
             # Step 4: Write output
-            console.print("\n[bold]Step 4/4:[/bold] Writing markdown files...")
+            console.print(f"\n[bold]Step 4/{total_steps}:[/bold] Writing markdown files...")
 
             output_manager = OutputManager(output_dir=output_path)
 
@@ -657,6 +684,78 @@ def fetch_command(
 
             console.print(f"[green]✓[/green] Wrote {len(episode_output.output_files)} files")
             console.print(f"  Directory: [cyan]{episode_output.directory}[/cyan]")
+
+            # Step 5: Interview (optional)
+            interview_cost = 0.0
+            interview_conducted = False
+
+            if interview or config.interview.auto_start:
+                console.print("\n[bold]Step 5/5:[/bold] Conducting interview...")
+
+                try:
+                    # Get interview configuration
+                    template_name = interview_template or config.interview.default_template
+                    format_style = interview_format or config.interview.format_style
+                    questions = max_questions or config.interview.question_count
+
+                    # Create guidelines from config
+                    guidelines = None
+                    if config.interview.guidelines:
+                        guidelines = InterviewGuidelines(text=config.interview.guidelines)
+
+                    # Check for Anthropic API key
+                    anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
+                    if not anthropic_key:
+                        console.print("[yellow]⚠[/yellow] ANTHROPIC_API_KEY not set. Skipping interview.")
+                        console.print("[dim]  Set your key: export ANTHROPIC_API_KEY=your-key[/dim]")
+                    else:
+                        # Initialize interview manager
+                        interview_manager = InterviewManager(
+                            api_key=anthropic_key,
+                            model=config.interview.model
+                        )
+
+                        # Conduct interview
+                        interview_result = await interview_manager.conduct_interview(
+                            episode_url=url,
+                            episode_title=episode_metadata.episode_title,
+                            podcast_name=episode_metadata.podcast_name,
+                            output_dir=episode_output.directory,
+                            template_name=template_name,
+                            max_questions=questions,
+                            guidelines=guidelines,
+                            format_style=format_style,
+                            resume_session_id=None if no_resume else None,  # TODO: Session discovery
+                        )
+
+                        # Save interview output
+                        interview_path = episode_output.directory / "my-notes.md"
+                        interview_path.write_text(interview_result.transcript)
+
+                        console.print(f"[green]✓[/green] Interview complete")
+                        console.print(f"  Questions: {len(interview_result.exchanges)}")
+                        console.print(f"  Saved to: my-notes.md")
+
+                        interview_cost = interview_result.total_cost
+                        interview_conducted = True
+
+                        # Update metadata with interview info
+                        metadata_path = episode_output.directory / ".metadata.yaml"
+                        if metadata_path.exists():
+                            metadata = yaml.safe_load(metadata_path.read_text())
+                            metadata["interview_conducted"] = True
+                            metadata["interview_template"] = template_name
+                            metadata["interview_format"] = format_style
+                            metadata["interview_questions"] = len(interview_result.exchanges)
+                            metadata["interview_cost_usd"] = interview_cost
+                            metadata_path.write_text(yaml.safe_dump(metadata, default_flow_style=False))
+
+                except KeyboardInterrupt:
+                    console.print("\n[yellow]Interview cancelled by user[/yellow]")
+                    # Continue to summary even if interview cancelled
+                except Exception as e:
+                    console.print(f"[red]✗[/red] Interview failed: {e}")
+                    console.print("[dim]  Extraction completed successfully, continuing...[/dim]")
 
             # Summary
             console.print("\n[bold green]✓ Complete![/bold green]")
@@ -675,7 +774,16 @@ def fetch_command(
 
             table.add_row("Episode:", episode_metadata.episode_title)
             table.add_row("Templates:", f"{len(extraction_results)}")
-            table.add_row("Total cost:", f"${engine.get_total_cost():.4f}")
+
+            if interview_conducted:
+                total_cost = engine.get_total_cost() + interview_cost
+                table.add_row("Extraction cost:", f"${engine.get_total_cost():.4f}")
+                table.add_row("Interview cost:", f"${interview_cost:.4f}")
+                table.add_row("Total cost:", f"${total_cost:.4f}")
+                table.add_row("Interview:", "✓ Completed")
+            else:
+                table.add_row("Total cost:", f"${engine.get_total_cost():.4f}")
+
             table.add_row("Output:", output_display)
 
             console.print(table)

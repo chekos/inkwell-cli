@@ -9,8 +9,9 @@ Complete guide to using Inkwell for podcast note-taking.
 3. [Managing Feeds](#managing-feeds)
 4. [Configuration](#configuration)
 5. [Content Extraction](#content-extraction)
-6. [Troubleshooting](#troubleshooting)
-7. [Advanced Usage](#advanced-usage)
+6. [Interview Mode](#interview-mode)
+7. [Troubleshooting](#troubleshooting)
+8. [Advanced Usage](#advanced-usage)
 
 ## Installation
 
@@ -596,6 +597,351 @@ expected_format: text
 - New version number invalidates cache
 - Next extraction uses updated prompt
 - Old cached results are ignored
+
+## Interview Mode
+
+**NEW in Phase 5!** Interview mode adds interactive conversation to capture your thoughts and insights about an episode.
+
+### Overview
+
+Interview mode conducts a thoughtful AI-guided conversation after extraction, generating questions based on episode content. Your responses are saved as `my-notes.md`, creating a personal knowledge base.
+
+**Key features:**
+- **Context-aware questions**: Based on episode content, quotes, and concepts
+- **Multiple interview styles**: Reflective, analytical, creative
+- **Pause and resume**: Pick up where you left off
+- **Pattern-based insights**: Automatically extracts action items and themes
+- **Three output formats**: Structured, narrative, or Q&A style
+
+### Basic Usage
+
+Add the `--interview` flag to any `fetch` command:
+
+```bash
+inkwell fetch https://youtube.com/watch?v=xyz --interview
+```
+
+**Output:**
+```
+Inkwell Extraction Pipeline
+
+Step 1/5: Transcribing episode...
+✓ Transcribed (youtube)
+
+Step 2/5: Selecting templates...
+✓ Selected 3 templates
+
+Step 3/5: Extracting content...
+✓ Extracted 3 templates
+
+Step 4/5: Writing markdown files...
+✓ Wrote 3 files
+
+Step 5/5: Conducting interview...
+✓ Interview complete
+  Questions: 5
+  Saved to: my-notes.md
+
+✓ Complete!
+
+Episode:         Episode from URL
+Templates:       3
+Extraction cost: $0.0090
+Interview cost:  $0.1500
+Total cost:      $0.1590
+Interview:       ✓ Completed
+```
+
+### Interview Templates
+
+Choose from three interview styles:
+
+#### Reflective (Default)
+Focus on personal insights, connections, and applications.
+
+```bash
+inkwell fetch URL --interview  # Uses default template
+```
+
+**Example questions:**
+- "How does this idea connect to your own experience?"
+- "What surprised you most in this episode?"
+- "How might you apply this to your work?"
+
+#### Analytical
+Deep critical thinking and evaluation.
+
+```bash
+inkwell fetch URL --interview --interview-template analytical
+```
+
+**Example questions:**
+- "What assumptions underlie the main argument?"
+- "What evidence supports or contradicts this view?"
+- "What are the limitations of this approach?"
+
+#### Creative
+Imaginative connections and new possibilities.
+
+```bash
+inkwell fetch URL --interview --interview-template creative
+```
+
+**Example questions:**
+- "How could you combine this with other ideas you've learned?"
+- "What would happen if you took this to an extreme?"
+- "What analogies help explain this concept?"
+
+### Configuration
+
+Customize defaults in `~/.config/inkwell/config.yaml`:
+
+```yaml
+interview:
+  enabled: true
+  auto_start: false              # Set to true to always interview
+
+  # Style preferences
+  default_template: reflective   # reflective, analytical, creative
+  question_count: 5              # Target number of questions
+  format_style: structured       # structured, narrative, qa
+
+  # Personal guidelines
+  guidelines: |
+    Focus on how this applies to my work as a software engineer.
+    Ask about connections to previous episodes.
+    Probe for actionable insights and blog post topics.
+
+  # Cost control
+  max_cost_per_interview: 0.50
+  confirm_high_cost: true
+
+  # Advanced
+  model: claude-sonnet-4-5
+  session_timeout_minutes: 60
+```
+
+### Command Options
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--interview` | Enable interview mode | `false` |
+| `--interview-template` | Template: reflective, analytical, creative | From config |
+| `--interview-format` | Format: structured, narrative, qa | From config |
+| `--max-questions` | Number of questions | From config |
+| `--no-resume` | Don't resume previous session | `false` |
+
+### Interview Commands
+
+During an interview, use these commands:
+
+| Command | Description |
+|---------|-------------|
+| `/help` | Show available commands |
+| `/skip` | Skip current question |
+| `/done` | End interview early (save progress) |
+| `/quit` | Exit interview without saving |
+| `/history` | View conversation so far |
+
+### Output Formats
+
+#### Structured (Default)
+Organized by themes with extracted insights.
+
+```markdown
+# My Notes & Reflections
+
+## Key Insights
+- Insight 1 extracted from responses
+- Insight 2 extracted from responses
+
+## Action Items
+- [ ] Action item 1
+- [ ] Action item 2
+
+## Themes
+- Theme 1 (mentioned 3 times)
+- Theme 2 (mentioned 2 times)
+
+## Question 1: ...
+My response...
+```
+
+#### Narrative
+Flowing text combining questions and responses.
+
+```markdown
+# My Notes & Reflections
+
+When asked about X, I realized that...
+
+This connects to Y because...
+
+The most surprising aspect was...
+```
+
+#### Q&A
+Simple question-and-answer format.
+
+```markdown
+# My Notes & Reflections
+
+**Q: Question 1**
+A: My response...
+
+**Q: Question 2**
+A: My response...
+```
+
+### Session Management
+
+#### Pause and Resume
+
+Press `Ctrl+C` during an interview to pause:
+
+```
+Interview paused. Resume with:
+  inkwell interview resume <session-id>
+
+Or abandon with:
+  inkwell interview abandon <session-id>
+```
+
+Resume later:
+```bash
+inkwell interview resume abc123
+```
+
+#### List Sessions
+
+View all saved sessions:
+
+```bash
+inkwell interview sessions
+```
+
+#### Cleanup
+
+Remove old completed sessions:
+
+```bash
+inkwell interview cleanup --older-than 90d
+```
+
+### Requirements
+
+Interview mode requires an Anthropic API key:
+
+```bash
+# Set your API key
+export ANTHROPIC_API_KEY=your-key-here
+
+# Or add to ~/.bashrc or ~/.zshrc for persistence
+echo 'export ANTHROPIC_API_KEY=your-key' >> ~/.bashrc
+```
+
+**Get an API key:** https://console.anthropic.com/
+
+### Cost Estimation
+
+Interview mode uses Claude Sonnet 4.5:
+
+| Component | Cost |
+|-----------|------|
+| Extraction | ~$0.02 per episode |
+| Interview (5 questions) | ~$0.15 per episode |
+| **Total with interview** | **~$0.17 per episode** |
+
+**Cost control:**
+- Cache hit: $0 (free)
+- Shorter interviews: Use `--max-questions 3` (~$0.09)
+- Config limit: Set `max_cost_per_interview` to prevent overruns
+
+### Tips
+
+#### Custom Guidelines
+
+Tailor interview questions to your interests:
+
+```yaml
+guidelines: |
+  - Focus on practical applications for my startup
+  - Ask about potential blog post angles
+  - Probe connections to behavioral psychology
+  - Challenge my assumptions when I'm too optimistic
+```
+
+#### Interview Frequency
+
+You don't need to interview every episode:
+- **Do interview:** Complex topics, controversial ideas, personal relevance
+- **Skip interview:** News updates, routine episodes, time-constrained
+
+#### Multi-Episode Patterns
+
+Interview several related episodes together:
+```bash
+inkwell fetch URL1 --interview --max-questions 3
+inkwell fetch URL2 --interview --max-questions 3
+inkwell fetch URL3 --interview --max-questions 3
+
+# Then synthesize insights across all three
+```
+
+### Troubleshooting
+
+#### "ANTHROPIC_API_KEY not set"
+
+**Problem:** Interview mode requires Anthropic API key.
+
+**Solution:**
+```bash
+export ANTHROPIC_API_KEY=your-key-here
+```
+
+Make permanent by adding to `~/.bashrc` or `~/.zshrc`.
+
+#### Interview Cost Too High
+
+**Problem:** Interview costs more than expected.
+
+**Solution 1:** Use fewer questions
+```bash
+inkwell fetch URL --interview --max-questions 3
+```
+
+**Solution 2:** Set cost limit in config
+```yaml
+interview:
+  max_cost_per_interview: 0.20  # Will warn if exceeded
+```
+
+#### Interview Session Lost
+
+**Problem:** Interview interrupted, can't find session to resume.
+
+**Solution:**
+```bash
+# List all sessions
+inkwell interview sessions
+
+# Resume by ID
+inkwell interview resume <session-id>
+```
+
+#### Questions Not Relevant
+
+**Problem:** Interview questions don't match your interests.
+
+**Solution:** Add custom guidelines in config:
+```yaml
+interview:
+  guidelines: |
+    Focus on these areas:
+    - Technical implementation details
+    - Business model implications
+    - Historical context and precedents
+```
 
 ## Troubleshooting
 

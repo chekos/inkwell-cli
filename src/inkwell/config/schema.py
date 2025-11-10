@@ -39,9 +39,13 @@ class ObsidianConfig(BaseModel):
     min_confidence: float = 0.7  # Minimum confidence for entity extraction
     max_entities_per_type: int = 10  # Limit entities per type to avoid clutter
 
-    # Tags
-    tags_enabled: bool = False  # Will be implemented in Unit 4
+    # Tags (Unit 4 - implemented)
+    tags_enabled: bool = True
+    tag_style: Literal["flat", "hierarchical"] = "hierarchical"
     max_tags: int = 7
+    min_tag_confidence: float = 0.6
+    include_entity_tags: bool = True  # Generate tags from entities
+    include_llm_tags: bool = True  # Generate tags using LLM
 
     # Dataview
     dataview_enabled: bool = False  # Will be implemented in Unit 5

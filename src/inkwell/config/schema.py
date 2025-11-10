@@ -47,8 +47,15 @@ class ObsidianConfig(BaseModel):
     include_entity_tags: bool = True  # Generate tags from entities
     include_llm_tags: bool = True  # Generate tags using LLM
 
-    # Dataview
-    dataview_enabled: bool = False  # Will be implemented in Unit 5
+    # Dataview (Unit 5 - implemented)
+    dataview_enabled: bool = True
+    include_episode_number: bool = True
+    include_duration: bool = True
+    include_word_count: bool = True
+    include_ratings: bool = True
+    include_status: bool = True
+    default_status: Literal["inbox", "reading", "completed", "archived"] = "inbox"
+    default_priority: Literal["low", "medium", "high"] = "medium"
 
 
 class InterviewConfig(BaseModel):

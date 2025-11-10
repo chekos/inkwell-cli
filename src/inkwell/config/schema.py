@@ -27,6 +27,26 @@ class FeedConfig(BaseModel):
     custom_templates: list[str] = Field(default_factory=list)
 
 
+class ObsidianConfig(BaseModel):
+    """Obsidian integration configuration."""
+
+    # Global enable/disable
+    enabled: bool = True
+
+    # Wikilinks
+    wikilinks_enabled: bool = True
+    wikilink_style: Literal["simple", "prefixed"] = "simple"  # [[Name]] or [[Type - Name]]
+    min_confidence: float = 0.7  # Minimum confidence for entity extraction
+    max_entities_per_type: int = 10  # Limit entities per type to avoid clutter
+
+    # Tags
+    tags_enabled: bool = False  # Will be implemented in Unit 4
+    max_tags: int = 7
+
+    # Dataview
+    dataview_enabled: bool = False  # Will be implemented in Unit 5
+
+
 class InterviewConfig(BaseModel):
     """Interview mode configuration."""
 
@@ -79,6 +99,7 @@ class GlobalConfig(BaseModel):
             "interview": ["books-mentioned", "people-mentioned"],
         }
     )
+    obsidian: ObsidianConfig = Field(default_factory=ObsidianConfig)
     interview: InterviewConfig = Field(default_factory=InterviewConfig)
 
 

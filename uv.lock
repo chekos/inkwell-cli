@@ -883,6 +883,7 @@ dev = [
     { name = "mkdocs" },
     { name = "mkdocs-material" },
     { name = "mkdocs-material-adr" },
+    { name = "pytest" },
     { name = "ruff" },
 ]
 
@@ -917,6 +918,7 @@ dev = [
     { name = "mkdocs", specifier = ">=1.6.1" },
     { name = "mkdocs-material", specifier = ">=9.6.23" },
     { name = "mkdocs-material-adr", specifier = ">=1.2.1" },
+    { name = "pytest", specifier = ">=8.4.2" },
     { name = "ruff", specifier = ">=0.14.4" },
 ]
 

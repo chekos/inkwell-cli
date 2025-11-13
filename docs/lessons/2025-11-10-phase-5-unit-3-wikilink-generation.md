@@ -600,7 +600,7 @@ class WikilinkGenerator:
 
 **Apply these lessons:**
 - Confidence scoring for LLM-suggested tags
-- Per-category tag limiting (max podcas tags, max topic tags)
+- Per-category tag limiting (max podcast tags, max topic tags)
 - Configuration anticipating future tag sources
 
 ### Unit 6: Error Handling

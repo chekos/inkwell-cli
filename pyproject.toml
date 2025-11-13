@@ -34,6 +34,8 @@ dependencies = [
     "google-generativeai>=0.8.5",
     "anthropic>=0.72.0",
     "tenacity>=9.1.2",
+    "regex>=2023.12.25",
+    "aiofiles>=23.2.0",
 ]
 
 [project.optional-dependencies]
@@ -127,5 +129,6 @@ dev = [
     "mkdocs-material>=9.6.23",
     "mkdocs-material-adr>=1.2.1",
     "pytest>=8.4.2",
+    "pytest-asyncio>=1.2.0",
     "ruff>=0.14.4",
 ]

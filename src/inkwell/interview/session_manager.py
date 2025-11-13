@@ -8,6 +8,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from inkwell.utils.datetime import now_utc
+
 from .models import (
     InterviewGuidelines,
     InterviewSession,
@@ -240,7 +242,7 @@ class SessionManager:
         Returns:
             Number of sessions deleted
         """
-        cutoff_date = datetime.utcnow() - timedelta(days=days)
+        cutoff_date = now_utc() - timedelta(days=days)
         deleted = 0
 
         for session_file in self.session_dir.glob("session-*.json"):
@@ -285,7 +287,7 @@ class SessionManager:
             return False
 
         timeout_delta = timedelta(minutes=timeout_minutes)
-        time_since_update = datetime.utcnow() - session.updated_at
+        time_since_update = now_utc() - session.updated_at
 
         return time_since_update > timeout_delta
 

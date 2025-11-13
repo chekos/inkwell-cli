@@ -4,10 +4,15 @@ This module extracts entities from podcast transcripts and extracted content,
 then converts them to Obsidian wikilinks for cross-referencing.
 """
 
+import logging
 import re
-from typing import Any
+from typing import Any, Pattern
+
+import regex
 
 from inkwell.obsidian.models import Entity, EntityType, WikilinkConfig
+
+logger = logging.getLogger(__name__)
 
 
 class WikilinkGenerator:
@@ -35,28 +40,37 @@ class WikilinkGenerator:
         """
         self.config = config or WikilinkConfig()
 
-        # Pattern regexes for entity extraction
-        self._patterns = {
+        # Regex timeout in seconds (protects against ReDoS attacks)
+        self._regex_timeout = 1.0
+
+        # Maximum chunk size for processing large text (50KB)
+        self._max_chunk_size = 50000
+
+        # Compiled pattern regexes for entity extraction with timeout protection
+        # Note: timeout is passed to finditer(), not compile()
+        self._patterns: dict[EntityType, list[Pattern]] = {
             EntityType.PERSON: [
                 # Full names with title (Dr., Prof., etc.)
-                r"\b(?:Dr\.?|Prof\.?|Mr\.?|Ms\.?|Mrs\.?)\s+([A-Z][a-z]+\s+[A-Z][a-z]+)",
+                regex.compile(
+                    r"\b(?:Dr\.?|Prof\.?|Mr\.?|Ms\.?|Mrs\.?)\s+([A-Z][a-z]+\s+[A-Z][a-z]+)"
+                ),
                 # Full names (First Last, possibly with middle initial)
-                r"\b([A-Z][a-z]+(?:\s+[A-Z]\.?)?\s+[A-Z][a-z]+)\b",
+                regex.compile(r"\b([A-Z][a-z]+(?:\s+[A-Z]\.?)?\s+[A-Z][a-z]+)\b"),
                 # Names in possessive form
-                r"\b([A-Z][a-z]+(?:\s+[A-Z]\.?)?\s+[A-Z][a-z]+)'s\b",
+                regex.compile(r"\b([A-Z][a-z]+(?:\s+[A-Z]\.?)?\s+[A-Z][a-z]+)'s\b"),
             ],
             EntityType.BOOK: [
                 # Books in quotes
-                r'"([A-Z][^"]{2,})"',
-                r"'([A-Z][^']{2,})'",
+                regex.compile(r'"([A-Z][^"]{2,})"'),
+                regex.compile(r"'([A-Z][^']{2,})'"),
                 # "Book: Title" or "his book Title"
-                r"\b(?:book|titled)\s+['\"]?([A-Z][^'\"]{2,})['\"]?",
+                regex.compile(r"\b(?:book|titled)\s+['\"]?([A-Z][^'\"]{2,})['\"]?"),
             ],
             EntityType.TOOL: [
                 # Software/tools (capitalized product names)
-                r"\b([A-Z][a-z]*(?:[A-Z][a-z]*)+)\b",  # CamelCase
+                regex.compile(r"\b([A-Z][a-z]*(?:[A-Z][a-z]*)+)\b"),  # CamelCase
                 # Tools with specific markers
-                r"\b(?:using|via|with|tool)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\b",
+                regex.compile(r"\b(?:using|via|with|tool)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\b"),
             ],
         }
 
@@ -140,6 +154,11 @@ class WikilinkGenerator:
     def _extract_from_text(self, text: str, source: str) -> list[Entity]:
         """Extract entities from text using regex patterns.
 
+        This method implements ReDoS protection through:
+        - Text chunking to limit input size
+        - Regex timeouts to prevent catastrophic backtracking
+        - Graceful error handling for timeout events
+
         Args:
             text: Text to extract from
             source: Source description for context
@@ -149,33 +168,190 @@ class WikilinkGenerator:
         """
         entities: list[Entity] = []
 
+        # Process text in chunks to prevent excessive processing and limit ReDoS impact
+        if len(text) > self._max_chunk_size:
+            logger.info(
+                f"Text size ({len(text)} chars) exceeds max chunk size "
+                f"({self._max_chunk_size}). Processing in chunks."
+            )
+            for i in range(0, len(text), self._max_chunk_size):
+                chunk = text[i : i + self._max_chunk_size]
+                entities.extend(self._extract_from_chunk(chunk, source))
+        else:
+            entities.extend(self._extract_from_chunk(text, source))
+
+        return entities
+
+    def _extract_from_chunk(self, text: str, source: str) -> list[Entity]:
+        """Extract entities from a single text chunk with timeout protection.
+
+        Args:
+            text: Text chunk to extract from
+            source: Source description for context
+
+        Returns:
+            List of extracted entities
+        """
+        entities: list[Entity] = []
+
         for entity_type, patterns in self._patterns.items():
             for pattern in patterns:
-                matches = re.finditer(pattern, text)
-                for match in matches:
-                    name = match.group(1).strip()
+                try:
+                    # Using regex.finditer with timeout protection
+                    # Pass timeout parameter to finditer() to prevent ReDoS
+                    matches = pattern.finditer(text, timeout=self._regex_timeout)
+                    for match in matches:
+                        name = match.group(1).strip()
 
-                    # Skip if too short or too long
-                    if len(name) < 3 or len(name) > 50:
-                        continue
+                        # Skip if too short or too long
+                        if len(name) < 3 or len(name) > 50:
+                            continue
 
-                    # Skip stopwords
-                    if name in self._stopwords.get(entity_type.value, set()):
-                        continue
+                        # Skip stopwords
+                        if name in self._stopwords.get(entity_type.value, set()):
+                            continue
 
-                    # Get context (50 chars before and after)
-                    start = max(0, match.start() - 50)
-                    end = min(len(text), match.end() + 50)
-                    context = text[start:end].replace("\n", " ")
+                        # Get context (50 chars before and after)
+                        start = max(0, match.start() - 50)
+                        end = min(len(text), match.end() + 50)
+                        context = text[start:end].replace("\n", " ")
 
-                    entities.append(
-                        Entity(
-                            name=name,
-                            type=entity_type,
-                            confidence=0.7,  # Pattern-based confidence
-                            context=context,
+                        entities.append(
+                            Entity(
+                                name=name,
+                                type=entity_type,
+                                confidence=0.7,  # Pattern-based confidence
+                                context=context,
+                            )
                         )
+                except regex.TimeoutError:
+                    # Regex took too long - possible ReDoS attack or very complex input
+                    logger.warning(
+                        f"Regex timeout for {entity_type.value} pattern in {source}. "
+                        f"Pattern: {pattern.pattern[:50]}... "
+                        f"This may indicate a ReDoS attack or very complex input. "
+                        f"Skipping this pattern for current chunk."
                     )
+                    continue
+
+        return entities
+
+    def _extract_from_template(
+        self,
+        content: Any,
+        entity_type: EntityType,
+        patterns: list[str] | None = None,
+        min_length: int = 3,
+        max_length: int = 50,
+    ) -> list[Entity]:
+        """Generic extraction from structured template content.
+
+        This method consolidates the common extraction logic used by
+        _extract_books_from_template, _extract_tools_from_template, and
+        _extract_people_from_template. It handles different content types
+        and extracts entities from markdown lists.
+
+        Args:
+            content: Template content (string, list, or dict)
+            entity_type: Type of entities to extract
+            patterns: Optional regex patterns for validation
+            min_length: Minimum entity name length
+            max_length: Maximum entity name length
+
+        Returns:
+            List of extracted entities
+
+        Examples:
+            >>> # Extract books
+            >>> entities = self._extract_from_template(
+            ...     books_content,
+            ...     EntityType.BOOK,
+            ...     patterns=[r'^[\w\s:,\-\(\)]+$']
+            ... )
+            >>> # Extract tools
+            >>> entities = self._extract_from_template(
+            ...     tools_content,
+            ...     EntityType.TOOL,
+            ...     patterns=[r'^[\w\s\.\-]+$']
+            ... )
+        """
+        entities: list[Entity] = []
+
+        # Handle different content types
+        if isinstance(content, dict):
+            # Extract from dict values
+            content = str(content.get("content", ""))
+        elif isinstance(content, list):
+            # Join list items
+            content = "\n".join(str(item) for item in content)
+        elif not isinstance(content, str):
+            # Convert to string
+            content = str(content)
+
+        # Split into lines
+        lines = content.split("\n")
+
+        for line in lines:
+            # Clean line
+            line = line.strip()
+
+            # Skip empty or markdown headers
+            if not line or line.startswith("#"):
+                continue
+
+            # Remove markdown list markers
+            line = re.sub(r"^[\-\*\+]\s+", "", line)
+            line = re.sub(r"^\d+\.\s+", "", line)
+
+            # Remove markdown bold/italic markers
+            line = re.sub(r"\*\*([^*]+)\*\*", r"\1", line)
+            line = re.sub(r"\*([^*]+)\*", r"\1", line)
+
+            # Remove quotes if present
+            line = line.strip('"').strip("'")
+
+            # For books, extract just the title (before " by ")
+            if entity_type == EntityType.BOOK and " by " in line:
+                parts = line.split(" by ", 1)
+                title = parts[0].strip()
+                author = parts[1].strip() if len(parts) > 1 else None
+                line = title
+                metadata = {"author": author} if author else {}
+            else:
+                metadata = {}
+
+            # Remove table separators and clean
+            line = line.strip("|").strip()
+
+            # Validate length
+            if len(line) < min_length or len(line) > max_length:
+                continue
+
+            # Apply custom patterns if provided
+            if patterns:
+                matches = False
+                for pattern in patterns:
+                    if re.match(pattern, line):
+                        matches = True
+                        break
+                if not matches:
+                    continue
+
+            # Create entity
+            if metadata:
+                entity = Entity(
+                    name=line,
+                    type=entity_type,
+                    confidence=0.9,  # High confidence from structured data
+                    metadata=metadata,
+                )
+            else:
+                entity = Entity(
+                    name=line,
+                    type=entity_type,
+                    confidence=0.9,  # High confidence from structured data
+                )
+            entities.append(entity)
 
         return entities
 
@@ -188,40 +364,13 @@ class WikilinkGenerator:
         Returns:
             List of book entities
         """
-        entities: list[Entity] = []
-
-        if isinstance(books_content, str):
-            # Parse markdown list format
-            lines = books_content.split("\n")
-            for line in lines:
-                # Match patterns like "- Book Title by Author" or "- **Book Title**"
-                # First try to match with markdown bold: - **Title** by Author
-                match = re.match(r"^\s*[-*]\s+\*\*([^*]+)\*\*(?:\s+by\s+(.+))?", line)
-                if match:
-                    title = match.group(1).strip()
-                    author = match.group(2).strip() if match.group(2) else None
-                else:
-                    # Try to match without markdown: - Title by Author
-                    match = re.match(r"^\s*[-*]\s+([^-*\n]+?)(?:\s+by\s+(.+))?$", line)
-                    if match:
-                        title = match.group(1).strip()
-                        author = match.group(2).strip() if match.group(2) else None
-                    else:
-                        continue
-
-                if len(title) > 3:
-                    metadata = {"author": author} if author else {}
-                    entities.append(
-                        Entity(
-                            name=title,
-                            type=EntityType.BOOK,
-                            confidence=0.9,  # High confidence from structured template
-                            context=line.strip(),
-                            metadata=metadata,
-                        )
-                    )
-
-        return entities
+        return self._extract_from_template(
+            books_content,
+            EntityType.BOOK,
+            patterns=[r'^[\w\s:,\-\(\)\.\'\&]+$'],  # Book title pattern
+            min_length=3,
+            max_length=100,
+        )
 
     def _extract_tools_from_template(self, tools_content: Any) -> list[Entity]:
         """Extract tools from tools-mentioned template.
@@ -232,28 +381,13 @@ class WikilinkGenerator:
         Returns:
             List of tool entities
         """
-        entities: list[Entity] = []
-
-        if isinstance(tools_content, str):
-            # Parse markdown list or table format
-            lines = tools_content.split("\n")
-            for line in lines:
-                # Match list items or table rows
-                match = re.match(r"^\s*[-*|]\s*([A-Z][^-*|\n]+?)(?:\s*[-|]|$)", line)
-                if match:
-                    tool_name = match.group(1).strip()
-
-                    if len(tool_name) > 2 and len(tool_name) < 30:
-                        entities.append(
-                            Entity(
-                                name=tool_name,
-                                type=EntityType.TOOL,
-                                confidence=0.9,
-                                context=line.strip(),
-                            )
-                        )
-
-        return entities
+        return self._extract_from_template(
+            tools_content,
+            EntityType.TOOL,
+            patterns=[r'^[\w\s\.\-]+$'],  # Tool name pattern
+            min_length=2,
+            max_length=50,
+        )
 
     def _extract_people_from_template(self, people_content: Any) -> list[Entity]:
         """Extract people from people-mentioned template.
@@ -264,28 +398,13 @@ class WikilinkGenerator:
         Returns:
             List of person entities
         """
-        entities: list[Entity] = []
-
-        if isinstance(people_content, str):
-            # Parse markdown list format
-            lines = people_content.split("\n")
-            for line in lines:
-                # Match patterns like "- Person Name" or "- **Person Name**"
-                match = re.match(r"^\s*[-*]\s+\*?\*?([A-Z][^*\n]+?)\*?\*?(?:\s*[-:]|$)", line)
-                if match:
-                    name = match.group(1).strip()
-
-                    if len(name) > 3 and len(name) < 40:
-                        entities.append(
-                            Entity(
-                                name=name,
-                                type=EntityType.PERSON,
-                                confidence=0.9,
-                                context=line.strip(),
-                            )
-                        )
-
-        return entities
+        return self._extract_from_template(
+            people_content,
+            EntityType.PERSON,
+            patterns=[r'^[A-Z][\w\s\.\-]+$'],  # Person name pattern (capitalized)
+            min_length=3,
+            max_length=50,
+        )
 
     def _filter_entities(self, entities: list[Entity]) -> list[Entity]:
         """Filter entities based on confidence threshold.
@@ -373,53 +492,6 @@ class WikilinkGenerator:
             wikilinks[entity.type.value].append(wikilink)
 
         return wikilinks
-
-    def apply_wikilinks_to_markdown(
-        self, markdown: str, entities: list[Entity], preserve_existing: bool = True
-    ) -> str:
-        """Apply wikilinks to markdown content by replacing entity mentions.
-
-        Args:
-            markdown: Markdown content to update
-            entities: List of entities to link
-            preserve_existing: Don't link entities that are already in wikilinks
-
-        Returns:
-            Updated markdown with wikilinks
-
-        Example:
-            >>> generator = WikilinkGenerator()
-            >>> markdown = "Cal Newport discusses deep work."
-            >>> entities = [Entity(name="Cal Newport", type=EntityType.PERSON)]
-            >>> result = generator.apply_wikilinks_to_markdown(markdown, entities)
-            >>> "[[Cal Newport]]" in result
-            True
-        """
-        if not entities:
-            return markdown
-
-        # Sort entities by name length (longest first) to avoid partial replacements
-        sorted_entities = sorted(entities, key=lambda e: len(e.name), reverse=True)
-
-        result = markdown
-
-        for entity in sorted_entities:
-            # Skip if confidence too low
-            if entity.confidence < self.config.min_confidence:
-                continue
-
-            wikilink = entity.to_wikilink(style=self.config.style)
-
-            # Check if already in wikilink format
-            if preserve_existing and f"[[{entity.name}" in result:
-                continue
-
-            # Replace entity mentions with wikilinks
-            # Use word boundaries to avoid partial replacements
-            pattern = r"\b" + re.escape(entity.name) + r"\b"
-            result = re.sub(pattern, wikilink, result, count=3)  # Limit to first 3 occurrences
-
-        return result
 
     def generate_related_section(
         self, entities: list[Entity], title: str = "Related Notes"

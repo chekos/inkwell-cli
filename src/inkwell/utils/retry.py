@@ -5,7 +5,6 @@ Based on ADR-027: Retry and Error Handling Strategy.
 """
 
 import logging
-import random
 from collections.abc import Callable
 from functools import wraps
 
@@ -84,7 +83,7 @@ class RetryConfig:
     def __init__(
         self,
         max_attempts: int = 3,
-        max_wait_seconds: int = 60,
+        max_wait_seconds: int = 10,
         min_wait_seconds: int = 1,
         jitter: bool = True,
     ):
@@ -92,9 +91,9 @@ class RetryConfig:
 
         Args:
             max_attempts: Maximum number of attempts (including initial)
-            max_wait_seconds: Maximum wait time between retries
-            min_wait_seconds: Minimum wait time between retries
-            jitter: Whether to add jitter to wait times
+            max_wait_seconds: Maximum wait time between retries (default: 10s)
+            min_wait_seconds: Minimum wait time between retries (default: 1s)
+            jitter: Whether to add ±25% jitter to wait times
         """
         self.max_attempts = max_attempts
         self.max_wait_seconds = max_wait_seconds
@@ -105,17 +104,18 @@ class RetryConfig:
 # Default retry configuration
 DEFAULT_RETRY_CONFIG = RetryConfig(
     max_attempts=3,
-    max_wait_seconds=60,
+    max_wait_seconds=10,  # Reduced from 60 to 10 seconds for better UX
     min_wait_seconds=1,
     jitter=True,
 )
 
 # Fast configuration for testing (minimal delays)
+# Maintains same ratio as production config (10:1) but much faster
 TEST_RETRY_CONFIG = RetryConfig(
     max_attempts=3,
-    max_wait_seconds=0.1,
-    min_wait_seconds=0.01,
-    jitter=False,
+    max_wait_seconds=0.1,  # 100ms max (vs 10s in production)
+    min_wait_seconds=0.01,  # 10ms min (vs 1s in production)
+    jitter=False,  # Disabled for deterministic test timing
 )
 
 
@@ -176,12 +176,15 @@ def with_retry(
 
     def decorator(func: Callable) -> Callable:
         # Create retry decorator with exponential backoff + jitter
+        # Note: wait_exponential_jitter adds jitter as a random value between 0 and jitter parameter
+        # To get ±25% jitter, we pass 25% of max wait time
+        jitter_amount = config.max_wait_seconds * 0.25 if config.jitter else 0
         retry_decorator = retry(
             stop=stop_after_attempt(config.max_attempts),
             wait=wait_exponential_jitter(
                 initial=config.min_wait_seconds,
                 max=config.max_wait_seconds,
-                jitter=config.max_wait_seconds if config.jitter else 0,
+                jitter=jitter_amount,
             ),
             retry=retry_if_exception_type(retry_on),
             before_sleep=log_retry_attempt,
@@ -276,168 +279,3 @@ def with_rate_limit_retry(max_attempts: int = 5, config: RetryConfig | None = No
         config=config,
         retry_on=(RateLimitError,),
     )
-
-
-# Error classification helpers
-
-def classify_http_error(status_code: int, error_message: str = "") -> Exception:
-    """Classify HTTP error into retryable or non-retryable.
-
-    Args:
-        status_code: HTTP status code
-        error_message: Error message from API
-
-    Returns:
-        Appropriate exception instance
-
-    Example:
-        try:
-            response = requests.get(url)
-            response.raise_for_status()
-        except requests.HTTPError as e:
-            raise classify_http_error(e.response.status_code, str(e))
-    """
-    # 429 - Rate limit
-    if status_code == 429:
-        return RateLimitError(f"Rate limit exceeded: {error_message}")
-
-    # 5xx - Server errors (retryable)
-    if 500 <= status_code < 600:
-        return ServerError(f"Server error (HTTP {status_code}): {error_message}")
-
-    # 408 - Request timeout
-    if status_code == 408:
-        return TimeoutError(f"Request timeout: {error_message}")
-
-    # 401, 403 - Authentication errors (non-retryable)
-    if status_code in (401, 403):
-        return AuthenticationError(f"Authentication failed (HTTP {status_code}): {error_message}")
-
-    # 400, 404, 422 - Client errors (non-retryable)
-    if 400 <= status_code < 500:
-        return InvalidRequestError(f"Invalid request (HTTP {status_code}): {error_message}")
-
-    # Default: non-retryable
-    return NonRetryableError(f"HTTP error {status_code}: {error_message}")
-
-
-def classify_api_error(exception: Exception) -> Exception:
-    """Classify generic API exception into retryable or non-retryable.
-
-    Args:
-        exception: Exception from API call
-
-    Returns:
-        Classified exception (may be same exception or reclassified)
-
-    Example:
-        try:
-            api_call()
-        except Exception as e:
-            raise classify_api_error(e)
-    """
-    error_str = str(exception).lower()
-
-    # Rate limit indicators
-    if "rate limit" in error_str or "too many requests" in error_str:
-        return RateLimitError(str(exception))
-
-    # Timeout indicators
-    if "timeout" in error_str or "timed out" in error_str:
-        return TimeoutError(str(exception))
-
-    # Connection indicators
-    if "connection" in error_str or "network" in error_str:
-        return ConnectionError(str(exception))
-
-    # Authentication indicators
-    if "authentication" in error_str or "unauthorized" in error_str or "api key" in error_str:
-        return AuthenticationError(str(exception))
-
-    # Quota indicators
-    if "quota" in error_str or "limit exceeded" in error_str:
-        return QuotaExceededError(str(exception))
-
-    # If we can't classify, assume non-retryable to be safe
-    return NonRetryableError(str(exception))
-
-
-# Context manager for retry operations
-
-class RetryContext:
-    """Context manager for operations that need retry logic.
-
-    Example:
-        with RetryContext(max_attempts=3) as retry:
-            for attempt in retry:
-                try:
-                    result = api_call()
-                    break  # Success, exit loop
-                except Exception as e:
-                    if not retry.should_retry(e):
-                        raise  # Non-retryable, propagate
-                    # Retryable, continue to next attempt
-    """
-
-    def __init__(self, max_attempts: int = 3, config: RetryConfig | None = None):
-        """Initialize retry context.
-
-        Args:
-            max_attempts: Maximum number of attempts
-            config: Retry configuration
-        """
-        self.max_attempts = max_attempts
-        self.config = config or DEFAULT_RETRY_CONFIG
-        self.attempt = 0
-
-    def __enter__(self):
-        """Enter context."""
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        """Exit context."""
-        return False  # Don't suppress exceptions
-
-    def __iter__(self):
-        """Iterate over retry attempts."""
-        for i in range(self.max_attempts):
-            self.attempt = i + 1
-            yield self.attempt
-
-            # Wait before next attempt (except after last attempt)
-            if i < self.max_attempts - 1:
-                self._wait()
-
-    def should_retry(self, exception: Exception) -> bool:
-        """Check if exception is retryable.
-
-        Args:
-            exception: Exception to check
-
-        Returns:
-            True if should retry, False otherwise
-        """
-        return isinstance(
-            exception,
-            (RateLimitError, TimeoutError, ConnectionError, ServerError),
-        )
-
-    def _wait(self):
-        """Wait before next retry attempt (exponential backoff with jitter)."""
-        # Exponential backoff: 2^attempt seconds
-        base_wait = min(2 ** self.attempt, self.config.max_wait_seconds)
-
-        # Add jitter: random value between 0 and base_wait
-        if self.config.jitter:
-            jitter = random.uniform(0, base_wait)
-            wait_time = base_wait + jitter
-        else:
-            wait_time = base_wait
-
-        # Cap at max_wait_seconds
-        wait_time = min(wait_time, self.config.max_wait_seconds)
-
-        logger.debug(f"Waiting {wait_time:.2f}s before retry attempt {self.attempt + 1}")
-
-        import time
-        time.sleep(wait_time)

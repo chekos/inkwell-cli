@@ -21,7 +21,6 @@ from tests.e2e.framework import (
     E2E_TEST_CASES,
     E2EBenchmark,
     E2ETestResult,
-    print_benchmark_report,
     validate_e2e_output,
 )
 
@@ -234,9 +233,6 @@ class TestE2ESimulation:
         assert benchmark.avg_cost_per_case > 0
         assert benchmark.avg_entities_extracted > 0
         assert benchmark.avg_tags_generated > 0
-
-        # Print report (for documentation)
-        print_benchmark_report(benchmark, results)
 
     def test_output_validation(self, tmp_path):
         """Test output validation logic."""

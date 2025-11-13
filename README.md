@@ -350,6 +350,32 @@ tags_enabled: true
 dataview_frontmatter: true
 ```
 
+### Editing Configuration
+
+You can edit the configuration file directly using `inkwell config edit`:
+
+```bash
+# Edit config file in your default editor
+uv run inkwell config edit
+```
+
+**Supported Editors**: atom, code, ed, emacs, gedit, helix, kate, micro, nano, notepad, notepad++, nvim, subl, vi, vim
+
+Set your preferred editor with the `EDITOR` environment variable:
+```bash
+export EDITOR=vim
+uv run inkwell config edit
+```
+
+For security reasons, only whitelisted editors are supported. If you need to use a different editor, you can edit the config file manually:
+```bash
+# View config location
+uv run inkwell config show
+
+# Edit manually
+nano ~/.config/inkwell/config.yaml
+```
+
 ## Architecture
 
 ### High-Level Pipeline

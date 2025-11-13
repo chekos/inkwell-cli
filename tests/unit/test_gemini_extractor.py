@@ -8,12 +8,14 @@ from google.generativeai.types import GenerateContentResponse
 from inkwell.extraction.errors import ProviderError, ValidationError
 from inkwell.extraction.extractors.gemini import GeminiExtractor
 from inkwell.extraction.models import ExtractionTemplate
+from inkwell.utils.api_keys import APIKeyError
 
 
 @pytest.fixture
 def mock_api_key(monkeypatch: pytest.MonkeyPatch) -> str:
     """Set mock API key."""
-    api_key = "test-google-key"
+    # Use a valid-format API key for testing (meets length and format requirements)
+    api_key = "AIzaSyD" + "X" * 32  # Valid Gemini key format
     monkeypatch.setenv("GOOGLE_API_KEY", api_key)
     return api_key
 
@@ -58,9 +60,11 @@ class TestGeminiExtractorInit:
 
     def test_init_with_api_key(self) -> None:
         """Test initializing with explicit API key."""
+        # Use a valid-format test key
+        test_key = "AIzaSyD" + "X" * 32
         with patch("inkwell.extraction.extractors.gemini.genai.configure"):
-            extractor = GeminiExtractor(api_key="test-key")
-            assert extractor.api_key == "test-key"
+            extractor = GeminiExtractor(api_key=test_key)
+            assert extractor.api_key == test_key
 
     def test_init_with_env_var(self, mock_api_key: str) -> None:
         """Test initializing with env var API key."""
@@ -72,10 +76,10 @@ class TestGeminiExtractorInit:
         """Test initialization fails without API key."""
         monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
 
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(APIKeyError) as exc_info:
             GeminiExtractor()
 
-        assert "api key required" in str(exc_info.value).lower()
+        assert "API key is required" in str(exc_info.value)
 
     def test_supports_structured_output(self, mock_api_key: str) -> None:
         """Test that Gemini supports structured output."""

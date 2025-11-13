@@ -1,13 +1,14 @@
 """Gemini (Google AI) extractor implementation."""
 
-import json
-import os
 from typing import Any
 
 import google.generativeai as genai
 from google.generativeai import GenerativeModel
 from google.generativeai.types import GenerateContentResponse
 
+from ...utils.api_keys import get_validated_api_key
+from ...utils.json_utils import JSONParsingError, safe_json_loads
+from ...utils.rate_limiter import get_rate_limiter
 from ..errors import ProviderError, ValidationError
 from ..models import ExtractionTemplate
 from .base import BaseExtractor
@@ -44,14 +45,17 @@ class GeminiExtractor(BaseExtractor):
             api_key: Google AI API key (defaults to GOOGLE_API_KEY env var)
 
         Raises:
-            ValueError: If API key not provided
+            APIKeyError: If API key not provided or invalid
         """
-        self.api_key = api_key or os.getenv("GOOGLE_API_KEY")
-        if not self.api_key:
-            raise ValueError(
-                "Google AI API key required. Set GOOGLE_API_KEY environment variable "
-                "or pass api_key parameter."
-            )
+        # Validate API key
+        if api_key:
+            # If provided directly, still validate it
+            from ...utils.api_keys import validate_api_key
+
+            self.api_key = validate_api_key(api_key, "gemini", "GOOGLE_API_KEY")
+        else:
+            # Get from environment and validate
+            self.api_key = get_validated_api_key("GOOGLE_API_KEY", "gemini")
 
         # Configure API
         genai.configure(api_key=self.api_key)
@@ -135,6 +139,10 @@ class GeminiExtractor(BaseExtractor):
         Returns:
             Response from Gemini
         """
+        # Apply rate limiting before API call
+        limiter = get_rate_limiter("gemini")
+        limiter.acquire()
+
         # For now, just call sync version
         # In production, would use: await asyncio.to_thread(...)
         return self.model.generate_content(prompt, generation_config=generation_config)
@@ -203,8 +211,10 @@ class GeminiExtractor(BaseExtractor):
             ValidationError: If validation fails
         """
         try:
-            data = json.loads(output)
-        except json.JSONDecodeError as e:
+            # Use safe JSON parsing with size/depth limits
+            # 5MB for extraction results, depth of 10 for structured data
+            data = safe_json_loads(output, max_size=5_000_000, max_depth=10)
+        except JSONParsingError as e:
             raise ValidationError(f"Invalid JSON from Gemini: {str(e)}") from e
 
         # Basic schema validation

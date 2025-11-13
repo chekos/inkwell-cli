@@ -9,15 +9,11 @@ from inkwell.utils.retry import (
     AuthenticationError,
     ConnectionError,
     InvalidRequestError,
-    NonRetryableError,
     QuotaExceededError,
     RateLimitError,
     RetryConfig,
-    RetryContext,
     ServerError,
     TimeoutError,
-    classify_api_error,
-    classify_http_error,
     with_api_retry,
     with_network_retry,
     with_rate_limit_retry,
@@ -49,90 +45,6 @@ class TestErrorClassification:
         assert issubclass(QuotaExceededError, Exception)
 
 
-class TestClassifyHttpError:
-    """Test HTTP error classification."""
-
-    def test_rate_limit_429(self):
-        """Test 429 classified as rate limit."""
-        error = classify_http_error(429, "Too many requests")
-        assert isinstance(error, RateLimitError)
-        assert "Rate limit exceeded" in str(error)
-
-    def test_server_errors_5xx(self):
-        """Test 5xx classified as server errors."""
-        for status_code in [500, 502, 503, 504]:
-            error = classify_http_error(status_code, "Server error")
-            assert isinstance(error, ServerError)
-
-    def test_timeout_408(self):
-        """Test 408 classified as timeout."""
-        error = classify_http_error(408, "Request timeout")
-        assert isinstance(error, TimeoutError)
-
-    def test_auth_errors_401_403(self):
-        """Test 401/403 classified as authentication errors."""
-        for status_code in [401, 403]:
-            error = classify_http_error(status_code, "Unauthorized")
-            assert isinstance(error, AuthenticationError)
-
-    def test_client_errors_4xx(self):
-        """Test other 4xx classified as invalid request."""
-        for status_code in [400, 404, 422]:
-            error = classify_http_error(status_code, "Bad request")
-            assert isinstance(error, InvalidRequestError)
-
-    def test_unknown_error(self):
-        """Test unknown status codes classified as non-retryable."""
-        error = classify_http_error(999, "Unknown error")
-        assert isinstance(error, NonRetryableError)
-
-
-class TestClassifyApiError:
-    """Test API error classification."""
-
-    def test_rate_limit_keywords(self):
-        """Test rate limit keyword detection."""
-        error = classify_api_error(Exception("rate limit exceeded"))
-        assert isinstance(error, RateLimitError)
-
-        error = classify_api_error(Exception("too many requests"))
-        assert isinstance(error, RateLimitError)
-
-    def test_timeout_keywords(self):
-        """Test timeout keyword detection."""
-        error = classify_api_error(Exception("request timeout"))
-        assert isinstance(error, TimeoutError)
-
-        error = classify_api_error(Exception("operation timed out"))
-        assert isinstance(error, TimeoutError)
-
-    def test_connection_keywords(self):
-        """Test connection keyword detection."""
-        error = classify_api_error(Exception("connection refused"))
-        assert isinstance(error, ConnectionError)
-
-        error = classify_api_error(Exception("network error"))
-        assert isinstance(error, ConnectionError)
-
-    def test_auth_keywords(self):
-        """Test authentication keyword detection."""
-        error = classify_api_error(Exception("authentication failed"))
-        assert isinstance(error, AuthenticationError)
-
-        error = classify_api_error(Exception("invalid api key"))
-        assert isinstance(error, AuthenticationError)
-
-    def test_quota_keywords(self):
-        """Test quota keyword detection."""
-        error = classify_api_error(Exception("quota exceeded"))
-        assert isinstance(error, QuotaExceededError)
-
-    def test_unknown_error(self):
-        """Test unknown errors classified as non-retryable."""
-        error = classify_api_error(Exception("something went wrong"))
-        assert isinstance(error, NonRetryableError)
-
-
 class TestRetryConfig:
     """Test retry configuration."""
 
@@ -140,7 +52,7 @@ class TestRetryConfig:
         """Test default retry configuration."""
         config = RetryConfig()
         assert config.max_attempts == 3
-        assert config.max_wait_seconds == 60
+        assert config.max_wait_seconds == 10  # Updated from 60 to 10 seconds
         assert config.min_wait_seconds == 1
         assert config.jitter is True
 
@@ -318,68 +230,6 @@ class TestSpecializedRetryDecorators:
         result = rate_limited_call()
         assert result == "success"
         assert call_count == 4
-
-
-class TestRetryContext:
-    """Test retry context manager."""
-
-    def test_successful_first_attempt(self):
-        """Test success on first attempt."""
-        attempt_count = 0
-
-        with RetryContext(max_attempts=3) as retry:
-            for attempt in retry:
-                attempt_count = attempt
-                # Success on first attempt
-                break
-
-        assert attempt_count == 1
-
-    def test_retry_on_retryable_error(self):
-        """Test retries on retryable errors."""
-        attempts = []
-
-        with RetryContext(max_attempts=3) as retry:
-            for attempt in retry:
-                attempts.append(attempt)
-                try:
-                    if attempt < 3:
-                        raise RateLimitError("Rate limit")
-                    # Success on third attempt
-                    break
-                except RateLimitError as e:
-                    if not retry.should_retry(e):
-                        raise
-                    # Continue to next attempt
-
-        assert attempts == [1, 2, 3]
-
-    def test_no_retry_on_non_retryable(self):
-        """Test stops immediately on non-retryable errors."""
-        attempts = []
-
-        with pytest.raises(AuthenticationError):
-            with RetryContext(max_attempts=3) as retry:
-                for attempt in retry:
-                    attempts.append(attempt)
-                    raise AuthenticationError("Invalid API key")
-
-        assert attempts == [1]
-
-    def test_should_retry_method(self):
-        """Test should_retry classification."""
-        retry = RetryContext()
-
-        # Retryable
-        assert retry.should_retry(RateLimitError("Rate limit"))
-        assert retry.should_retry(TimeoutError("Timeout"))
-        assert retry.should_retry(ConnectionError("Connection"))
-        assert retry.should_retry(ServerError("Server error"))
-
-        # Non-retryable
-        assert not retry.should_retry(AuthenticationError("Auth failed"))
-        assert not retry.should_retry(InvalidRequestError("Bad request"))
-        assert not retry.should_retry(QuotaExceededError("Quota exceeded"))
 
 
 class TestExponentialBackoff:

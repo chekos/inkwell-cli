@@ -12,6 +12,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
+from inkwell.utils.datetime import now_utc
+
 
 class TemplateVariable(BaseModel):
     """Variable that can be used in prompt template.
@@ -185,7 +187,7 @@ class ExtractedContent(BaseModel):
 
     # Timestamps
     extracted_at: datetime = Field(
-        default_factory=datetime.utcnow, description="When extraction occurred"
+        default_factory=now_utc, description="When extraction occurred"
     )
 
     @property
@@ -243,7 +245,7 @@ class ExtractionResult(BaseModel):
 
     # Timestamp
     completed_at: datetime = Field(
-        default_factory=datetime.utcnow, description="When extraction completed"
+        default_factory=now_utc, description="When extraction completed"
     )
 
     @property

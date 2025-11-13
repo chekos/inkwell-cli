@@ -110,8 +110,10 @@ def create_frontmatter_dict(
     Returns:
         Dict suitable for YAML frontmatter
     """
+    from datetime import timezone
+
     config = config or DataviewConfig()
-    now = datetime.now()
+    now = datetime.now(timezone.utc)
 
     # Build frontmatter
     frontmatter: dict[str, Any] = {

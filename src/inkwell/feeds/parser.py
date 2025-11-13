@@ -270,11 +270,13 @@ class RSSParser:
         # Try updated field
         if hasattr(entry, "updated_parsed") and entry.updated_parsed:
             import time
+            from datetime import timezone
 
-            return datetime.fromtimestamp(time.mktime(entry.updated_parsed))
+            return datetime.fromtimestamp(time.mktime(entry.updated_parsed), tz=timezone.utc)
 
         # Fallback to now
-        return datetime.now()
+        from inkwell.utils.datetime import now_utc
+        return now_utc()
 
     def _extract_description(self, entry: dict) -> str:
         """Extract description from entry.

@@ -62,17 +62,18 @@ async def api_call():
 **Parameters:**
 - **Multiplier:** 1 second base
 - **Min wait:** 1 second
-- **Max wait:** 60 seconds
+- **Max wait:** 10 seconds (reduced from 60s for better UX - see TODO #004)
 - **Max attempts:** 3 (configurable via config)
-- **Jitter:** Equal jitter (base + random(0, base))
+- **Jitter:** ±25% jitter (base ± random(0.25 * base))
 
 **Wait times:**
 - Attempt 1: 0s (initial)
-- Attempt 2: 1s + random(0, 1s) = 1-2s
-- Attempt 3: 2s + random(0, 2s) = 2-4s
-- Attempt 4: 4s + random(0, 4s) = 4-8s
+- Attempt 2: 1s ± 25% = 0.75-1.25s
+- Attempt 3: 2s ± 25% = 1.5-2.5s
+- Attempt 4: 4s ± 25% = 3-5s
+- **Total worst case:** ~9s (vs 150s with old config)
 
-**Rationale:** Equal jitter balances guaranteed minimum wait with load spreading.
+**Rationale:** ±25% jitter is industry standard (AWS, Google) and prevents thundering herd. 10s max wait provides fast user experience while allowing transient issues to resolve.
 
 ### 2. Error Classification
 
@@ -435,7 +436,7 @@ Allow users to configure retry behavior:
 retry:
   enabled: true
   max_attempts: 3              # Maximum retry attempts
-  max_wait: 60                 # Maximum wait time between retries (seconds)
+  max_wait: 10                 # Maximum wait time between retries (seconds)
   show_progress: true          # Show retry progress in terminal
 
 logging:
@@ -488,7 +489,7 @@ logging:
 ### Negative
 
 1. **Complexity** - More code to maintain and test
-2. **Longer waits** - Failed operations take longer (up to ~60s with 3 retries)
+2. **Longer waits** - Failed operations take longer (up to ~9s with 3 retries)
 3. **Dependency** - Adds Tenacity library dependency
 4. **Logging overhead** - More log messages (can be noisy in DEBUG mode)
 

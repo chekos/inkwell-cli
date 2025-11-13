@@ -9,11 +9,27 @@ Based on actual API usage data, not estimates.
 """
 
 import json
-from datetime import datetime
+import os
+import shutil
+import sys
+import tempfile
+import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+from inkwell.utils.datetime import now_utc, validate_timezone_aware
+from inkwell.utils.logging import get_logger
+
+# Cross-platform file locking
+if sys.platform == "win32":
+    import msvcrt
+else:
+    import fcntl
+
+logger = get_logger()
 
 
 # Provider pricing (USD per million tokens)
@@ -87,18 +103,31 @@ class APIUsage(BaseModel):
 
     # Context
     timestamp: datetime = Field(
-        default_factory=datetime.utcnow, description="When operation occurred"
+        default_factory=now_utc, description="When operation occurred"
     )
     episode_title: str | None = Field(None, description="Episode title if applicable")
     template_name: str | None = Field(
         None, description="Template name if applicable"
     )
 
+    @field_validator("timestamp", mode="before")
+    @classmethod
+    def ensure_timezone_aware(cls, v: datetime) -> datetime:
+        """Ensure timestamp is timezone-aware."""
+        if isinstance(v, datetime):
+            if v.tzinfo is None:
+                # Assume UTC for naive datetimes
+                return v.replace(tzinfo=timezone.utc)
+        return v
+
     def model_post_init(self, __context: Any) -> None:
         """Calculate derived fields after initialization."""
         # Calculate total tokens if not set
         if self.total_tokens == 0:
             self.total_tokens = self.input_tokens + self.output_tokens
+
+        # Validate timestamp is timezone-aware (runtime check)
+        validate_timezone_aware(self.timestamp, "timestamp")
 
 
 class CostSummary(BaseModel):
@@ -188,21 +217,161 @@ class CostTracker:
             self._load()
 
     def _load(self) -> None:
-        """Load costs from disk."""
+        """Load costs from disk with shared lock."""
         try:
-            with open(self.costs_file) as f:
-                data = json.load(f)
-                self.usage_history = [APIUsage.model_validate(item) for item in data]
+            with open(self.costs_file, "r") as f:
+                # Acquire shared lock for reading
+                self._acquire_lock(f, exclusive=False)
+                try:
+                    data = json.load(f)
+                    self.usage_history = [APIUsage.model_validate(item) for item in data]
+                finally:
+                    self._release_lock(f)
         except (json.JSONDecodeError, ValueError) as e:
-            # Corrupt file, start fresh
-            print(f"Warning: Could not load costs file: {e}")
-            self.usage_history = []
+            # Corrupt file - try backup
+            logger.warning("Failed to load costs file: %s", e)
+            self._load_from_backup()
+
+    def _load_from_backup(self) -> None:
+        """Load from backup file if main file is corrupt."""
+        backup_file = self.costs_file.with_suffix(".json.bak")
+        if backup_file.exists():
+            try:
+                with open(backup_file, "r") as f:
+                    data = json.load(f)
+                    self.usage_history = [APIUsage.model_validate(item) for item in data]
+                logger.warning("Loaded costs from backup: %s", backup_file)
+                return
+            except Exception as e:
+                logger.warning("Backup file also corrupt: %s", e)
+
+        # Both failed - archive corrupt file
+        if self.costs_file.exists():
+            corrupt_backup = self.costs_file.with_suffix(
+                f".json.corrupt.{int(time.time())}"
+            )
+            try:
+                self.costs_file.rename(corrupt_backup)
+                logger.error("Archived corrupt cost file to %s", corrupt_backup)
+            except Exception as e:
+                logger.error("Failed to archive corrupt file: %s", e)
+
+        self.usage_history = []
+
+    def _acquire_lock(self, file_obj, exclusive: bool = True) -> None:
+        """Acquire file lock (cross-platform).
+
+        Args:
+            file_obj: Open file object
+            exclusive: If True, acquire exclusive lock; if False, acquire shared lock
+        """
+        if sys.platform == "win32":
+            # Windows: msvcrt locking
+            # Note: msvcrt doesn't support shared locks, always exclusive
+            msvcrt.locking(file_obj.fileno(), msvcrt.LK_LOCK, 1)
+        else:
+            # POSIX: fcntl locking
+            lock_type = fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH
+            fcntl.flock(file_obj.fileno(), lock_type)
+
+    def _release_lock(self, file_obj) -> None:
+        """Release file lock (cross-platform).
+
+        Args:
+            file_obj: Open file object
+        """
+        if sys.platform == "win32":
+            # Windows: msvcrt unlock
+            msvcrt.locking(file_obj.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            # POSIX: fcntl unlock
+            fcntl.flock(file_obj.fileno(), fcntl.LOCK_UN)
 
     def _save(self) -> None:
-        """Save costs to disk."""
-        data = [usage.model_dump(mode="json") for usage in self.usage_history]
-        with open(self.costs_file, "w") as f:
-            json.dump(data, f, indent=2, default=str)
+        """Save costs to disk with file locking and atomic write."""
+        # Create backup first if file exists
+        backup_file = self.costs_file.with_suffix(".json.bak")
+        if self.costs_file.exists() and self.costs_file.stat().st_size > 0:
+            try:
+                shutil.copy2(self.costs_file, backup_file)
+            except Exception as e:
+                logger.warning("Failed to create backup: %s", e)
+
+        # Atomic write with exclusive lock
+        temp_fd, temp_path = tempfile.mkstemp(
+            dir=self.costs_file.parent, prefix=".tmp_costs_", suffix=".json"
+        )
+
+        try:
+            # Open file in 'a+' mode which creates it if it doesn't exist
+            # This is safer for concurrent access
+            with open(self.costs_file, "a+") as lock_file:
+                # Acquire exclusive lock
+                self._acquire_lock(lock_file, exclusive=True)
+
+                try:
+                    # Re-read to get latest data (another process might have written)
+                    lock_file.seek(0)
+                    content = lock_file.read()
+
+                    # Parse existing data
+                    try:
+                        if content.strip():
+                            existing_data = json.loads(content)
+                            existing = [
+                                APIUsage.model_validate(item) for item in existing_data
+                            ]
+                        else:
+                            existing = []
+                    except (json.JSONDecodeError, ValueError):
+                        existing = []
+
+                    # Merge: add entries not already present (by timestamp + operation + provider + episode)
+                    # Using a more detailed key to avoid false duplicates
+                    existing_keys = {
+                        (
+                            u.timestamp.isoformat(),
+                            u.operation,
+                            u.provider,
+                            u.episode_title,
+                            u.input_tokens,
+                        )
+                        for u in existing
+                    }
+                    new_entries = [
+                        u
+                        for u in self.usage_history
+                        if (
+                            u.timestamp.isoformat(),
+                            u.operation,
+                            u.provider,
+                            u.episode_title,
+                            u.input_tokens,
+                        )
+                        not in existing_keys
+                    ]
+                    combined = existing + new_entries
+
+                    # Write to temp file
+                    with open(temp_fd, "w") as f:
+                        data = [usage.model_dump(mode="json") for usage in combined]
+                        json.dump(data, f, indent=2, default=str)
+                        f.flush()
+                        os.fsync(f.fileno())
+
+                    # Atomic replace
+                    Path(temp_path).replace(self.costs_file)
+
+                    # Update in-memory state
+                    self.usage_history = combined
+
+                finally:
+                    self._release_lock(lock_file)
+
+        except Exception:
+            # Clean up temp file on error
+            Path(temp_path).unlink(missing_ok=True)
+            raise
 
     def track(self, usage: APIUsage) -> None:
         """Track a new API usage.
@@ -269,8 +438,26 @@ class CostTracker:
 
     def clear(self) -> None:
         """Clear all cost history."""
+        # Clear in-memory history
         self.usage_history = []
-        self._save()
+
+        # Overwrite file directly (no merge needed for clearing)
+        if self.costs_file.exists():
+            backup_file = self.costs_file.with_suffix(".json.bak")
+            try:
+                shutil.copy2(self.costs_file, backup_file)
+            except Exception as e:
+                logger.warning("Failed to create backup: %s", e)
+
+        # Write empty array
+        with open(self.costs_file, "w") as f:
+            self._acquire_lock(f, exclusive=True)
+            try:
+                json.dump([], f, indent=2)
+                f.flush()
+                os.fsync(f.fileno())
+            finally:
+                self._release_lock(f)
 
 
 def calculate_cost_from_usage(

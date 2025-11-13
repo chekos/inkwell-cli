@@ -1,11 +1,13 @@
 """Transcript caching layer."""
 
+import asyncio
 import hashlib
 import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+import aiofiles
 from platformdirs import user_cache_dir
 
 from inkwell.transcription.models import Transcript
@@ -81,8 +83,8 @@ class TranscriptCache:
         age = now - cached_at
         return age > timedelta(days=self.ttl_days)
 
-    def get(self, episode_url: str) -> Transcript | None:
-        """Get transcript from cache.
+    async def get(self, episode_url: str) -> Transcript | None:
+        """Get transcript from cache (async).
 
         Args:
             episode_url: Episode URL
@@ -96,15 +98,16 @@ class TranscriptCache:
             return None
 
         try:
-            # Read cache file
-            with cache_path.open("r") as f:
-                data = json.load(f)
+            # Read cache file asynchronously
+            async with aiofiles.open(cache_path, "r") as f:
+                content = await f.read()
+                data = json.loads(content)
 
             # Check expiration
             cached_at = datetime.fromisoformat(data["cached_at"])
             if self._is_expired(cached_at):
-                # Remove expired entry
-                cache_path.unlink()
+                # Remove expired entry asynchronously
+                await self._delete_file(cache_path)
                 return None
 
             # Deserialize transcript
@@ -117,11 +120,11 @@ class TranscriptCache:
 
         except (json.JSONDecodeError, KeyError, ValueError):
             # Cache file is corrupted - remove it
-            cache_path.unlink(missing_ok=True)
+            await self._delete_file(cache_path)
             return None
 
-    def set(self, episode_url: str, transcript: Transcript) -> None:
-        """Save transcript to cache.
+    async def set(self, episode_url: str, transcript: Transcript) -> None:
+        """Save transcript to cache (async).
 
         Args:
             episode_url: Episode URL
@@ -131,6 +134,7 @@ class TranscriptCache:
             CacheError: If caching fails
         """
         cache_path = self._get_cache_path(episode_url)
+        temp_path = cache_path.with_suffix(".tmp")
 
         try:
             # Prepare cache data
@@ -141,20 +145,20 @@ class TranscriptCache:
             }
 
             # Write atomically (write to temp file, then rename)
-            temp_path = cache_path.with_suffix(".tmp")
-            with temp_path.open("w") as f:
-                json.dump(data, f, indent=2)
+            async with aiofiles.open(temp_path, "w") as f:
+                await f.write(json.dumps(data, indent=2))
 
-            temp_path.rename(cache_path)
+            # Atomic rename (still sync, but fast)
+            await asyncio.to_thread(temp_path.rename, cache_path)
 
         except (OSError, TypeError) as e:
             # Clean up temp file if it exists
             if temp_path.exists():
-                temp_path.unlink()
+                await self._delete_file(temp_path)
             raise CacheError(f"Failed to cache transcript: {e}") from e
 
-    def delete(self, episode_url: str) -> bool:
-        """Delete transcript from cache.
+    async def delete(self, episode_url: str) -> bool:
+        """Delete transcript from cache (async).
 
         Args:
             episode_url: Episode URL
@@ -165,79 +169,125 @@ class TranscriptCache:
         cache_path = self._get_cache_path(episode_url)
 
         if cache_path.exists():
-            cache_path.unlink()
+            await self._delete_file(cache_path)
             return True
 
         return False
 
-    def clear(self) -> int:
-        """Clear all cached transcripts.
+    async def clear(self) -> int:
+        """Clear all cached transcripts (async).
 
         Returns:
             Number of cache entries deleted
         """
-        count = 0
-        for cache_file in self.cache_dir.glob("*.json"):
-            cache_file.unlink()
-            count += 1
+        cache_files = list(self.cache_dir.glob("*.json"))
+
+        # Delete files in parallel
+        results = await asyncio.gather(
+            *[self._delete_file(f) for f in cache_files], return_exceptions=True
+        )
+
+        # Count successful deletions
+        count = sum(1 for r in results if r is None)
         return count
 
-    def clear_expired(self) -> int:
-        """Clear expired cache entries.
+    async def clear_expired(self) -> int:
+        """Clear expired cache entries (async).
 
         Returns:
             Number of expired entries deleted
         """
-        count = 0
+        cache_files = list(self.cache_dir.glob("*.json"))
 
-        for cache_file in self.cache_dir.glob("*.json"):
+        async def check_and_delete(cache_file: Path) -> bool:
+            """Check if file is expired and delete if so. Returns True if deleted."""
             try:
-                with cache_file.open("r") as f:
-                    data = json.load(f)
+                async with aiofiles.open(cache_file, "r") as f:
+                    content = await f.read()
+                    data = json.loads(content)
 
                 cached_at = datetime.fromisoformat(data["cached_at"])
                 if self._is_expired(cached_at):
-                    cache_file.unlink()
-                    count += 1
+                    await self._delete_file(cache_file)
+                    return True
 
             except (json.JSONDecodeError, KeyError, ValueError, OSError):
                 # Corrupted file - remove it
-                cache_file.unlink(missing_ok=True)
-                count += 1
+                await self._delete_file(cache_file)
+                return True
 
+            return False
+
+        # Check and delete expired files in parallel
+        results = await asyncio.gather(*[check_and_delete(f) for f in cache_files])
+
+        # Count deletions
+        count = sum(1 for deleted in results if deleted)
         return count
 
-    def stats(self) -> dict[str, Any]:
-        """Get cache statistics.
+    async def stats(self) -> dict[str, Any]:
+        """Get cache statistics (async).
 
         Returns:
             Dictionary with cache stats
         """
-        total = 0
-        expired = 0
-        sources: dict[str, int] = {}
-        total_size = 0
+        cache_files = list(self.cache_dir.glob("*.json"))
 
-        for cache_file in self.cache_dir.glob("*.json"):
+        if not cache_files:
+            return {
+                "total": 0,
+                "expired": 0,
+                "valid": 0,
+                "size_bytes": 0,
+                "sources": {},
+                "cache_dir": str(self.cache_dir),
+            }
+
+        async def analyze_file(cache_file: Path) -> dict[str, Any] | None:
+            """Analyze a single cache file. Returns stats dict or None if error."""
             try:
-                total += 1
-                total_size += cache_file.stat().st_size
+                # Get size
+                stat = await asyncio.to_thread(cache_file.stat)
+                file_size = stat.st_size
 
-                with cache_file.open("r") as f:
-                    data = json.load(f)
+                # Read content
+                async with aiofiles.open(cache_file, "r") as f:
+                    content = await f.read()
+                    data = json.loads(content)
 
                 # Check expiration
                 cached_at = datetime.fromisoformat(data["cached_at"])
-                if self._is_expired(cached_at):
-                    expired += 1
+                is_expired = self._is_expired(cached_at)
 
-                # Count sources
+                # Get source
                 source = data["transcript"].get("source", "unknown")
-                sources[source] = sources.get(source, 0) + 1
+
+                return {
+                    "size": file_size,
+                    "expired": is_expired,
+                    "source": source,
+                }
 
             except (json.JSONDecodeError, KeyError, ValueError, OSError):
-                # Skip corrupted files
-                continue
+                # Corrupted file
+                return None
+
+        # Analyze all files in parallel
+        results = await asyncio.gather(*[analyze_file(f) for f in cache_files])
+
+        # Aggregate results
+        total = len(cache_files)
+        expired = 0
+        total_size = 0
+        sources: dict[str, int] = {}
+
+        for result in results:
+            if result:
+                total_size += result["size"]
+                if result["expired"]:
+                    expired += 1
+                source = result["source"]
+                sources[source] = sources.get(source, 0) + 1
 
         return {
             "total": total,
@@ -247,3 +297,16 @@ class TranscriptCache:
             "sources": sources,
             "cache_dir": str(self.cache_dir),
         }
+
+    async def _delete_file(self, path: Path) -> None:
+        """Delete file asynchronously.
+
+        Args:
+            path: Path to file to delete
+        """
+        try:
+            # aiofiles doesn't have unlink, use thread pool
+            await asyncio.to_thread(path.unlink, missing_ok=True)
+        except Exception:
+            # Ignore deletion errors
+            pass

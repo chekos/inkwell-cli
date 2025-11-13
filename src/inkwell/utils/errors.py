@@ -77,3 +77,9 @@ class NetworkTimeoutError(NetworkError):
     """Request timeout."""
 
     pass
+
+
+class SecurityError(InkwellError):
+    """Security-related errors."""
+
+    pass

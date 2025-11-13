@@ -8,14 +8,18 @@ Generates tags from:
 Supports hierarchical organization and smart normalization.
 """
 
-import json
-import os
+import logging
 from typing import Any
 
 import google.generativeai as genai
 
 from inkwell.obsidian.models import Entity, EntityType
 from inkwell.obsidian.tag_models import Tag, TagCategory, TagConfig, TagStyle
+from inkwell.utils.api_keys import APIKeyError, get_validated_api_key
+from inkwell.utils.json_utils import JSONParsingError, extract_json_from_text
+from inkwell.utils.rate_limiter import get_rate_limiter
+
+logger = logging.getLogger(__name__)
 
 
 class TagGenerator:
@@ -36,15 +40,32 @@ class TagGenerator:
         Args:
             config: Tag generation configuration
             api_key: Gemini API key (defaults to GOOGLE_API_KEY env var)
+
+        Raises:
+            APIKeyError: If LLM tags enabled but API key is invalid or missing
         """
         self.config = config or TagConfig()
-        self.api_key = api_key or os.environ.get("GOOGLE_API_KEY")
 
         # Initialize Gemini if LLM tags enabled
-        if self.config.include_llm_tags and self.api_key:
-            genai.configure(api_key=self.api_key)
-            self.model = genai.GenerativeModel(self.config.llm_model)
+        if self.config.include_llm_tags:
+            try:
+                # Validate API key
+                if api_key:
+                    # If provided directly, still validate it
+                    from inkwell.utils.api_keys import validate_api_key
+
+                    self.api_key = validate_api_key(api_key, "gemini", "GOOGLE_API_KEY")
+                else:
+                    # Get from environment and validate
+                    self.api_key = get_validated_api_key("GOOGLE_API_KEY", "gemini")
+
+                genai.configure(api_key=self.api_key)
+                self.model = genai.GenerativeModel(self.config.llm_model)
+            except APIKeyError as e:
+                logger.error(f"API key validation failed: {e}")
+                raise
         else:
+            self.api_key = None
             self.model = None
 
     def generate_tags(
@@ -201,6 +222,10 @@ class TagGenerator:
             # Create prompt
             prompt = self._create_tag_prompt(context)
 
+            # Apply rate limiting before API call
+            limiter = get_rate_limiter("gemini")
+            limiter.acquire()
+
             # Generate tags
             response = self.model.generate_content(prompt)
 
@@ -211,7 +236,7 @@ class TagGenerator:
 
         except Exception as e:
             # Gracefully handle LLM failures
-            print(f"Warning: LLM tag generation failed: {e}")
+            logger.warning("LLM tag generation failed: %s", e, exc_info=True)
             return []
 
     def _build_llm_context(
@@ -220,39 +245,27 @@ class TagGenerator:
         metadata: dict[str, Any],
         extraction_results: dict[str, Any] | None,
     ) -> str:
-        """Build context string for LLM.
+        """Build simple context for LLM tag generation.
 
         Args:
             transcript: Episode transcript
             metadata: Episode metadata
-            extraction_results: Extraction results
+            extraction_results: Extraction results (optional, unused in simplified version)
 
         Returns:
             Formatted context string
         """
-        parts = []
+        # Extract basic metadata
+        podcast_name = metadata.get("podcast_name", "Unknown")
+        episode_title = metadata.get("episode_title", "Unknown")
 
-        # Metadata
-        parts.append(f"Podcast: {metadata.get('podcast_name', 'Unknown')}")
-        parts.append(f"Episode: {metadata.get('episode_title', 'Unknown')}")
+        # First 1000 chars of transcript is sufficient for context
+        transcript_sample = transcript[:1000] + ("..." if len(transcript) > 1000 else "")
 
-        # Summary (if available)
-        if extraction_results and "summary" in extraction_results:
-            summary = extraction_results["summary"]
-            if isinstance(summary, dict) and "content" in summary:
-                parts.append(f"\nSummary:\n{summary['content'][:500]}")
-
-        # Key concepts (if available)
-        if extraction_results and "key-concepts" in extraction_results:
-            concepts = extraction_results["key-concepts"]
-            if isinstance(concepts, dict) and "concepts" in concepts:
-                concept_names = [c.get("name", "") for c in concepts["concepts"][:5]]
-                parts.append(f"\nKey Concepts: {', '.join(concept_names)}")
-
-        # Transcript excerpt
-        parts.append(f"\nTranscript Excerpt:\n{transcript[:1000]}")
-
-        return "\n".join(parts)
+        # Simple, clear context format
+        return f"""Podcast: {podcast_name}
+Episode: {episode_title}
+Content: {transcript_sample}""".strip()
 
     def _create_tag_prompt(self, context: str) -> str:
         """Create prompt for LLM tag generation.
@@ -263,7 +276,7 @@ class TagGenerator:
         Returns:
             Formatted prompt
         """
-        return f"""Analyze this podcast episode and suggest relevant tags for organization in Obsidian.
+        return f"""Analyze this podcast episode and suggest relevant tags for Obsidian.
 
 {context}
 
@@ -281,8 +294,10 @@ Requirements:
 Respond with a JSON object:
 {{
     "tags": [
-        {{"name": "ai", "category": "topic", "confidence": 0.9, "reasoning": "Main topic of discussion"}},
-        {{"name": "productivity", "category": "theme", "confidence": 0.8, "reasoning": "Recurring theme"}}
+        {{"name": "ai", "category": "topic", "confidence": 0.9,
+          "reasoning": "Main topic of discussion"}},
+        {{"name": "productivity", "category": "theme", "confidence": 0.8,
+          "reasoning": "Recurring theme"}}
     ]
 }}
 
@@ -301,34 +316,45 @@ Valid categories: topic, theme, concept, industry, custom
         tags = []
 
         try:
-            # Extract JSON from response
-            json_start = response_text.find("{")
-            json_end = response_text.rfind("}") + 1
-            if json_start >= 0 and json_end > json_start:
-                json_str = response_text[json_start:json_end]
-                data = json.loads(json_str)
+            # Use safe JSON extraction with size/depth limits
+            # 1MB is generous for tag responses, depth of 5 is sufficient
+            data = extract_json_from_text(
+                response_text, max_size=1_000_000, max_depth=5
+            )
 
-                # Parse tags
-                for tag_data in data.get("tags", []):
-                    try:
-                        # Map string category to TagCategory enum
-                        category_str = tag_data.get("category", "custom")
-                        category = self._map_category(category_str)
+            # Validate structure
+            if not isinstance(data, dict):
+                raise JSONParsingError(
+                    f"Expected JSON object, got {type(data).__name__}"
+                )
 
-                        tag = Tag(
-                            name=tag_data["name"],
-                            category=category,
-                            confidence=tag_data.get("confidence", 0.7),
-                            source="llm",
-                            raw_name=tag_data["name"],
-                        )
-                        tags.append(tag)
-                    except (KeyError, ValueError) as e:
-                        print(f"Warning: Failed to parse tag: {e}")
-                        continue
+            if "tags" not in data:
+                raise JSONParsingError("Missing 'tags' field in JSON response")
 
-        except (json.JSONDecodeError, ValueError) as e:
-            print(f"Warning: Failed to parse LLM response: {e}")
+            if not isinstance(data["tags"], list):
+                raise JSONParsingError("'tags' field must be a list")
+
+            # Parse tags
+            for tag_data in data.get("tags", []):
+                try:
+                    # Map string category to TagCategory enum
+                    category_str = tag_data.get("category", "custom")
+                    category = self._map_category(category_str)
+
+                    tag = Tag(
+                        name=tag_data["name"],
+                        category=category,
+                        confidence=tag_data.get("confidence", 0.7),
+                        source="llm",
+                        raw_name=tag_data["name"],
+                    )
+                    tags.append(tag)
+                except (KeyError, ValueError) as e:
+                    logger.warning("Failed to parse tag: %s", e)
+                    continue
+
+        except JSONParsingError as e:
+            logger.warning("Failed to parse LLM response as JSON: %s", e)
 
         return tags
 

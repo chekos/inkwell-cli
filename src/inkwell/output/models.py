@@ -12,6 +12,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from inkwell.utils.datetime import now_utc
+
 
 class EpisodeMetadata(BaseModel):
     """Metadata for a podcast episode.
@@ -41,7 +43,7 @@ class EpisodeMetadata(BaseModel):
 
     # Processing metadata
     processed_date: datetime = Field(
-        default_factory=datetime.utcnow, description="When episode was processed"
+        default_factory=now_utc, description="When episode was processed"
     )
     transcription_source: str = Field(
         ..., description="Transcription source (youtube, gemini, cached)"
@@ -143,7 +145,7 @@ class OutputFile(BaseModel):
 
     # File metadata
     created_at: datetime = Field(
-        default_factory=datetime.utcnow, description="When file was created"
+        default_factory=now_utc, description="When file was created"
     )
     size_bytes: int = Field(0, description="File size in bytes", ge=0)
 
@@ -201,7 +203,7 @@ class EpisodeOutput(BaseModel):
 
     # Timestamps
     created_at: datetime = Field(
-        default_factory=datetime.utcnow, description="When output was created"
+        default_factory=now_utc, description="When output was created"
     )
 
     def add_file(self, file: OutputFile) -> None:
@@ -238,6 +240,33 @@ class EpisodeOutput(BaseModel):
             if file.filename == filename:
                 return file
         return None
+
+    @property
+    def directory(self) -> Path:
+        """Get output directory path (backward compatibility alias).
+
+        Returns:
+            Output directory path
+        """
+        return self.output_dir
+
+    @property
+    def metadata_file(self) -> Path:
+        """Get metadata file path (backward compatibility alias).
+
+        Returns:
+            Path to .metadata.yaml file
+        """
+        return self.output_dir / ".metadata.yaml"
+
+    @property
+    def output_files(self) -> list[OutputFile]:
+        """Get output files list (backward compatibility alias).
+
+        Returns:
+            List of output files
+        """
+        return self.files
 
     @property
     def directory_name(self) -> str:

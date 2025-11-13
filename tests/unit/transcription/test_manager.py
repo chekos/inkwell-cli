@@ -32,11 +32,11 @@ class TestTranscriptionManager:
     def mock_cache(self) -> Mock:
         """Create mock cache."""
         cache = Mock()
-        cache.get = Mock(return_value=None)
-        cache.set = Mock()
-        cache.clear = Mock(return_value=5)
-        cache.clear_expired = Mock(return_value=2)
-        cache.stats = Mock(return_value={"total": 10})
+        cache.get = AsyncMock(return_value=None)
+        cache.set = AsyncMock()
+        cache.clear = AsyncMock(return_value=5)
+        cache.clear_expired = AsyncMock(return_value=2)
+        cache.stats = AsyncMock(return_value={"total": 10})
         return cache
 
     @pytest.fixture

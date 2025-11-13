@@ -1,6 +1,8 @@
 """Unit tests for output manager."""
 
+import os
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 import yaml
@@ -8,6 +10,7 @@ import yaml
 from inkwell.extraction.models import ExtractedContent, ExtractionResult
 from inkwell.output.manager import OutputManager
 from inkwell.output.models import EpisodeMetadata
+from inkwell.utils.errors import SecurityError
 
 
 @pytest.fixture
@@ -271,6 +274,122 @@ class TestOutputManagerAtomicWrites:
 
         assert test_file.read_text() == "Replaced"
 
+    def test_write_file_atomic_calls_fsync(self, temp_output_dir: Path) -> None:
+        """Test that atomic write calls fsync for durability."""
+        manager = OutputManager(output_dir=temp_output_dir)
+
+        test_file = temp_output_dir / "test.md"
+        content = "Test content with fsync"
+
+        # Mock os.fsync to track calls
+        with patch("os.fsync") as mock_fsync:
+            manager._write_file_atomic(test_file, content)
+
+            # Verify fsync was called at least once (for file content)
+            # Note: May be called twice (file + directory)
+            assert mock_fsync.call_count >= 1
+
+            # Verify file was created successfully
+            assert test_file.exists()
+            assert test_file.read_text() == content
+
+    def test_write_file_atomic_calls_flush_before_fsync(self, temp_output_dir: Path) -> None:
+        """Test that flush is called before fsync."""
+        manager = OutputManager(output_dir=temp_output_dir)
+
+        test_file = temp_output_dir / "test.md"
+
+        # Track call order
+        call_order = []
+
+        def mock_flush():
+            call_order.append("flush")
+
+        def mock_fsync(fd):
+            call_order.append("fsync")
+
+        with patch("os.fsync", side_effect=mock_fsync):
+            with patch("builtins.open", wraps=open) as mock_open:
+                # Patch the flush method of the file object
+                original_open = open
+
+                def patched_open(*args, **kwargs):
+                    file_obj = original_open(*args, **kwargs)
+                    original_flush = file_obj.flush
+
+                    def tracked_flush():
+                        mock_flush()
+                        original_flush()
+
+                    file_obj.flush = tracked_flush
+                    return file_obj
+
+                with patch("builtins.open", side_effect=patched_open):
+                    manager._write_file_atomic(test_file, "content")
+
+        # Verify flush was called before fsync
+        assert "flush" in call_order
+        assert "fsync" in call_order
+        assert call_order.index("flush") < call_order.index("fsync")
+
+    def test_write_file_atomic_handles_directory_fsync_failure(
+        self, temp_output_dir: Path
+    ) -> None:
+        """Test that directory fsync failure doesn't break write."""
+        manager = OutputManager(output_dir=temp_output_dir)
+
+        test_file = temp_output_dir / "test.md"
+        content = "Test content"
+
+        # Mock os.open to fail for directory (when called with O_RDONLY)
+        original_open = os.open
+
+        def mock_open(path, flags, mode=0o777):
+            # Fail when opening directory (O_RDONLY flag)
+            if flags == os.O_RDONLY:
+                raise OSError("Directory fsync not supported")
+            return original_open(path, flags, mode)
+
+        with patch("os.open", side_effect=mock_open):
+            # Should complete successfully despite directory fsync failure
+            manager._write_file_atomic(test_file, content)
+
+        # File should still be written
+        assert test_file.exists()
+        assert test_file.read_text() == content
+
+    def test_write_file_atomic_fsync_on_file_descriptor(self, temp_output_dir: Path) -> None:
+        """Test that fsync is called with correct file descriptor."""
+        manager = OutputManager(output_dir=temp_output_dir)
+
+        test_file = temp_output_dir / "test.md"
+
+        with patch("os.fsync") as mock_fsync:
+            manager._write_file_atomic(test_file, "content")
+
+            # Verify fsync was called with a valid file descriptor (integer)
+            assert mock_fsync.call_count >= 1
+            first_call_args = mock_fsync.call_args_list[0][0]
+            assert isinstance(first_call_args[0], int)
+
+    def test_write_file_atomic_cleans_up_on_fsync_error(self, temp_output_dir: Path) -> None:
+        """Test that temp file is cleaned up if fsync fails."""
+        manager = OutputManager(output_dir=temp_output_dir)
+
+        test_file = temp_output_dir / "test.md"
+
+        # Mock fsync to raise error
+        with patch("os.fsync", side_effect=OSError("Disk full")):
+            with pytest.raises(OSError):
+                manager._write_file_atomic(test_file, "content")
+
+        # Temp file should be cleaned up
+        temp_files = list(temp_output_dir.glob(".tmp_*"))
+        assert len(temp_files) == 0
+
+        # Final file should not exist
+        assert not test_file.exists()
+
 
 class TestOutputManagerListEpisodes:
     """Tests for listing episodes."""
@@ -480,3 +599,305 @@ class TestOutputManagerEdgeCases:
         assert output.directory.exists()
         assert output.metadata_file.exists()
         assert len(output.output_files) == 0
+
+
+class TestOutputManagerSecurityPathTraversal:
+    """Tests for path traversal attack prevention."""
+
+    def test_path_traversal_with_dotdot_sequence(
+        self,
+        temp_output_dir: Path,
+        episode_metadata: EpisodeMetadata,
+        extraction_results: list[ExtractionResult],
+    ) -> None:
+        """Test that ../ sequences are sanitized."""
+        # Attempt path traversal with ../
+        episode_metadata.episode_title = "../../../../etc/passwd"
+
+        manager = OutputManager(output_dir=temp_output_dir)
+        output = manager.write_episode(episode_metadata, extraction_results)
+
+        # Directory should be created safely within output_dir
+        assert output.directory.exists()
+        assert output.directory.parent == temp_output_dir
+        # Path traversal should be sanitized (../ removed)
+        assert ".." not in output.directory.name
+
+    def test_path_traversal_with_absolute_path(
+        self,
+        temp_output_dir: Path,
+        episode_metadata: EpisodeMetadata,
+        extraction_results: list[ExtractionResult],
+    ) -> None:
+        """Test that absolute paths in titles are sanitized."""
+        # Attempt absolute path injection
+        episode_metadata.episode_title = "/etc/cron.d/malicious"
+
+        manager = OutputManager(output_dir=temp_output_dir)
+        output = manager.write_episode(episode_metadata, extraction_results)
+
+        # Should create directory safely
+        assert output.directory.exists()
+        assert output.directory.parent == temp_output_dir
+        # Slashes should be replaced with hyphens
+        assert "/" not in output.directory.name
+
+    def test_path_traversal_with_windows_path_separator(
+        self,
+        temp_output_dir: Path,
+        episode_metadata: EpisodeMetadata,
+        extraction_results: list[ExtractionResult],
+    ) -> None:
+        """Test that Windows path separators are sanitized."""
+        # Attempt Windows path traversal
+        episode_metadata.episode_title = r"..\..\..\..\Windows\System32"
+
+        manager = OutputManager(output_dir=temp_output_dir)
+        output = manager.write_episode(episode_metadata, extraction_results)
+
+        # Should create directory safely
+        assert output.directory.exists()
+        assert output.directory.parent == temp_output_dir
+        # Both .. and \ should be sanitized
+        assert ".." not in output.directory.name
+        assert "\\" not in output.directory.name
+
+    def test_path_traversal_with_mixed_separators(
+        self,
+        temp_output_dir: Path,
+        episode_metadata: EpisodeMetadata,
+        extraction_results: list[ExtractionResult],
+    ) -> None:
+        """Test that mixed path separators are sanitized."""
+        # Mix of different path traversal techniques
+        episode_metadata.episode_title = r"../../../\../etc/passwd"
+
+        manager = OutputManager(output_dir=temp_output_dir)
+        output = manager.write_episode(episode_metadata, extraction_results)
+
+        # Should create directory safely
+        assert output.directory.exists()
+        assert output.directory.parent == temp_output_dir
+
+    def test_path_traversal_with_null_bytes(
+        self,
+        temp_output_dir: Path,
+        episode_metadata: EpisodeMetadata,
+        extraction_results: list[ExtractionResult],
+    ) -> None:
+        """Test that null bytes are removed."""
+        # Null byte injection attempt
+        episode_metadata.episode_title = "safe\x00../../../etc/passwd"
+
+        manager = OutputManager(output_dir=temp_output_dir)
+        output = manager.write_episode(episode_metadata, extraction_results)
+
+        # Should create directory safely
+        assert output.directory.exists()
+        assert output.directory.parent == temp_output_dir
+        # Null bytes should be removed
+        assert "\x00" not in output.directory.name
+
+    def test_path_traversal_stays_within_output_dir(
+        self,
+        temp_output_dir: Path,
+        episode_metadata: EpisodeMetadata,
+        extraction_results: list[ExtractionResult],
+    ) -> None:
+        """Test that resolved path stays within output directory."""
+        # Various path traversal attempts
+        test_titles = [
+            "../../../../home/user/.ssh/authorized_keys",
+            "/etc/passwd",
+            r"C:\Windows\System32\config",
+            "../../../.bash_history",
+        ]
+
+        manager = OutputManager(output_dir=temp_output_dir)
+
+        for title in test_titles:
+            episode_metadata.episode_title = title
+            output = manager.write_episode(episode_metadata, extraction_results, overwrite=True)
+
+            # Verify directory is within output_dir
+            resolved_output = output.directory.resolve()
+            resolved_base = temp_output_dir.resolve()
+
+            # Should not raise ValueError
+            relative_path = resolved_output.relative_to(resolved_base)
+            assert relative_path is not None
+
+
+class TestOutputManagerSecuritySymlinkAttacks:
+    """Tests for symlink attack prevention."""
+
+    def test_symlink_directory_rejected(
+        self,
+        temp_output_dir: Path,
+        episode_metadata: EpisodeMetadata,
+        extraction_results: list[ExtractionResult],
+    ) -> None:
+        """Test that symlink directories are rejected."""
+        manager = OutputManager(output_dir=temp_output_dir)
+
+        # Create a symlink that points outside output directory
+        target_dir = temp_output_dir.parent / "sensitive_data"
+        target_dir.mkdir()
+
+        episode_dir_name = episode_metadata.directory_name
+        # Sanitize the name the same way the code does
+        episode_dir_name = episode_dir_name.replace("..", "").replace("/", "-").replace("\\", "-")
+        episode_dir_name = episode_dir_name.replace("\0", "")
+
+        symlink_path = temp_output_dir / episode_dir_name
+        symlink_path.symlink_to(target_dir, target_is_directory=True)
+
+        # Should raise SecurityError
+        with pytest.raises(SecurityError) as exc_info:
+            manager.write_episode(episode_metadata, extraction_results)
+
+        assert "symlink" in str(exc_info.value).lower()
+
+    def test_regular_directory_not_rejected(
+        self,
+        temp_output_dir: Path,
+        episode_metadata: EpisodeMetadata,
+        extraction_results: list[ExtractionResult],
+    ) -> None:
+        """Test that regular directories work fine."""
+        manager = OutputManager(output_dir=temp_output_dir)
+
+        # Create a regular directory (not a symlink)
+        output = manager.write_episode(episode_metadata, extraction_results)
+
+        # Should succeed
+        assert output.directory.exists()
+        assert not output.directory.is_symlink()
+
+
+class TestOutputManagerSecurityEdgeCases:
+    """Tests for security-related edge cases."""
+
+
+    def test_only_path_separators_in_title(
+        self,
+        temp_output_dir: Path,
+        episode_metadata: EpisodeMetadata,
+        extraction_results: list[ExtractionResult],
+    ) -> None:
+        """Test titles containing only path separators."""
+        episode_metadata.episode_title = "///\\\\\\"
+
+        manager = OutputManager(output_dir=temp_output_dir)
+        output = manager.write_episode(episode_metadata, extraction_results)
+
+        # Should create directory with sanitized name
+        assert output.directory.exists()
+        assert "/" not in output.directory.name
+        assert "\\" not in output.directory.name
+
+    def test_overwrite_without_metadata_rejected(
+        self,
+        temp_output_dir: Path,
+        episode_metadata: EpisodeMetadata,
+        extraction_results: list[ExtractionResult],
+    ) -> None:
+        """Test that overwrite rejects directories without .metadata.yaml."""
+        manager = OutputManager(output_dir=temp_output_dir)
+
+        # Create a directory without metadata (could be user data)
+        episode_dir_name = episode_metadata.directory_name
+        # Sanitize the same way the code does
+        episode_dir_name = episode_dir_name.replace("..", "").replace("/", "-").replace("\\", "-")
+        episode_dir_name = episode_dir_name.replace("\0", "")
+
+        fake_dir = temp_output_dir / episode_dir_name
+        fake_dir.mkdir()
+        (fake_dir / "important_data.txt").write_text("Don't delete me!")
+
+        # Should raise ValueError refusing to delete
+        with pytest.raises(ValueError) as exc_info:
+            manager.write_episode(episode_metadata, extraction_results, overwrite=True)
+
+        assert "metadata.yaml" in str(exc_info.value).lower()
+        # Original directory should still exist
+        assert fake_dir.exists()
+
+    def test_overwrite_creates_backup(
+        self,
+        temp_output_dir: Path,
+        episode_metadata: EpisodeMetadata,
+        extraction_results: list[ExtractionResult],
+    ) -> None:
+        """Test that overwrite creates backup before deletion."""
+        manager = OutputManager(output_dir=temp_output_dir)
+
+        # Write episode first time
+        output1 = manager.write_episode(episode_metadata, extraction_results)
+        original_dir = output1.directory
+
+        # Verify backup is created and cleaned up during overwrite
+        # Write second time with overwrite
+        output2 = manager.write_episode(episode_metadata, extraction_results, overwrite=True)
+
+        # Should be same directory
+        assert output2.directory == original_dir
+        assert output2.directory.exists()
+
+        # Backup should exist temporarily but might be cleaned up
+        # The important thing is the operation succeeded
+
+    def test_overwrite_restores_backup_on_failure(
+        self,
+        temp_output_dir: Path,
+        episode_metadata: EpisodeMetadata,
+        extraction_results: list[ExtractionResult],
+    ) -> None:
+        """Test that backup is restored if overwrite fails."""
+        manager = OutputManager(output_dir=temp_output_dir)
+
+        # Write episode first time
+        output1 = manager.write_episode(episode_metadata, extraction_results)
+        original_dir = output1.directory
+        original_metadata_content = (original_dir / ".metadata.yaml").read_text()
+
+        # Mock mkdir to fail during overwrite
+        original_mkdir = Path.mkdir
+
+        def failing_mkdir(self, *args, **kwargs):
+            if self == original_dir:
+                raise OSError("Simulated failure")
+            return original_mkdir(self, *args, **kwargs)
+
+        with patch.object(Path, "mkdir", failing_mkdir):
+            # Should raise OSError and restore backup
+            with pytest.raises(OSError):
+                manager.write_episode(episode_metadata, extraction_results, overwrite=True)
+
+        # Original directory should be restored
+        assert original_dir.exists()
+        assert (original_dir / ".metadata.yaml").exists()
+        restored_content = (original_dir / ".metadata.yaml").read_text()
+        assert restored_content == original_metadata_content
+
+    def test_multiple_path_traversal_techniques_combined(
+        self,
+        temp_output_dir: Path,
+        episode_metadata: EpisodeMetadata,
+        extraction_results: list[ExtractionResult],
+    ) -> None:
+        """Test combination of multiple path traversal techniques."""
+        # Kitchen sink attack: multiple techniques combined
+        episode_metadata.episode_title = r"../\..//../\x00/../../../etc/passwd"
+
+        manager = OutputManager(output_dir=temp_output_dir)
+        output = manager.write_episode(episode_metadata, extraction_results)
+
+        # Should create directory safely
+        assert output.directory.exists()
+        assert output.directory.parent == temp_output_dir
+        # All attack vectors should be neutralized
+        assert ".." not in output.directory.name
+        assert "/" not in output.directory.name
+        assert "\\" not in output.directory.name
+        assert "\x00" not in output.directory.name

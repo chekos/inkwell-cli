@@ -3,7 +3,7 @@
 import asyncio
 import os
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import typer
@@ -12,6 +12,7 @@ from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
 
+from inkwell.config.logging import setup_logging
 from inkwell.config.manager import ConfigManager
 from inkwell.config.schema import AuthConfig, FeedConfig
 from inkwell.extraction import ExtractionEngine
@@ -22,6 +23,8 @@ from inkwell.interview import InterviewManager
 from inkwell.interview.models import InterviewGuidelines
 from inkwell.output import EpisodeMetadata, OutputManager
 from inkwell.transcription import CostEstimate, TranscriptionManager
+from inkwell.utils.api_keys import APIKeyError, get_validated_api_key
+from inkwell.utils.datetime import now_utc
 from inkwell.utils.display import truncate_url
 from inkwell.utils.errors import (
     DuplicateFeedError,
@@ -36,6 +39,21 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 console = Console()
+
+
+@app.callback()
+def main(
+    ctx: typer.Context,
+    verbose: bool = typer.Option(
+        False, "--verbose", "-v", help="Enable verbose (DEBUG) logging"
+    ),
+    log_file: Path | None = typer.Option(
+        None, "--log-file", help="Write logs to file"
+    ),
+) -> None:
+    """Inkwell - Transform podcasts into structured markdown notes."""
+    # Initialize logging before any command runs
+    setup_logging(verbose=verbose, log_file=log_file)
 
 
 @app.command("version")
@@ -257,10 +275,29 @@ def config_command(
             console.print(table)
 
         elif action == "edit":
-            import os
             import subprocess
 
+            # Define whitelist of allowed editors
+            ALLOWED_EDITORS = {
+                "nano", "vim", "vi", "emacs",
+                "code", "subl", "gedit", "kate",
+                "notepad", "notepad++", "atom",
+                "micro", "helix", "nvim", "ed"
+            }
+
             editor = os.environ.get("EDITOR", "nano")
+
+            # Extract just the executable name (handle paths like /usr/bin/vim)
+            editor_name = Path(editor).name
+
+            # Validate editor against whitelist
+            if editor_name not in ALLOWED_EDITORS:
+                console.print(f"[red]✗[/red] Unsupported editor: {editor}")
+                console.print(f"Allowed editors: {', '.join(sorted(ALLOWED_EDITORS))}")
+                console.print("Set EDITOR environment variable to a supported editor.")
+                console.print(f"Or edit manually: {manager.config_file}")
+                sys.exit(1)
+
             console.print(f"Opening {manager.config_file} in {editor}...")
 
             try:
@@ -601,7 +638,7 @@ def fetch_command(
             episode = Episode(
                 title=f"Episode from {url}",
                 url=url,  # type: ignore
-                published=datetime.now(),
+                published=now_utc(),
                 description="",
                 podcast_name="Unknown Podcast",  # Would come from RSS in real implementation
             )
@@ -655,7 +692,8 @@ def fetch_command(
             ) as progress:
                 task = progress.add_task("Extracting content...", total=None)
 
-                extraction_results = await engine.extract_all(
+                # Use batched extraction for better performance (75% fewer API calls)
+                extraction_results = await engine.extract_all_batched(
                     templates=selected_templates,
                     transcript=result.transcript.full_text,
                     metadata=episode_metadata.model_dump(),
@@ -703,11 +741,12 @@ def fetch_command(
                     if config.interview.guidelines:
                         guidelines = InterviewGuidelines(text=config.interview.guidelines)
 
-                    # Check for Anthropic API key
-                    anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
-                    if not anthropic_key:
-                        console.print("[yellow]⚠[/yellow] ANTHROPIC_API_KEY not set. Skipping interview.")
-                        console.print("[dim]  Set your key: export ANTHROPIC_API_KEY=your-key[/dim]")
+                    # Validate Anthropic API key
+                    try:
+                        anthropic_key = get_validated_api_key("ANTHROPIC_API_KEY", "claude")
+                    except APIKeyError as e:
+                        console.print("[yellow]⚠[/yellow] Interview skipped - API key validation failed:")
+                        console.print(f"[dim]  {str(e)}[/dim]")
                     else:
                         # Initialize interview manager
                         interview_manager = InterviewManager(
@@ -904,7 +943,7 @@ def costs_command(
         # Calculate since date if days provided
         since = None
         if days:
-            since = datetime.utcnow() - timedelta(days=days)
+            since = now_utc() - timedelta(days=days)
 
         # Get summary with filters
         summary = tracker.get_summary(

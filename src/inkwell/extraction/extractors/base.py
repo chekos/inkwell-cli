@@ -7,7 +7,7 @@ must implement, ensuring consistent interface across providers.
 from abc import ABC, abstractmethod
 from typing import Any
 
-from ..models import ExtractedContent, ExtractionTemplate
+from ..models import ExtractionTemplate
 
 
 class BaseExtractor(ABC):

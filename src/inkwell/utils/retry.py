@@ -6,8 +6,8 @@ Based on ADR-027: Retry and Error Handling Strategy.
 
 import logging
 import random
+from collections.abc import Callable
 from functools import wraps
-from typing import Callable, Type
 
 from tenacity import (
     RetryCallState,
@@ -136,7 +136,7 @@ def log_retry_attempt(retry_state: RetryCallState) -> None:
 
 def with_retry(
     config: RetryConfig | None = None,
-    retry_on: tuple[Type[Exception], ...] | None = None,
+    retry_on: tuple[type[Exception], ...] | None = None,
 ) -> Callable:
     """Decorator for adding retry logic with exponential backoff.
 

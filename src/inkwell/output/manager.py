@@ -3,7 +3,6 @@
 Handles directory creation, atomic file writes, and metadata generation.
 """
 
-import json
 import shutil
 import tempfile
 from pathlib import Path

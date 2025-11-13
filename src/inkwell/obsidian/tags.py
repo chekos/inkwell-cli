@@ -15,7 +15,7 @@ from typing import Any
 import google.generativeai as genai
 
 from inkwell.obsidian.models import Entity, EntityType
-from inkwell.obsidian.tag_models import Tag, TagCategory, TagConfig, TagStyle, TagSuggestion
+from inkwell.obsidian.tag_models import Tag, TagCategory, TagConfig, TagStyle
 
 
 class TagGenerator:

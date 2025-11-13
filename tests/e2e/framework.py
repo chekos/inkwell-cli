@@ -21,7 +21,6 @@ For each scenario, we validate:
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any
 
 from pydantic import BaseModel, Field
 

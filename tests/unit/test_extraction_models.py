@@ -1,14 +1,15 @@
 """Unit tests for extraction models."""
 
-import pytest
 from datetime import datetime
+
+import pytest
 from pydantic import ValidationError
 
 from inkwell.extraction.models import (
-    TemplateVariable,
-    ExtractionTemplate,
     ExtractedContent,
     ExtractionResult,
+    ExtractionTemplate,
+    TemplateVariable,
 )
 
 

@@ -1,6 +1,5 @@
 """Tests for Dataview frontmatter generation."""
 
-from datetime import datetime
 
 import pytest
 

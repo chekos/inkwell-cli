@@ -1,11 +1,12 @@
 """Unit tests for template loader."""
 
-import pytest
 from pathlib import Path
+
+import pytest
 from pydantic import ValidationError
 
-from inkwell.extraction.templates import TemplateLoader
 from inkwell.extraction.models import ExtractionTemplate
+from inkwell.extraction.templates import TemplateLoader
 
 
 @pytest.fixture

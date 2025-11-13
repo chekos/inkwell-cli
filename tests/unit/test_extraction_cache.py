@@ -36,7 +36,7 @@ class TestExtractionCache:
         cache_dir = tmp_path / "nonexistent" / "cache"
         assert not cache_dir.exists()
 
-        cache = ExtractionCache(cache_dir=cache_dir)
+        _cache = ExtractionCache(cache_dir=cache_dir)
         assert cache_dir.exists()
 
     def test_set_and_get(self, temp_cache_dir: Path) -> None:

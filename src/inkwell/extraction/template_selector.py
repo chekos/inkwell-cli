@@ -5,7 +5,6 @@ templates based on episode category and content analysis.
 """
 
 import logging
-from typing import Optional
 
 from inkwell.feeds.models import Episode
 
@@ -44,9 +43,9 @@ class TemplateSelector:
     def select_templates(
         self,
         episode: Episode,
-        category: Optional[str] = None,
-        custom_templates: Optional[list[str]] = None,
-        transcript: Optional[str] = None,
+        category: str | None = None,
+        custom_templates: list[str] | None = None,
+        transcript: str | None = None,
     ) -> list[ExtractionTemplate]:
         """Select templates for episode extraction.
 
@@ -124,7 +123,7 @@ class TemplateSelector:
         )
         return selected
 
-    def detect_category(self, transcript: str) -> Optional[str]:
+    def detect_category(self, transcript: str) -> str | None:
         """Auto-detect podcast category from transcript content.
 
         Uses keyword-based heuristics to identify category:

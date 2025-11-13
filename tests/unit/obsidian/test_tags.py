@@ -1,6 +1,5 @@
 """Tests for tag generation system."""
 
-import pytest
 
 from inkwell.obsidian.models import Entity, EntityType
 from inkwell.obsidian.tag_models import Tag, TagCategory, TagConfig, TagStyle

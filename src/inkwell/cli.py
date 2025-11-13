@@ -732,9 +732,9 @@ def fetch_command(
                         interview_path = episode_output.directory / "my-notes.md"
                         interview_path.write_text(interview_result.transcript)
 
-                        console.print(f"[green]✓[/green] Interview complete")
+                        console.print("[green]✓[/green] Interview complete")
                         console.print(f"  Questions: {len(interview_result.exchanges)}")
-                        console.print(f"  Saved to: my-notes.md")
+                        console.print("  Saved to: my-notes.md")
 
                         interview_cost = interview_result.total_cost
                         interview_conducted = True

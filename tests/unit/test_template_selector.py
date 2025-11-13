@@ -1,11 +1,11 @@
 """Unit tests for template selector."""
 
-import pytest
-from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
-from inkwell.extraction.template_selector import TemplateSelector
+import pytest
+
 from inkwell.extraction.models import ExtractionTemplate
+from inkwell.extraction.template_selector import TemplateSelector
 from inkwell.output.models import EpisodeMetadata
 
 

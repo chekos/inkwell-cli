@@ -1,6 +1,5 @@
 """Tests for wikilink generation."""
 
-import pytest
 
 from inkwell.obsidian.models import Entity, EntityType, WikilinkConfig, WikilinkStyle
 from inkwell.obsidian.wikilinks import WikilinkGenerator

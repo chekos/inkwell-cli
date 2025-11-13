@@ -18,9 +18,9 @@ from pathlib import Path
 import pytest
 
 from tests.e2e.framework import (
+    E2E_TEST_CASES,
     E2EBenchmark,
     E2ETestResult,
-    E2E_TEST_CASES,
     print_benchmark_report,
     validate_e2e_output,
 )
@@ -87,7 +87,7 @@ class TestE2ESimulation:
 
         # 3. Simulate output generation
         output_start = time.time()
-        output_dir = self._simulate_output_generation(
+        _output_dir = self._simulate_output_generation(
             test_case, extraction_results, tmp_path / "output"
         )
         output_time = time.time() - output_start
@@ -149,7 +149,7 @@ class TestE2ESimulation:
         extraction_time = time.time() - extraction_start
 
         output_start = time.time()
-        output_dir = self._simulate_output_generation(
+        _output_dir = self._simulate_output_generation(
             test_case, extraction_results, tmp_path / "output"
         )
         output_time = time.time() - output_start

@@ -1,11 +1,11 @@
 """Tests for retry and error handling utilities."""
 
-import time
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 import pytest
 
 from inkwell.utils.retry import (
+    TEST_RETRY_CONFIG,
     AuthenticationError,
     ConnectionError,
     InvalidRequestError,
@@ -15,7 +15,6 @@ from inkwell.utils.retry import (
     RetryConfig,
     RetryContext,
     ServerError,
-    TEST_RETRY_CONFIG,
     TimeoutError,
     classify_api_error,
     classify_http_error,

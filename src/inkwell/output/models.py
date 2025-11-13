@@ -8,7 +8,7 @@ This module defines Pydantic models for:
 
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -32,10 +32,10 @@ class EpisodeMetadata(BaseModel):
     podcast_name: str = Field(..., description="Name of the podcast")
     episode_title: str = Field(..., description="Episode title")
     episode_url: str = Field(..., description="Episode URL")
-    published_date: Optional[datetime] = Field(
+    published_date: datetime | None = Field(
         None, description="When episode was published"
     )
-    duration_seconds: Optional[float] = Field(
+    duration_seconds: float | None = Field(
         None, description="Episode duration in seconds", ge=0
     )
 
@@ -211,7 +211,7 @@ class EpisodeOutput(BaseModel):
         self.total_files = len(self.files)
         self.total_size_bytes = sum(f.size_bytes for f in self.files)
 
-    def get_file(self, template_name: str) -> Optional[OutputFile]:
+    def get_file(self, template_name: str) -> OutputFile | None:
         """Get output file by template name.
 
         Args:
@@ -225,7 +225,7 @@ class EpisodeOutput(BaseModel):
                 return file
         return None
 
-    def get_file_by_name(self, filename: str) -> Optional[OutputFile]:
+    def get_file_by_name(self, filename: str) -> OutputFile | None:
         """Get output file by filename.
 
         Args:

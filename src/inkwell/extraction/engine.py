@@ -7,7 +7,7 @@ import json
 from typing import Any
 
 from .cache import ExtractionCache
-from .errors import ExtractionError, ValidationError
+from .errors import ValidationError
 from .extractors import BaseExtractor, ClaudeExtractor, GeminiExtractor
 from .models import ExtractedContent, ExtractionResult, ExtractionTemplate
 

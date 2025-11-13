@@ -1,6 +1,5 @@
 """Unit tests for markdown generator."""
 
-from datetime import datetime
 
 import pytest
 
@@ -130,7 +129,7 @@ class TestMarkdownGeneratorQuotes:
             ]
         }
 
-        content = ExtractedContent(format="json", data=data, raw="")
+        _content = ExtractedContent(format="json", data=data, raw="")
         markdown = generator._format_quotes(data)
 
         assert "# Quotes" in markdown

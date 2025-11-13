@@ -1,10 +1,9 @@
 """Unit tests for Claude extractor."""
 
-import os
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
-from anthropic.types import ContentBlock, Message, Usage
+from anthropic.types import ContentBlock, Message
 
 from inkwell.extraction.errors import ProviderError, ValidationError
 from inkwell.extraction.extractors.claude import ClaudeExtractor

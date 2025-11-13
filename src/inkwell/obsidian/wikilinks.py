@@ -7,7 +7,7 @@ then converts them to Obsidian wikilinks for cross-referencing.
 import re
 from typing import Any
 
-from inkwell.obsidian.models import Entity, EntityType, WikilinkConfig, WikilinkStyle
+from inkwell.obsidian.models import Entity, EntityType, WikilinkConfig
 
 
 class WikilinkGenerator:

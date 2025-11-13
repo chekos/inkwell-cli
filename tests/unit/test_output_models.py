@@ -1,14 +1,15 @@
 """Unit tests for output models."""
 
-import pytest
 from datetime import datetime
 from pathlib import Path
+
+import pytest
 from pydantic import ValidationError
 
 from inkwell.output.models import (
     EpisodeMetadata,
-    OutputFile,
     EpisodeOutput,
+    OutputFile,
 )
 
 
@@ -247,7 +248,7 @@ class TestOutputFile:
         file.update_size()
 
         assert file.size_bytes > 0
-        assert file.size_bytes == len("Test content".encode("utf-8"))
+        assert file.size_bytes == len(b"Test content")
 
     def test_created_at_timestamp(self) -> None:
         """Test that created_at is set."""

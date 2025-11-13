@@ -7,6 +7,7 @@ import pytest
 
 from inkwell.interview.models import InterviewGuidelines, InterviewSession, Question, Response
 from inkwell.interview.session_manager import SessionManager
+from inkwell.utils.datetime import now_utc
 
 
 @pytest.fixture
@@ -609,7 +610,7 @@ def test_cleanup_old_sessions(manager):
     s1.complete()
 
     # Manually set old timestamp and save without updating
-    s1.updated_at = datetime.utcnow() - timedelta(days=40)
+    s1.updated_at = now_utc() - timedelta(days=40)
     manager.save_session(s1, update_timestamp=False)
 
     # Create recent session
@@ -641,7 +642,7 @@ def test_cleanup_only_completed_or_abandoned(manager):
         episode_title="Episode 1",
         podcast_name="Test",
     )
-    s1.updated_at = datetime.utcnow() - timedelta(days=40)
+    s1.updated_at = now_utc() - timedelta(days=40)
     manager.save_session(s1)
 
     # Cleanup
@@ -671,7 +672,7 @@ def test_detect_timeout_timed_out(manager):
     )
 
     # Manually set old timestamp
-    session.updated_at = datetime.utcnow() - timedelta(minutes=90)
+    session.updated_at = now_utc() - timedelta(minutes=90)
 
     timed_out = manager.detect_timeout(session, timeout_minutes=60)
     assert timed_out is True
@@ -686,7 +687,7 @@ def test_detect_timeout_completed_session(manager):
     )
 
     session.complete()
-    session.updated_at = datetime.utcnow() - timedelta(minutes=90)
+    session.updated_at = now_utc() - timedelta(minutes=90)
 
     timed_out = manager.detect_timeout(session, timeout_minutes=60)
     assert timed_out is False
@@ -700,7 +701,7 @@ def test_auto_abandon_timed_out(manager):
         episode_title="Episode 1",
         podcast_name="Test",
     )
-    s1.updated_at = datetime.utcnow() - timedelta(minutes=90)
+    s1.updated_at = now_utc() - timedelta(minutes=90)
     manager.save_session(s1, update_timestamp=False)
 
     # Create recent session

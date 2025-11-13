@@ -6,6 +6,7 @@ import pytest
 from pydantic import ValidationError
 
 from inkwell.transcription.models import Transcript, TranscriptionResult, TranscriptSegment
+from inkwell.utils.datetime import now_utc
 
 
 class TestTranscriptSegment:
@@ -314,13 +315,13 @@ class TestTranscript:
 
     def test_created_at_defaults_to_now(self):
         """Test that created_at defaults to current time."""
-        before = datetime.utcnow()
+        before = now_utc()
         transcript = Transcript(
             segments=[],
             source="youtube",
             episode_url="https://example.com/episode",
         )
-        after = datetime.utcnow()
+        after = now_utc()
 
         assert before <= transcript.created_at <= after
 

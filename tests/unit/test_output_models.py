@@ -6,6 +6,8 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
+from inkwell.utils.datetime import now_utc
+
 from inkwell.output.models import (
     EpisodeMetadata,
     EpisodeOutput,
@@ -259,7 +261,7 @@ class TestOutputFile:
         )
 
         assert isinstance(file.created_at, datetime)
-        assert file.created_at <= datetime.utcnow()
+        assert file.created_at <= now_utc()
 
 
 class TestEpisodeOutput:

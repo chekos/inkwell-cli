@@ -5,6 +5,8 @@ from datetime import datetime
 import pytest
 from pydantic import ValidationError
 
+from inkwell.utils.datetime import now_utc
+
 from inkwell.extraction.models import (
     ExtractedContent,
     ExtractionResult,
@@ -298,7 +300,7 @@ class TestExtractedContent:
         )
 
         assert isinstance(content.extracted_at, datetime)
-        assert content.extracted_at <= datetime.utcnow()
+        assert content.extracted_at <= now_utc()
 
 
 class TestExtractionResult:

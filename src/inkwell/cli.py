@@ -804,5 +804,190 @@ def fetch_command(
     asyncio.run(run_fetch())
 
 
+@app.command("costs")
+def costs_command(
+    provider: str | None = typer.Option(
+        None, "--provider", "-p", help="Filter by provider (gemini, claude)"
+    ),
+    operation: str | None = typer.Option(
+        None, "--operation", "-o", help="Filter by operation type"
+    ),
+    episode: str | None = typer.Option(
+        None, "--episode", "-e", help="Filter by episode title"
+    ),
+    days: int | None = typer.Option(
+        None, "--days", "-d", help="Show costs from last N days"
+    ),
+    recent: int | None = typer.Option(
+        None, "--recent", "-r", help="Show N most recent operations"
+    ),
+    clear: bool = typer.Option(
+        False, "--clear", help="Clear all cost history"
+    ),
+) -> None:
+    """View API cost tracking and usage statistics.
+
+    Examples:
+        # Show all costs
+        $ inkwell costs
+
+        # Show costs by provider
+        $ inkwell costs --provider gemini
+
+        # Show costs for specific episode
+        $ inkwell costs --episode "Building Better Software"
+
+        # Show costs from last 7 days
+        $ inkwell costs --days 7
+
+        # Show 10 most recent operations
+        $ inkwell costs --recent 10
+
+        # Clear all cost history
+        $ inkwell costs --clear
+    """
+    from datetime import timedelta
+
+    from rich.panel import Panel
+
+    from inkwell.utils.costs import CostTracker
+
+    try:
+        tracker = CostTracker()
+
+        # Handle clear
+        if clear:
+            if typer.confirm("Are you sure you want to clear all cost history?"):
+                tracker.clear()
+                console.print("[green]✓[/green] Cost history cleared")
+            else:
+                console.print("Cancelled")
+            return
+
+        # Handle recent
+        if recent:
+            recent_usage = tracker.get_recent_usage(limit=recent)
+
+            if not recent_usage:
+                console.print("[yellow]No usage history found[/yellow]")
+                return
+
+            console.print(f"\n[bold]Recent {len(recent_usage)} Operations:[/bold]\n")
+
+            table = Table(show_header=True)
+            table.add_column("Date", style="cyan")
+            table.add_column("Provider", style="magenta")
+            table.add_column("Operation", style="blue")
+            table.add_column("Episode", style="green", max_width=40)
+            table.add_column("Tokens", style="white", justify="right")
+            table.add_column("Cost", style="yellow", justify="right")
+
+            for usage in recent_usage:
+                date_str = usage.timestamp.strftime("%Y-%m-%d %H:%M")
+                episode_str = usage.episode_title or "-"
+                tokens_str = f"{usage.total_tokens:,}"
+                cost_str = f"${usage.cost_usd:.4f}"
+
+                table.add_row(
+                    date_str,
+                    usage.provider,
+                    usage.operation,
+                    episode_str,
+                    tokens_str,
+                    cost_str,
+                )
+
+            console.print(table)
+            console.print(f"\n[bold]Total:[/bold] ${sum(u.cost_usd for u in recent_usage):.4f}")
+            return
+
+        # Calculate since date if days provided
+        since = None
+        if days:
+            since = datetime.utcnow() - timedelta(days=days)
+
+        # Get summary with filters
+        summary = tracker.get_summary(
+            provider=provider,
+            operation=operation,
+            episode_title=episode,
+            since=since,
+        )
+
+        if summary.total_operations == 0:
+            console.print("[yellow]No usage found matching filters[/yellow]")
+            return
+
+        # Display summary
+        console.print("\n[bold cyan]API Cost Summary[/bold cyan]\n")
+
+        # Overall stats
+        stats_table = Table(show_header=False, box=None, padding=(0, 2))
+        stats_table.add_column("Metric", style="bold")
+        stats_table.add_column("Value", style="white")
+
+        stats_table.add_row("Total Operations:", f"{summary.total_operations:,}")
+        stats_table.add_row("Total Tokens:", f"{summary.total_tokens:,}")
+        stats_table.add_row("Input Tokens:", f"{summary.total_input_tokens:,}")
+        stats_table.add_row("Output Tokens:", f"{summary.total_output_tokens:,}")
+        stats_table.add_row("Total Cost:", f"[bold yellow]${summary.total_cost_usd:.4f}[/bold yellow]")
+
+        console.print(Panel(stats_table, title="Overall", border_style="blue"))
+
+        # Breakdown by provider
+        if summary.costs_by_provider:
+            console.print("\n[bold]By Provider:[/bold]")
+            provider_table = Table(show_header=False, box=None, padding=(0, 2))
+            provider_table.add_column("Provider", style="magenta")
+            provider_table.add_column("Cost", style="yellow", justify="right")
+
+            for prov, cost in sorted(
+                summary.costs_by_provider.items(), key=lambda x: x[1], reverse=True
+            ):
+                provider_table.add_row(prov, f"${cost:.4f}")
+
+            console.print(provider_table)
+
+        # Breakdown by operation
+        if summary.costs_by_operation:
+            console.print("\n[bold]By Operation:[/bold]")
+            op_table = Table(show_header=False, box=None, padding=(0, 2))
+            op_table.add_column("Operation", style="blue")
+            op_table.add_column("Cost", style="yellow", justify="right")
+
+            for op, cost in sorted(
+                summary.costs_by_operation.items(), key=lambda x: x[1], reverse=True
+            ):
+                op_table.add_row(op, f"${cost:.4f}")
+
+            console.print(op_table)
+
+        # Breakdown by episode (top 10)
+        if summary.costs_by_episode:
+            console.print("\n[bold]By Episode (Top 10):[/bold]")
+            episode_table = Table(show_header=False, box=None, padding=(0, 2))
+            episode_table.add_column("Episode", style="green", max_width=50)
+            episode_table.add_column("Cost", style="yellow", justify="right")
+
+            sorted_episodes = sorted(
+                summary.costs_by_episode.items(), key=lambda x: x[1], reverse=True
+            )
+            for ep, cost in sorted_episodes[:10]:
+                episode_table.add_row(ep, f"${cost:.4f}")
+
+            if len(sorted_episodes) > 10:
+                console.print(f"\n[dim]... and {len(sorted_episodes) - 10} more episodes[/dim]")
+
+            console.print(episode_table)
+
+        console.print()
+
+    except Exception as e:
+        console.print(f"\n[red]✗[/red] Error: {e}")
+        import traceback
+        console.print(f"[dim]{traceback.format_exc()}[/dim]")
+        sys.exit(1)
+
+
 if __name__ == "__main__":
     app()

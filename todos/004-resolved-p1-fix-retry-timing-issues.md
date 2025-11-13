@@ -1,5 +1,5 @@
 ---
-status: pending
+status: resolved
 priority: p1
 issue_id: "004"
 tags: [code-review, performance, retry-logic, critical]

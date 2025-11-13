@@ -1,5 +1,5 @@
 ---
-status: completed
+status: resolved
 priority: p1
 issue_id: "007"
 tags: [code-review, data-integrity, filesystem, critical]

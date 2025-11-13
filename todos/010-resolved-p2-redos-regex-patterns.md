@@ -1,5 +1,5 @@
 ---
-status: completed
+status: resolved
 priority: p2
 issue_id: "010"
 tags: [code-review, security, performance, denial-of-service, high-priority]

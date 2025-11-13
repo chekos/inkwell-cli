@@ -896,6 +896,7 @@ dev = [
     { name = "mkdocs-material-adr" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
+    { name = "respx" },
     { name = "ruff" },
 ]
 
@@ -934,6 +935,7 @@ dev = [
     { name = "mkdocs-material-adr", specifier = ">=1.2.1" },
     { name = "pytest", specifier = ">=8.4.2" },
     { name = "pytest-asyncio", specifier = ">=1.2.0" },
+    { name = "respx", specifier = ">=0.22.0" },
     { name = "ruff", specifier = ">=0.14.4" },
 ]
 

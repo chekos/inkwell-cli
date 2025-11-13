@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 priority: p2
 issue_id: "020"
 tags: [reliability, error-handling, user-experience, extraction]

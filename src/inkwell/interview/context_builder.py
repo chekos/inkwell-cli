@@ -51,6 +51,9 @@ class InterviewContextBuilder:
         concepts = self._extract_concepts(episode_output)
         additional = self._extract_additional_content(episode_output)
 
+        # Load previous interview sessions for this episode
+        previous_interviews = self._load_previous_interviews(episode_output)
+
         # Calculate duration
         duration_minutes = 0.0
         if episode_output.metadata.duration_seconds:
@@ -66,6 +69,7 @@ class InterviewContextBuilder:
             key_quotes=quotes,
             key_concepts=concepts,
             additional_extractions=additional,
+            previous_interviews=previous_interviews,
             guidelines=guidelines,
             max_questions=max_questions,
         )
@@ -268,6 +272,117 @@ class InterviewContextBuilder:
 
         return items
 
+    def _load_previous_interviews(
+        self, episode_output: EpisodeOutput, limit: int = 3
+    ) -> list[str]:
+        """Load previous interview sessions for this episode.
+
+        Finds completed interview sessions for the same episode and extracts
+        key insights to provide context continuity across sessions.
+
+        Args:
+            episode_output: Episode output containing session files
+            limit: Maximum number of previous sessions to include
+
+        Returns:
+            List of formatted session summaries
+        """
+        import json
+        from datetime import datetime
+
+        # Check for .sessions directory in the episode output directory
+        session_dir = episode_output.output_dir / ".sessions"
+        if not session_dir.exists():
+            return []
+
+        # Get episode URL to filter sessions
+        episode_url = episode_output.metadata.episode_url
+
+        # Find all completed session files for this episode
+        sessions = []
+        for session_file in session_dir.glob("session-*.json"):
+            try:
+                with open(session_file) as f:
+                    session_data = json.load(f)
+
+                # Filter: must match episode URL and be completed
+                if (
+                    session_data.get("episode_url") == episode_url
+                    and session_data.get("status") == "completed"
+                ):
+                    sessions.append(session_data)
+            except (json.JSONDecodeError, ValueError, KeyError):
+                # Skip invalid session files
+                continue
+
+        if not sessions:
+            return []
+
+        # Sort by completion date (newest first)
+        sessions.sort(
+            key=lambda s: datetime.fromisoformat(
+                s.get("completed_at", "1970-01-01").replace("Z", "+00:00")
+            ),
+            reverse=True,
+        )
+
+        # Limit to most recent sessions
+        sessions = sessions[:limit]
+
+        # Format sessions as context
+        summaries = []
+        for session in sessions:
+            completed_at = session.get("completed_at")
+            if completed_at:
+                completed_dt = datetime.fromisoformat(completed_at.replace("Z", "+00:00"))
+                date_str = completed_dt.strftime("%Y-%m-%d")
+            else:
+                date_str = "unknown date"
+
+            # Build summary for this session
+            summary_parts = [f"Session on {date_str}:"]
+
+            # Extract questions and brief responses
+            exchanges = session.get("exchanges", [])
+            if exchanges:
+                for exchange in exchanges[:5]:  # Limit to first 5 exchanges
+                    question_text = exchange.get("question", {}).get("text", "")
+                    response_text = exchange.get("response", {}).get("text", "")
+
+                    if question_text and response_text:
+                        # Brief summary (first 100 chars)
+                        response_summary = (
+                            response_text[:100] + "..."
+                            if len(response_text) > 100
+                            else response_text
+                        )
+                        summary_parts.append(
+                            f"  Q: {question_text}\n  A: {response_summary}"
+                        )
+
+            # Add statistics
+            stats = session.get("statistics")
+            if not stats:
+                # Calculate from exchanges if statistics not present
+                total_questions = len(exchanges)
+                substantive_responses = sum(
+                    1
+                    for e in exchanges
+                    if e.get("response", {}).get("word_count", 0) >= 5
+                )
+                summary_parts.append(
+                    f"  ({substantive_responses}/{total_questions} substantive responses)"
+                )
+            else:
+                summary_parts.append(
+                    f"  ({stats.get('substantive_responses', 0)}/"
+                    f"{stats.get('total_questions', 0)} substantive responses)"
+                )
+
+            summaries.append("\n".join(summary_parts))
+
+        return summaries
+
     def load_previous_interviews(
         self, interview_dir: Path, limit: int = 3
     ) -> list[str]:
@@ -283,6 +398,9 @@ class InterviewContextBuilder:
         Returns:
             List of previous interview summaries
         """
+        import json
+        from datetime import datetime
+
         if not interview_dir.exists():
             return []
 
@@ -300,8 +418,68 @@ class InterviewContextBuilder:
 
         summaries = []
         for session_file in recent_sessions:
-            # TODO: Load session JSON and extract summary
-            # For now, just note the file exists
-            summaries.append(f"Previous interview: {session_file.name}")
+            try:
+                with open(session_file) as f:
+                    session_data = json.load(f)
+
+                # Only include completed sessions
+                if session_data.get("status") != "completed":
+                    continue
+
+                # Extract key information
+                completed_at = session_data.get("completed_at")
+                if completed_at:
+                    completed_dt = datetime.fromisoformat(
+                        completed_at.replace("Z", "+00:00")
+                    )
+                    date_str = completed_dt.strftime("%Y-%m-%d")
+                else:
+                    date_str = "unknown date"
+
+                # Build summary for this session
+                summary_parts = [f"Session on {date_str}:"]
+
+                # Extract questions and brief responses
+                exchanges = session_data.get("exchanges", [])
+                if exchanges:
+                    for exchange in exchanges[:5]:  # Limit to first 5 exchanges
+                        question_text = exchange.get("question", {}).get("text", "")
+                        response_text = exchange.get("response", {}).get("text", "")
+
+                        if question_text and response_text:
+                            # Brief summary (first 100 chars)
+                            response_summary = (
+                                response_text[:100] + "..."
+                                if len(response_text) > 100
+                                else response_text
+                            )
+                            summary_parts.append(
+                                f"  Q: {question_text}\n  A: {response_summary}"
+                            )
+
+                # Add statistics
+                stats = session_data.get("statistics", {})
+                if not stats:
+                    # Calculate from exchanges if statistics not present
+                    total_questions = len(exchanges)
+                    substantive_responses = sum(
+                        1
+                        for e in exchanges
+                        if e.get("response", {}).get("word_count", 0) >= 5
+                    )
+                    summary_parts.append(
+                        f"  ({substantive_responses}/{total_questions} substantive responses)"
+                    )
+                else:
+                    summary_parts.append(
+                        f"  ({stats.get('substantive_responses', 0)}/"
+                        f"{stats.get('total_questions', 0)} substantive responses)"
+                    )
+
+                summaries.append("\n".join(summary_parts))
+
+            except (json.JSONDecodeError, ValueError, KeyError):
+                # Skip invalid session files
+                continue
 
         return summaries

@@ -214,6 +214,41 @@ class SessionManager:
 
         return None
 
+    def find_resumable_sessions(
+        self,
+        episode_url: str,
+        limit: int = 5
+    ) -> list[InterviewSession]:
+        """Find resumable sessions for an episode.
+
+        Args:
+            episode_url: Episode URL to filter by
+            limit: Maximum number of sessions to return
+
+        Returns:
+            List of incomplete sessions, sorted by most recent
+        """
+        sessions = []
+
+        # List all session files
+        for session_file in self.session_dir.glob("session-*.json"):
+            try:
+                session = self.load_session(session_file.stem.replace("session-", ""))
+
+                # Filter: must match episode URL and be incomplete
+                if (session.episode_url == episode_url and
+                    session.status in ["active", "paused"]):
+                    sessions.append(session)
+
+            except Exception:
+                # Skip invalid sessions
+                continue
+
+        # Sort by most recently updated
+        sessions.sort(key=lambda s: s.updated_at, reverse=True)
+
+        return sessions[:limit]
+
     def delete_session(self, session_id: str) -> bool:
         """Delete a session file.
 

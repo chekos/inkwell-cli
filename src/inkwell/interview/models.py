@@ -7,7 +7,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field, field_validator
 
-from inkwell.utils.datetime import now_utc, validate_timezone_aware
+from inkwell.utils.datetime import now_utc
 
 
 class InterviewGuidelines(BaseModel):
@@ -286,6 +286,13 @@ class InterviewContext(BaseModel):
         if self.key_concepts:
             context_parts.extend(["", "## Key Concepts"])
             context_parts.extend([f"- {concept}" for concept in self.key_concepts])
+
+        if self.previous_interviews:
+            context_parts.extend(["", "## Previous Interview Sessions", ""])
+            for i, session_summary in enumerate(self.previous_interviews, 1):
+                context_parts.append(session_summary)
+                if i < len(self.previous_interviews):
+                    context_parts.append("")  # Add blank line between sessions
 
         if self.guidelines:
             context_parts.extend(

@@ -406,6 +406,172 @@ def test_find_resumable_session_prefers_active(manager):
     assert found.status == "active"
 
 
+# Find Resumable Sessions (plural) Tests
+
+
+def test_find_resumable_sessions_empty(manager):
+    """Test finding resumable sessions when none exist."""
+    sessions = manager.find_resumable_sessions("https://example.com/ep1")
+    assert sessions == []
+
+
+def test_find_resumable_sessions_single(manager):
+    """Test finding a single resumable session."""
+    session = manager.create_session(
+        episode_url="https://example.com/ep1",
+        episode_title="Episode 1",
+        podcast_name="Test",
+    )
+
+    # Find resumable
+    found = manager.find_resumable_sessions("https://example.com/ep1")
+
+    assert len(found) == 1
+    assert found[0].session_id == session.session_id
+
+
+def test_find_resumable_sessions_multiple(manager):
+    """Test finding multiple resumable sessions."""
+    import time
+
+    # Create 3 sessions for same episode
+    s1 = manager.create_session(
+        episode_url="https://example.com/ep1",
+        episode_title="Episode 1",
+        podcast_name="Test",
+    )
+
+    time.sleep(0.01)
+
+    s2 = manager.create_session(
+        episode_url="https://example.com/ep1",
+        episode_title="Episode 1",
+        podcast_name="Test",
+    )
+
+    time.sleep(0.01)
+
+    s3 = manager.create_session(
+        episode_url="https://example.com/ep1",
+        episode_title="Episode 1",
+        podcast_name="Test",
+    )
+
+    # Find resumable
+    found = manager.find_resumable_sessions("https://example.com/ep1")
+
+    assert len(found) == 3
+    # Should be sorted by most recent first
+    assert found[0].session_id == s3.session_id
+    assert found[1].session_id == s2.session_id
+    assert found[2].session_id == s1.session_id
+
+
+def test_find_resumable_sessions_filters_by_url(manager):
+    """Test that sessions are filtered by episode URL."""
+    manager.create_session(
+        episode_url="https://example.com/ep1",
+        episode_title="Episode 1",
+        podcast_name="Test",
+    )
+
+    manager.create_session(
+        episode_url="https://example.com/ep2",
+        episode_title="Episode 2",
+        podcast_name="Test",
+    )
+
+    # Find for ep1
+    found = manager.find_resumable_sessions("https://example.com/ep1")
+
+    assert len(found) == 1
+    assert found[0].episode_url == "https://example.com/ep1"
+
+
+def test_find_resumable_sessions_filters_completed(manager):
+    """Test that completed sessions are not returned."""
+    s1 = manager.create_session(
+        episode_url="https://example.com/ep1",
+        episode_title="Episode 1",
+        podcast_name="Test",
+    )
+
+    s2 = manager.create_session(
+        episode_url="https://example.com/ep1",
+        episode_title="Episode 1",
+        podcast_name="Test",
+    )
+
+    # Complete one session
+    s2.complete()
+    manager.save_session(s2)
+
+    # Should only find active one
+    found = manager.find_resumable_sessions("https://example.com/ep1")
+
+    assert len(found) == 1
+    assert found[0].session_id == s1.session_id
+
+
+def test_find_resumable_sessions_includes_paused(manager):
+    """Test that paused sessions are included."""
+    s1 = manager.create_session(
+        episode_url="https://example.com/ep1",
+        episode_title="Episode 1",
+        podcast_name="Test",
+    )
+
+    s2 = manager.create_session(
+        episode_url="https://example.com/ep1",
+        episode_title="Episode 1",
+        podcast_name="Test",
+    )
+
+    # Pause one session
+    s1.pause()
+    manager.save_session(s1)
+
+    # Should find both
+    found = manager.find_resumable_sessions("https://example.com/ep1")
+
+    assert len(found) == 2
+
+
+def test_find_resumable_sessions_respects_limit(manager):
+    """Test that limit parameter is respected."""
+    # Create 5 sessions
+    for i in range(5):
+        manager.create_session(
+            episode_url="https://example.com/ep1",
+            episode_title="Episode 1",
+            podcast_name="Test",
+        )
+
+    # Find with limit
+    found = manager.find_resumable_sessions("https://example.com/ep1", limit=3)
+
+    assert len(found) == 3
+
+
+def test_find_resumable_sessions_skips_invalid(manager, session_dir):
+    """Test that invalid session files are skipped."""
+    # Create valid session
+    s1 = manager.create_session(
+        episode_url="https://example.com/ep1",
+        episode_title="Episode 1",
+        podcast_name="Test",
+    )
+
+    # Create invalid JSON file
+    (session_dir / "session-invalid.json").write_text("invalid json")
+
+    # Should not crash
+    found = manager.find_resumable_sessions("https://example.com/ep1")
+
+    assert len(found) == 1
+    assert found[0].session_id == s1.session_id
+
+
 # Delete Session Tests
 
 

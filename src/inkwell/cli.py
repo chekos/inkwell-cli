@@ -10,6 +10,7 @@ import typer
 import yaml
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
+from rich.prompt import Confirm
 from rich.table import Table
 
 from inkwell.config.logging import setup_logging
@@ -24,7 +25,7 @@ from inkwell.interview.models import InterviewGuidelines
 from inkwell.output import EpisodeMetadata, OutputManager
 from inkwell.transcription import CostEstimate, TranscriptionManager
 from inkwell.utils.api_keys import APIKeyError, get_validated_api_key
-from inkwell.utils.datetime import now_utc
+from inkwell.utils.datetime import format_duration, now_utc
 from inkwell.utils.display import truncate_url
 from inkwell.utils.errors import (
     DuplicateFeedError,
@@ -693,7 +694,7 @@ def fetch_command(
                 task = progress.add_task("Extracting content...", total=None)
 
                 # Use batched extraction for better performance (75% fewer API calls)
-                extraction_results = await engine.extract_all_batched(
+                extraction_results, extraction_summary = await engine.extract_all_batched(
                     templates=selected_templates,
                     transcript=result.transcript.full_text,
                     metadata=episode_metadata.model_dump(),
@@ -702,11 +703,28 @@ def fetch_command(
 
                 progress.update(task, completed=True)
 
-            # Report extraction results
-            cached_count = sum(1 for r in extraction_results if r.provider == "cache")
-            console.print(f"[green]✓[/green] Extracted {len(extraction_results)} templates")
-            if cached_count > 0:
-                console.print(f"  • {cached_count} from cache (saved ${engine.get_total_cost():.4f})")
+            # Report extraction results with detailed summary
+            if extraction_summary.failed > 0:
+                # Show warning if any templates failed
+                console.print(extraction_summary.format_summary(), style="yellow")
+                console.print(
+                    f"\n[yellow]⚠[/yellow] {extraction_summary.failed} template(s) failed. "
+                    f"Check logs for details."
+                )
+                console.print(
+                    f"[green]✓[/green] Extracted {extraction_summary.successful} of {extraction_summary.total} templates"
+                )
+            else:
+                # Success message if all succeeded
+                console.print(
+                    f"[green]✓[/green] All {extraction_summary.total} templates extracted successfully"
+                )
+
+            # Show cache and cost information
+            if extraction_summary.cached > 0:
+                console.print(
+                    f"  • {extraction_summary.cached} from cache (saved ${engine.get_total_cost():.4f})"
+                )
             console.print(f"  • Total cost: [yellow]${engine.get_total_cost():.4f}[/yellow]")
 
             # Step 4: Write output
@@ -754,6 +772,30 @@ def fetch_command(
                             model=config.interview.model
                         )
 
+                        session_id = resume_session
+
+                        # Auto-discover resumable sessions if not explicitly specified
+                        if not no_resume and not resume_session:
+                            resumable = interview_manager.session_manager.find_resumable_sessions(url)
+
+                            if resumable:
+                                # Show most recent session
+                                latest = resumable[0]
+                                elapsed = (now_utc() - latest.updated_at).total_seconds()
+                                elapsed_str = format_duration(elapsed)
+
+                                console.print(f"\n[yellow]Found incomplete session from {elapsed_str} ago:[/yellow]")
+                                console.print(f"  Session ID: {latest.session_id}")
+                                console.print(f"  Questions: {len(latest.exchanges)}/{latest.max_questions}")
+                                console.print(f"  Started: {latest.started_at.strftime('%Y-%m-%d %H:%M')}")
+
+                                # Interactive prompt
+                                if Confirm.ask("\nResume this session?", default=True):
+                                    session_id = latest.session_id
+                                    console.print(f"[green]✓[/green] Resuming session {session_id}")
+                                else:
+                                    console.print("[dim]Starting new session...[/dim]")
+
                         # Conduct interview
                         interview_result = await interview_manager.conduct_interview(
                             episode_url=url,
@@ -764,7 +806,7 @@ def fetch_command(
                             max_questions=questions,
                             guidelines=guidelines,
                             format_style=format_style,
-                            resume_session_id=None if no_resume else None,  # TODO: Session discovery
+                            resume_session_id=session_id,
                         )
 
                         # Save interview output

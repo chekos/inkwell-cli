@@ -50,3 +50,32 @@ def validate_timezone_aware(dt: datetime, name: str = "datetime") -> None:
             f"Use datetime.now(timezone.utc) or now_utc() "
             f"instead of datetime.utcnow()"
         )
+
+
+def format_duration(seconds: float) -> str:
+    """Format duration in human-readable form.
+
+    Args:
+        seconds: Duration in seconds
+
+    Returns:
+        Human-readable duration string (e.g., "2h", "45m", "30s")
+
+    Example:
+        >>> format_duration(30)
+        '30s'
+        >>> format_duration(120)
+        '2m'
+        >>> format_duration(3600)
+        '1h'
+        >>> format_duration(86400)
+        '1d'
+    """
+    if seconds < 60:
+        return f"{int(seconds)}s"
+    elif seconds < 3600:
+        return f"{int(seconds / 60)}m"
+    elif seconds < 86400:
+        return f"{int(seconds / 3600)}h"
+    else:
+        return f"{int(seconds / 86400)}d"

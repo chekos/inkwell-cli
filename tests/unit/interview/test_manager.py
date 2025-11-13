@@ -386,3 +386,197 @@ def test_format_transcript_creates_directory(manager, sample_session, tmp_path):
     assert nested_dir.exists()
     assert result.output_file is not None
     assert result.output_file.parent == nested_dir
+
+
+# Real File Loading Tests
+
+
+def test_build_context_from_real_output_files(manager, tmp_path):
+    """Test building context from actual episode output files."""
+    import yaml
+    from inkwell.output.models import EpisodeMetadata
+
+    # Create episode directory with real files
+    episode_dir = tmp_path / "test-episode"
+    episode_dir.mkdir()
+
+    # Write metadata
+    metadata = EpisodeMetadata(
+        podcast_name="Tech Talks",
+        episode_title="Building Better Software",
+        episode_url="https://example.com/ep1",
+        transcription_source="youtube",
+        duration_seconds=3600.0,  # 1 hour
+    )
+    metadata_file = episode_dir / ".metadata.yaml"
+    metadata_file.write_text(yaml.dump(metadata.model_dump()))
+
+    # Write summary.md
+    summary_content = """---
+date: 2025-11-13
+---
+
+# Summary
+
+This episode explores best practices for software development.
+The discussion covers testing, code quality, and team collaboration.
+"""
+    (episode_dir / "summary.md").write_text(summary_content)
+
+    # Write quotes.md
+    quotes_content = '''# Quotes
+
+> "Testing is not optional, it's essential."
+> — Host [12:34]
+
+> "Start with the simplest solution that works."
+> — Guest [23:45]
+'''
+    (episode_dir / "quotes.md").write_text(quotes_content)
+
+    # Write key-concepts.md
+    concepts_content = """# Key Concepts
+
+- Test-driven development
+- Code review best practices
+- Continuous integration
+- Refactoring strategies
+"""
+    (episode_dir / "key-concepts.md").write_text(concepts_content)
+
+    # Build context from these files
+    context = manager._build_context_from_output(
+        output_dir=episode_dir,
+        episode_url="https://example.com/ep1",
+        episode_title="Building Better Software",
+        podcast_name="Tech Talks",
+        guidelines=None,
+        max_questions=5,
+    )
+
+    # Verify metadata was loaded
+    assert context.podcast_name == "Tech Talks"
+    assert context.episode_title == "Building Better Software"
+    assert context.duration_minutes == 60.0
+
+    # Verify summary was loaded
+    assert "best practices" in context.summary
+    assert "software development" in context.summary
+
+    # Verify quotes were loaded
+    assert len(context.key_quotes) == 2
+    assert context.key_quotes[0]["text"] == "Testing is not optional, it's essential."
+    assert context.key_quotes[0]["speaker"] == "Host"
+    assert context.key_quotes[0]["timestamp"] == "12:34"
+
+    # Verify concepts were loaded
+    assert len(context.key_concepts) == 4
+    assert "Test-driven development" in context.key_concepts
+    assert "Code review best practices" in context.key_concepts
+
+
+def test_build_context_from_output_missing_files_fallback(manager, tmp_path):
+    """Test that missing output files result in minimal context fallback."""
+    # Directory doesn't exist
+    nonexistent_dir = tmp_path / "nonexistent"
+
+    context = manager._build_context_from_output(
+        output_dir=nonexistent_dir,
+        episode_url="https://example.com/ep1",
+        episode_title="Test Episode",
+        podcast_name="Test Podcast",
+        guidelines=None,
+        max_questions=5,
+    )
+
+    # Should return minimal context without crashing
+    assert context.podcast_name == "Test Podcast"
+    assert context.episode_title == "Test Episode"
+    assert context.episode_url == "https://example.com/ep1"
+    assert context.summary == "Episode: Test Episode"
+    assert context.key_quotes == []
+    assert context.key_concepts == []
+    assert context.duration_minutes == 0.0  # Unknown duration
+
+
+def test_build_context_from_output_with_additional_files(manager, tmp_path):
+    """Test loading context with additional extraction files."""
+    import yaml
+    from inkwell.output.models import EpisodeMetadata
+
+    episode_dir = tmp_path / "episode-with-extras"
+    episode_dir.mkdir()
+
+    # Write metadata
+    metadata = EpisodeMetadata(
+        podcast_name="Test",
+        episode_title="Test",
+        episode_url="https://example.com/test",
+        transcription_source="youtube",
+    )
+    (episode_dir / ".metadata.yaml").write_text(yaml.dump(metadata.model_dump()))
+
+    # Write summary
+    (episode_dir / "summary.md").write_text("Summary content")
+
+    # Write tools-mentioned.md
+    tools_content = """# Tools Mentioned
+
+- Kubernetes
+- Docker
+- Terraform
+"""
+    (episode_dir / "tools-mentioned.md").write_text(tools_content)
+
+    # Write books-mentioned.md
+    books_content = """# Books Mentioned
+
+1. The Pragmatic Programmer
+2. Clean Code
+"""
+    (episode_dir / "books-mentioned.md").write_text(books_content)
+
+    # Build context
+    context = manager._build_context_from_output(
+        output_dir=episode_dir,
+        episode_url="https://example.com/test",
+        episode_title="Test",
+        podcast_name="Test",
+        guidelines=None,
+        max_questions=5,
+    )
+
+    # Verify additional extractions were loaded
+    assert "tools-mentioned" in context.additional_extractions
+    tools = context.additional_extractions["tools-mentioned"]
+    assert "Kubernetes" in tools
+    assert "Docker" in tools
+
+    assert "books-mentioned" in context.additional_extractions
+    books = context.additional_extractions["books-mentioned"]
+    assert "The Pragmatic Programmer" in books
+    assert "Clean Code" in books
+
+
+def test_build_context_from_output_invalid_directory(manager, tmp_path):
+    """Test building context when directory exists but has invalid metadata."""
+    episode_dir = tmp_path / "invalid-episode"
+    episode_dir.mkdir()
+
+    # Create metadata file with invalid YAML
+    metadata_file = episode_dir / ".metadata.yaml"
+    metadata_file.write_text("invalid: yaml: content: [[[")
+
+    # Should fall back to minimal context
+    context = manager._build_context_from_output(
+        output_dir=episode_dir,
+        episode_url="https://example.com/test",
+        episode_title="Test",
+        podcast_name="Test",
+        guidelines=None,
+        max_questions=5,
+    )
+
+    # Should return minimal context
+    assert context.podcast_name == "Test"
+    assert context.summary == "Episode: Test"

@@ -4,13 +4,21 @@ Coordinates template selection, provider selection, caching, and result parsing.
 """
 
 import logging
+import time
 from typing import Any
 
 from ..utils.json_utils import JSONParsingError, safe_json_loads
 from .cache import ExtractionCache
 from .errors import ValidationError
 from .extractors import BaseExtractor, ClaudeExtractor, GeminiExtractor
-from .models import ExtractedContent, ExtractionResult, ExtractionTemplate
+from .models import (
+    ExtractedContent,
+    ExtractionAttempt,
+    ExtractionResult,
+    ExtractionStatus,
+    ExtractionSummary,
+    ExtractionTemplate,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -150,10 +158,11 @@ class ExtractionEngine:
         transcript: str,
         metadata: dict[str, Any],
         use_cache: bool = True,
-    ) -> list[ExtractionResult]:
+    ) -> tuple[list[ExtractionResult], ExtractionSummary]:
         """Extract content using multiple templates.
 
         Processes templates concurrently for better performance.
+        Returns both successful results and a detailed summary of all attempts.
 
         Args:
             templates: List of extraction templates
@@ -162,28 +171,93 @@ class ExtractionEngine:
             use_cache: Whether to use cache (default: True)
 
         Returns:
-            List of ExtractionResults (one per template)
+            Tuple of (successful results, extraction summary)
         """
         import asyncio
 
-        # Extract concurrently
-        tasks = [
-            self.extract(template, transcript, metadata, use_cache) for template in templates
-        ]
+        # Track timing for each extraction
+        start_times = {}
 
+        async def extract_with_tracking(template: ExtractionTemplate) -> ExtractionResult:
+            """Extract and track timing."""
+            start_times[template.name] = time.time()
+            return await self.extract(template, transcript, metadata, use_cache)
+
+        # Extract concurrently
+        tasks = [extract_with_tracking(template) for template in templates]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
-        # Filter out exceptions (return successful results only)
-        # TODO: Better error handling - log failures, allow partial success
+        # Build detailed summary
+        attempts = []
         successful_results = []
-        for result in results:
-            if isinstance(result, ExtractionResult):
-                successful_results.append(result)
-            elif isinstance(result, Exception):
-                # Log error but continue
-                logger.warning("Extraction failed: %s", result, exc_info=True)
 
-        return successful_results
+        for template, result in zip(templates, results, strict=False):
+            duration = time.time() - start_times.get(template.name, time.time())
+
+            if isinstance(result, ExtractionResult):
+                if result.success:
+                    # Determine if from cache
+                    status = (
+                        ExtractionStatus.CACHED
+                        if result.from_cache
+                        else ExtractionStatus.SUCCESS
+                    )
+
+                    attempts.append(
+                        ExtractionAttempt(
+                            template_name=template.name,
+                            status=status,
+                            result=result,
+                            duration_seconds=duration,
+                        )
+                    )
+                    successful_results.append(result)
+                else:
+                    # ExtractionResult with success=False
+                    attempts.append(
+                        ExtractionAttempt(
+                            template_name=template.name,
+                            status=ExtractionStatus.FAILED,
+                            error_message=result.error,
+                            duration_seconds=duration,
+                        )
+                    )
+                    logger.warning(
+                        f"Extraction failed for template '{template.name}': {result.error}"
+                    )
+
+            elif isinstance(result, Exception):
+                # Exception during extraction
+                attempts.append(
+                    ExtractionAttempt(
+                        template_name=template.name,
+                        status=ExtractionStatus.FAILED,
+                        error=result,
+                        error_message=str(result),
+                        duration_seconds=duration,
+                    )
+                )
+                logger.error(
+                    f"Extraction failed for template '{template.name}': {result}",
+                    exc_info=result,
+                )
+
+        # Build summary
+        summary = ExtractionSummary(
+            total=len(templates),
+            successful=sum(1 for a in attempts if a.status == ExtractionStatus.SUCCESS),
+            failed=sum(1 for a in attempts if a.status == ExtractionStatus.FAILED),
+            cached=sum(1 for a in attempts if a.status == ExtractionStatus.CACHED),
+            attempts=attempts,
+        )
+
+        # Log summary
+        logger.info(
+            f"Extraction complete: {summary.successful}/{summary.total} successful, "
+            f"{summary.failed} failed, {summary.cached} cached"
+        )
+
+        return successful_results, summary
 
     async def extract_all_batched(
         self,
@@ -191,7 +265,7 @@ class ExtractionEngine:
         transcript: str,
         metadata: dict[str, Any],
         use_cache: bool = True,
-    ) -> list[ExtractionResult]:
+    ) -> tuple[list[ExtractionResult], ExtractionSummary]:
         """Extract all templates in a single batched API call.
 
         Batches multiple template extractions into one API call to reduce
@@ -204,20 +278,25 @@ class ExtractionEngine:
             use_cache: Whether to use cache (default: True)
 
         Returns:
-            List of ExtractionResults (one per template, in same order as input)
+            Tuple of (extraction results, extraction summary)
 
         Example:
-            >>> results = await engine.extract_all_batched(
+            >>> results, summary = await engine.extract_all_batched(
             ...     [summary_template, quotes_template, concepts_template],
             ...     transcript,
             ...     metadata
             ... )
         """
-        import asyncio
-        import json
 
         if not templates:
-            return []
+            # Empty summary for no templates
+            empty_summary = ExtractionSummary(
+                total=0, successful=0, failed=0, cached=0, attempts=[]
+            )
+            return [], empty_summary
+
+        # Track timing
+        batch_start_time = time.time()
 
         # Get episode URL from metadata
         episode_url = metadata.get("episode_url", "")
@@ -246,10 +325,29 @@ class ExtractionEngine:
         else:
             uncached_templates = templates
 
-        # If all cached, return early
+        # If all cached, return early with summary
         if not uncached_templates:
             logger.info("All templates found in cache, returning cached results")
-            return [cached_results[t.name] for t in templates]
+            results_list = [cached_results[t.name] for t in templates]
+
+            # Build summary for all-cached scenario
+            attempts = [
+                ExtractionAttempt(
+                    template_name=t.name,
+                    status=ExtractionStatus.CACHED,
+                    result=cached_results[t.name],
+                    duration_seconds=0.0,
+                )
+                for t in templates
+            ]
+            summary = ExtractionSummary(
+                total=len(templates),
+                successful=0,
+                failed=0,
+                cached=len(templates),
+                attempts=attempts,
+            )
+            return results_list, summary
 
         # Build batched prompt
         logger.info(f"Batching {len(uncached_templates)} templates in single API call")
@@ -290,7 +388,9 @@ class ExtractionEngine:
                     if result and result.success and result.extracted_content:
                         # Cache the raw output for this template
                         raw_output = self._serialize_extracted_content(result.extracted_content)
-                        await self.cache.set(template.name, template.version, transcript, raw_output)
+                        await self.cache.set(
+                            template.name, template.version, transcript, raw_output
+                        )
 
             # Track cost
             self.total_cost_usd += estimated_cost
@@ -304,27 +404,78 @@ class ExtractionEngine:
                 uncached_templates, transcript, metadata, episode_url
             )
 
-        # Combine cached and new results in original order
+        # Combine cached and new results in original order and build summary
         all_results = []
+        attempts = []
+        batch_duration = time.time() - batch_start_time
+
         for template in templates:
             if template.name in cached_results:
-                all_results.append(cached_results[template.name])
+                result = cached_results[template.name]
+                all_results.append(result)
+                attempts.append(
+                    ExtractionAttempt(
+                        template_name=template.name,
+                        status=ExtractionStatus.CACHED,
+                        result=result,
+                        duration_seconds=0.0,
+                    )
+                )
             elif template.name in batch_results:
-                all_results.append(batch_results[template.name])
+                result = batch_results[template.name]
+                all_results.append(result)
+
+                # Determine status based on result success
+                if result.success:
+                    status = ExtractionStatus.SUCCESS
+                else:
+                    status = ExtractionStatus.FAILED
+
+                attempts.append(
+                    ExtractionAttempt(
+                        template_name=template.name,
+                        status=status,
+                        result=result if result.success else None,
+                        error_message=result.error if not result.success else None,
+                        duration_seconds=batch_duration / len(uncached_templates),
+                    )
+                )
             else:
                 # Template failed, create error result
-                all_results.append(
-                    ExtractionResult(
-                        episode_url=episode_url,
+                error_result = ExtractionResult(
+                    episode_url=episode_url,
+                    template_name=template.name,
+                    success=False,
+                    error="Template not found in batch results",
+                    cost_usd=0.0,
+                    provider=provider_name,
+                )
+                all_results.append(error_result)
+                attempts.append(
+                    ExtractionAttempt(
                         template_name=template.name,
-                        success=False,
-                        error="Template not found in batch results",
-                        cost_usd=0.0,
-                        provider=provider_name,
+                        status=ExtractionStatus.FAILED,
+                        error_message="Template not found in batch results",
+                        duration_seconds=batch_duration / len(templates),
                     )
                 )
 
-        return all_results
+        # Build summary
+        summary = ExtractionSummary(
+            total=len(templates),
+            successful=sum(1 for a in attempts if a.status == ExtractionStatus.SUCCESS),
+            failed=sum(1 for a in attempts if a.status == ExtractionStatus.FAILED),
+            cached=sum(1 for a in attempts if a.status == ExtractionStatus.CACHED),
+            attempts=attempts,
+        )
+
+        # Log summary
+        logger.info(
+            f"Batch extraction complete: {summary.successful}/{summary.total} successful, "
+            f"{summary.failed} failed, {summary.cached} cached"
+        )
+
+        return all_results, summary
 
     def estimate_total_cost(
         self,
@@ -661,7 +812,7 @@ Use the exact template names as JSON keys.
 
         # Convert to dict
         results = {}
-        for template, result in zip(templates, results_list):
+        for template, result in zip(templates, results_list, strict=False):
             if isinstance(result, ExtractionResult):
                 results[template.name] = result
             elif isinstance(result, Exception):

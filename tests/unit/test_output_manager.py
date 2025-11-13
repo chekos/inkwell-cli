@@ -1,6 +1,7 @@
 """Unit tests for output manager."""
 
 import os
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -9,7 +10,7 @@ import yaml
 
 from inkwell.extraction.models import ExtractedContent, ExtractionResult
 from inkwell.output.manager import OutputManager
-from inkwell.output.models import EpisodeMetadata
+from inkwell.output.models import EpisodeMetadata, EpisodeOutput
 from inkwell.utils.errors import SecurityError
 
 
@@ -901,3 +902,159 @@ class TestOutputManagerSecurityEdgeCases:
         assert "/" not in output.directory.name
         assert "\\" not in output.directory.name
         assert "\x00" not in output.directory.name
+
+
+# EpisodeOutput.from_directory() Tests
+
+
+def test_episode_output_from_directory_basic(temp_output_dir, episode_metadata, extraction_results):
+    """Test loading episode output from directory."""
+    # First, write an episode
+    manager = OutputManager(output_dir=temp_output_dir)
+    written_output = manager.write_episode(episode_metadata, extraction_results)
+
+    # Now load it back
+    loaded_output = EpisodeOutput.from_directory(written_output.output_dir)
+
+    # Verify metadata
+    assert loaded_output.metadata.podcast_name == episode_metadata.podcast_name
+    assert loaded_output.metadata.episode_title == episode_metadata.episode_title
+    assert loaded_output.metadata.episode_url == episode_metadata.episode_url
+    assert loaded_output.metadata.transcription_source == episode_metadata.transcription_source
+
+    # Verify files were loaded
+    assert len(loaded_output.files) == len(extraction_results)
+    assert loaded_output.total_files == len(extraction_results)
+
+    # Verify file content
+    summary_file = loaded_output.get_file("summary")
+    assert summary_file is not None
+    assert "Episode summary" in summary_file.content
+
+    quotes_file = loaded_output.get_file("quotes")
+    assert quotes_file is not None
+    assert "Quote 1" in quotes_file.content
+
+
+def test_episode_output_from_directory_with_frontmatter(temp_output_dir):
+    """Test loading files with YAML frontmatter."""
+    # Create episode directory manually
+    episode_dir = temp_output_dir / "test-episode"
+    episode_dir.mkdir()
+
+    # Write metadata
+    metadata = EpisodeMetadata(
+        podcast_name="Test Podcast",
+        episode_title="Test Episode",
+        episode_url="https://example.com/test",
+        transcription_source="youtube",
+    )
+    metadata_file = episode_dir / ".metadata.yaml"
+    metadata_file.write_text(yaml.dump(metadata.model_dump()))
+
+    # Write markdown file with frontmatter
+    content_with_frontmatter = """---
+date: 2025-11-13
+author: Test Author
+tags:
+  - test
+  - example
+---
+
+# Summary
+
+This is the actual content.
+"""
+    (episode_dir / "summary.md").write_text(content_with_frontmatter)
+
+    # Load
+    loaded_output = EpisodeOutput.from_directory(episode_dir)
+
+    # Verify frontmatter was parsed
+    summary_file = loaded_output.get_file("summary")
+    assert summary_file is not None
+    assert summary_file.frontmatter["author"] == "Test Author"
+    assert "test" in summary_file.frontmatter["tags"]
+
+    # Verify content excludes frontmatter
+    assert "This is the actual content" in summary_file.content
+    assert "---" not in summary_file.content
+
+
+def test_episode_output_from_directory_missing_dir():
+    """Test loading from non-existent directory raises error."""
+    with pytest.raises(FileNotFoundError, match="Output directory not found"):
+        EpisodeOutput.from_directory(Path("/nonexistent/path"))
+
+
+def test_episode_output_from_directory_not_a_directory(tmp_path):
+    """Test loading from a file (not directory) raises error."""
+    # Create a file instead of directory
+    file_path = tmp_path / "not-a-dir.txt"
+    file_path.write_text("test")
+
+    with pytest.raises(ValueError, match="not a directory"):
+        EpisodeOutput.from_directory(file_path)
+
+
+def test_episode_output_from_directory_missing_metadata(tmp_path):
+    """Test loading from directory without metadata raises error."""
+    # Create directory without .metadata.yaml
+    episode_dir = tmp_path / "episode"
+    episode_dir.mkdir()
+
+    with pytest.raises(FileNotFoundError, match="Metadata file not found"):
+        EpisodeOutput.from_directory(episode_dir)
+
+
+def test_episode_output_from_directory_no_markdown_files(temp_output_dir):
+    """Test loading from directory with metadata but no markdown files."""
+    episode_dir = temp_output_dir / "empty-episode"
+    episode_dir.mkdir()
+
+    # Write metadata only
+    metadata = EpisodeMetadata(
+        podcast_name="Test",
+        episode_title="Test",
+        episode_url="https://example.com/test",
+        transcription_source="youtube",
+    )
+    metadata_file = episode_dir / ".metadata.yaml"
+    metadata_file.write_text(yaml.dump(metadata.model_dump()))
+
+    # Load should work but have no files
+    loaded_output = EpisodeOutput.from_directory(episode_dir)
+
+    assert loaded_output.total_files == 0
+    assert len(loaded_output.files) == 0
+
+
+def test_episode_output_from_directory_multiple_files(temp_output_dir):
+    """Test loading directory with multiple markdown files."""
+    episode_dir = temp_output_dir / "multi-file-episode"
+    episode_dir.mkdir()
+
+    # Write metadata
+    metadata = EpisodeMetadata(
+        podcast_name="Test",
+        episode_title="Test",
+        episode_url="https://example.com/test",
+        transcription_source="youtube",
+    )
+    metadata_file = episode_dir / ".metadata.yaml"
+    metadata_file.write_text(yaml.dump(metadata.model_dump()))
+
+    # Write multiple markdown files
+    (episode_dir / "summary.md").write_text("# Summary\n\nSummary content")
+    (episode_dir / "quotes.md").write_text("# Quotes\n\n> Quote 1")
+    (episode_dir / "key-concepts.md").write_text("# Concepts\n\n- Concept 1")
+    (episode_dir / "tools-mentioned.md").write_text("# Tools\n\n- Tool 1")
+
+    # Load
+    loaded_output = EpisodeOutput.from_directory(episode_dir)
+
+    assert loaded_output.total_files == 4
+    assert loaded_output.get_file("summary") is not None
+    assert loaded_output.get_file("quotes") is not None
+    assert loaded_output.get_file("key-concepts") is not None
+    assert loaded_output.get_file("tools-mentioned") is not None

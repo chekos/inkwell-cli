@@ -111,7 +111,7 @@ class TestBatchedExtraction:
             engine.gemini_extractor.estimate_cost = Mock(return_value=0.01)
 
             # Execute batch extraction
-            results = await engine.extract_all_batched(
+            results, summary = await engine.extract_all_batched(
                 templates=[summary_template, quotes_template, concepts_template],
                 transcript="Test transcript content",
                 metadata={
@@ -129,6 +129,11 @@ class TestBatchedExtraction:
             assert results[0].template_name == "summary"
             assert results[1].template_name == "quotes"
             assert results[2].template_name == "key-concepts"
+
+            # Verify summary
+            assert summary.total == 3
+            assert summary.successful == 3
+            assert summary.failed == 0
 
             # Verify extractor was called only once (batched)
             assert mock_extract.call_count == 1
@@ -161,7 +166,7 @@ class TestBatchedExtraction:
             await temp_cache.set("summary", "1.0", transcript, "Cached summary")
 
             # Execute batch extraction
-            results = await engine.extract_all_batched(
+            results, summary = await engine.extract_all_batched(
                 templates=[summary_template, quotes_template],
                 transcript=transcript,
                 metadata=metadata,
@@ -175,6 +180,10 @@ class TestBatchedExtraction:
             assert summary_result.template_name == "summary"
             assert summary_result.from_cache is True
             assert summary_result.provider == "cache"
+
+            # Verify summary includes cached template
+            assert summary.total == 2
+            assert summary.cached == 1
             assert summary_result.cost_usd == 0.0
 
             # Quotes should be from API
@@ -213,7 +222,7 @@ class TestBatchedExtraction:
             engine.gemini_extractor.estimate_cost = Mock(return_value=0.01)
 
             # Execute batch extraction
-            results = await engine.extract_all_batched(
+            results, summary = await engine.extract_all_batched(
                 templates=[summary_template, quotes_template],
                 transcript=transcript,
                 metadata=metadata,
@@ -223,6 +232,10 @@ class TestBatchedExtraction:
             assert len(results) == 2
             assert all(r.from_cache for r in results)
             assert all(r.cost_usd == 0.0 for r in results)
+
+            # Verify summary
+            assert summary.cached == 2
+            assert summary.total == 2
 
             # Extractor should NOT be called
             assert mock_extract.call_count == 0
@@ -285,13 +298,14 @@ class TestBatchedExtraction:
         ):
             engine = ExtractionEngine(cache=temp_cache)
 
-            results = await engine.extract_all_batched(
+            results, summary = await engine.extract_all_batched(
                 templates=[],
                 transcript="Test transcript",
                 metadata={"episode_url": "https://example.com/ep1"},
             )
 
             assert results == []
+            assert summary.total == 0
 
     @pytest.mark.asyncio
     async def test_batch_extraction_missing_template_in_response(
@@ -314,7 +328,7 @@ class TestBatchedExtraction:
             engine.gemini_extractor.extract = mock_extract
             engine.gemini_extractor.estimate_cost = Mock(return_value=0.01)
 
-            results = await engine.extract_all_batched(
+            results, summary = await engine.extract_all_batched(
                 templates=[summary_template, quotes_template],
                 transcript="Test transcript",
                 metadata={"episode_url": "https://example.com/ep1"},

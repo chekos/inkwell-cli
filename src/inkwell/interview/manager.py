@@ -6,6 +6,7 @@ to provide a complete interview experience.
 
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 
@@ -33,6 +34,9 @@ from inkwell.interview.ui import (
     display_welcome,
     get_multiline_input,
 )
+from inkwell.output.models import EpisodeOutput
+
+logger = logging.getLogger(__name__)
 
 
 class InterviewManager:
@@ -429,6 +433,9 @@ class InterviewManager:
     ) -> InterviewContext:
         """Build interview context from Phase 3 output directory.
 
+        Loads episode output files (summary.md, quotes.md, key-concepts.md, etc.)
+        and extracts content to build rich interview context.
+
         Args:
             output_dir: Directory containing extracted content
             episode_url: Episode URL
@@ -438,21 +445,52 @@ class InterviewManager:
             max_questions: Max questions
 
         Returns:
-            InterviewContext ready for agent
+            InterviewContext ready for agent with actual episode content
         """
-        # For now, create minimal context
-        # TODO: Actually read from Phase 3 output files when Phase 3 is implemented
-        return InterviewContext(
-            podcast_name=podcast_name,
-            episode_title=episode_title,
-            episode_url=episode_url,
-            duration_minutes=60.0,  # Placeholder
-            summary="Episode summary placeholder",
-            key_quotes=[],
-            key_concepts=[],
-            guidelines=guidelines,
-            max_questions=max_questions,
-        )
+        try:
+            # Load episode output from directory
+            episode_output = EpisodeOutput.from_directory(output_dir)
+
+            # Use context builder to extract content from files
+            context = self.context_builder.build_context(
+                episode_output=episode_output,
+                guidelines=guidelines,
+                max_questions=max_questions,
+            )
+
+            return context
+
+        except FileNotFoundError as e:
+            # Output files don't exist yet - return minimal context
+            logger.warning(
+                f"Episode output not found at {output_dir}, using minimal context: {e}"
+            )
+            return InterviewContext(
+                podcast_name=podcast_name,
+                episode_title=episode_title,
+                episode_url=episode_url,
+                duration_minutes=0.0,  # Unknown duration
+                summary=f"Episode: {episode_title}",
+                key_quotes=[],
+                key_concepts=[],
+                guidelines=guidelines,
+                max_questions=max_questions,
+            )
+
+        except Exception as e:
+            # Other error - log and return minimal context
+            logger.error(f"Failed to build context from output: {e}", exc_info=True)
+            return InterviewContext(
+                podcast_name=podcast_name,
+                episode_title=episode_title,
+                episode_url=episode_url,
+                duration_minutes=0.0,  # Unknown duration
+                summary=f"Episode: {episode_title}",
+                key_quotes=[],
+                key_concepts=[],
+                guidelines=guidelines,
+                max_questions=max_questions,
+            )
 
     def _format_transcript(
         self,

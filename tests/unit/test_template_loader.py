@@ -49,21 +49,21 @@ class TestTemplateLoader:
         loader = TemplateLoader()
 
         assert loader.user_template_dir is not None
-        assert loader.builtin_template_dir is not None
-        assert loader.category_template_dir is not None
+        assert loader.template_dirs is not None
+        assert len(loader.template_dirs) > 0
 
     def test_create_loader_custom_dirs(self, tmp_path: Path) -> None:
         """Test creating loader with custom directories."""
         user_dir = tmp_path / "user"
-        builtin_dir = tmp_path / "builtin"
+        template_dir = tmp_path / "templates"
 
         loader = TemplateLoader(
             user_template_dir=user_dir,
-            builtin_template_dir=builtin_dir,
+            template_dirs=[template_dir],
         )
 
         assert loader.user_template_dir == user_dir
-        assert loader.builtin_template_dir == builtin_dir
+        assert template_dir in loader.template_dirs
 
     def test_load_template_from_file(
         self, temp_template_dir: Path, valid_template_yaml: str
@@ -75,7 +75,7 @@ class TestTemplateLoader:
 
         loader = TemplateLoader(
             user_template_dir=temp_template_dir,
-            builtin_template_dir=None,
+            template_dirs=[],
         )
 
         template = loader.load_template("test-template")
@@ -95,7 +95,7 @@ class TestTemplateLoader:
 
         loader = TemplateLoader(
             user_template_dir=temp_template_dir,
-            builtin_template_dir=None,
+            template_dirs=[],
         )
 
         # Load template twice
@@ -104,7 +104,7 @@ class TestTemplateLoader:
 
         # Should be same cached instance
         assert template1 is template2
-        assert len(loader._cache) == 1
+        assert len(loader._template_cache) == 1
 
     def test_load_template_user_overrides_builtin(
         self, tmp_path: Path, valid_template_yaml: str
@@ -136,7 +136,7 @@ class TestTemplateLoader:
         """Test loading non-existent template raises error."""
         loader = TemplateLoader(
             user_template_dir=temp_template_dir,
-            builtin_template_dir=None,
+            template_dirs=[],
         )
 
         with pytest.raises(FileNotFoundError) as exc_info:
@@ -153,7 +153,7 @@ class TestTemplateLoader:
 
         loader = TemplateLoader(
             user_template_dir=temp_template_dir,
-            builtin_template_dir=None,
+            template_dirs=[],
         )
 
         with pytest.raises(ValidationError):
@@ -166,7 +166,7 @@ class TestTemplateLoader:
 
         loader = TemplateLoader(
             user_template_dir=temp_template_dir,
-            builtin_template_dir=None,
+            template_dirs=[],
         )
 
         with pytest.raises(Exception):  # YAML parsing error
@@ -176,7 +176,7 @@ class TestTemplateLoader:
         """Test listing templates when none exist."""
         loader = TemplateLoader(
             user_template_dir=temp_template_dir,
-            builtin_template_dir=None,
+            template_dirs=[],
         )
 
         templates = loader.list_templates()
@@ -196,7 +196,7 @@ class TestTemplateLoader:
 
         loader = TemplateLoader(
             user_template_dir=template_dir,
-            builtin_template_dir=None,
+            template_dirs=[],
         )
 
         templates = loader.list_templates()
@@ -259,7 +259,7 @@ expected_format: json
 
         loader = TemplateLoader(
             user_template_dir=template_dir,
-            builtin_template_dir=None,
+            template_dirs=[],
         )
 
         # List all templates
@@ -294,7 +294,7 @@ expected_format: json
 
         loader = TemplateLoader(
             user_template_dir=None,
-            builtin_template_dir=None,
+            template_dirs=[],
             category_template_dir=tmp_path / "categories",
         )
 
@@ -311,7 +311,7 @@ expected_format: json
 
         loader = TemplateLoader(
             user_template_dir=temp_template_dir,
-            builtin_template_dir=None,
+            template_dirs=[],
         )
 
         # Load template (caches it)
@@ -380,7 +380,7 @@ expected_format: json
 
         loader = TemplateLoader(
             user_template_dir=temp_template_dir,
-            builtin_template_dir=None,
+            template_dirs=[],
         )
 
         with pytest.raises(ValidationError) as exc_info:
@@ -403,7 +403,7 @@ expected_format: json
 
         loader = TemplateLoader(
             user_template_dir=temp_template_dir,
-            builtin_template_dir=None,
+            template_dirs=[],
         )
 
         with pytest.raises(ValidationError) as exc_info:

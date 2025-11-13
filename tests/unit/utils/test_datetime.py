@@ -3,7 +3,7 @@
 import pytest
 from datetime import datetime, timezone, timedelta
 
-from inkwell.utils.datetime import now_utc, validate_timezone_aware
+from inkwell.utils.datetime import format_duration, now_utc, validate_timezone_aware
 
 
 class TestNowUtc:
@@ -183,3 +183,80 @@ class TestBackwardCompatibility:
         # Deserialize from dict
         model2 = TestModel.model_validate(data)
         assert model2.timestamp.tzinfo is not None
+
+
+class TestFormatDuration:
+    """Tests for format_duration() function."""
+
+    def test_seconds(self):
+        """Test formatting durations under 1 minute."""
+        assert format_duration(0) == "0s"
+        assert format_duration(30) == "30s"
+        assert format_duration(59) == "59s"
+        assert format_duration(59.9) == "59s"
+
+    def test_minutes(self):
+        """Test formatting durations under 1 hour."""
+        assert format_duration(60) == "1m"
+        assert format_duration(120) == "2m"
+        assert format_duration(1800) == "30m"
+        assert format_duration(3599) == "59m"
+
+    def test_hours(self):
+        """Test formatting durations under 1 day."""
+        assert format_duration(3600) == "1h"
+        assert format_duration(7200) == "2h"
+        assert format_duration(43200) == "12h"
+        assert format_duration(86399) == "23h"
+
+    def test_days(self):
+        """Test formatting durations in days."""
+        assert format_duration(86400) == "1d"
+        assert format_duration(172800) == "2d"
+        assert format_duration(604800) == "7d"
+        assert format_duration(2592000) == "30d"
+
+    def test_rounds_down(self):
+        """Test that durations are rounded down."""
+        # 1.5 minutes = 90 seconds = "1m" (not "2m")
+        assert format_duration(90) == "1m"
+
+        # 2.5 hours = 9000 seconds = "2h" (not "3h")
+        assert format_duration(9000) == "2h"
+
+        # 1.5 days = 129600 seconds = "1d" (not "2d")
+        assert format_duration(129600) == "1d"
+
+    def test_boundary_cases(self):
+        """Test boundary conditions between units."""
+        # Just under 1 minute
+        assert format_duration(59.999) == "59s"
+
+        # Exactly 1 minute
+        assert format_duration(60) == "1m"
+
+        # Just under 1 hour
+        assert format_duration(3599.999) == "59m"
+
+        # Exactly 1 hour
+        assert format_duration(3600) == "1h"
+
+        # Just under 1 day
+        assert format_duration(86399.999) == "23h"
+
+        # Exactly 1 day
+        assert format_duration(86400) == "1d"
+
+    def test_real_world_examples(self):
+        """Test real-world usage scenarios."""
+        # Session resumed after 2 hours
+        assert format_duration(7200) == "2h"
+
+        # Session from yesterday (25 hours ago)
+        assert format_duration(90000) == "1d"
+
+        # Very recent session (30 seconds ago)
+        assert format_duration(30) == "30s"
+
+        # Session from last week
+        assert format_duration(604800) == "7d"

@@ -303,3 +303,92 @@ class EpisodeOutput(BaseModel):
             f"in {self.directory_name}/ "
             f"(cost: ${self.metadata.total_cost_usd:.3f})"
         )
+
+    @classmethod
+    def from_directory(cls, output_dir: Path) -> "EpisodeOutput":
+        """Load episode output from directory.
+
+        Reads metadata and all markdown files from an episode output directory.
+
+        Args:
+            output_dir: Directory containing episode output files
+
+        Returns:
+            EpisodeOutput with loaded metadata and files
+
+        Raises:
+            FileNotFoundError: If directory or metadata file doesn't exist
+            ValueError: If metadata file is invalid
+
+        Example:
+            >>> output = EpisodeOutput.from_directory(
+            ...     Path("output/podcast-2025-11-13-episode-title")
+            ... )
+            >>> print(output.metadata.episode_title)
+            >>> print(len(output.files))
+        """
+        import yaml
+
+        # Check directory exists
+        if not output_dir.exists():
+            raise FileNotFoundError(f"Output directory not found: {output_dir}")
+
+        if not output_dir.is_dir():
+            raise ValueError(f"Path is not a directory: {output_dir}")
+
+        # Load metadata
+        metadata_file = output_dir / ".metadata.yaml"
+        if not metadata_file.exists():
+            raise FileNotFoundError(
+                f"Metadata file not found: {metadata_file}. "
+                f"Directory may not be an episode output directory."
+            )
+
+        with metadata_file.open("r") as f:
+            metadata_dict = yaml.safe_load(f)
+
+        metadata = EpisodeMetadata(**metadata_dict)
+
+        # Load all markdown files
+        files: list[OutputFile] = []
+        for md_file in sorted(output_dir.glob("*.md")):
+            # Read file content
+            content = md_file.read_text(encoding="utf-8")
+
+            # Parse frontmatter if present
+            frontmatter: dict[str, Any] = {}
+            file_content = content
+
+            if content.startswith("---\n"):
+                # Has frontmatter
+                parts = content.split("---\n", 2)
+                if len(parts) >= 3:
+                    frontmatter_yaml = parts[1]
+                    file_content = parts[2].lstrip()
+                    frontmatter = yaml.safe_load(frontmatter_yaml) or {}
+
+            # Determine template name from filename (remove .md)
+            template_name = md_file.stem
+
+            # Create OutputFile
+            output_file = OutputFile(
+                filename=md_file.name,
+                template_name=template_name,
+                content=file_content,
+                frontmatter=frontmatter,
+                created_at=datetime.fromtimestamp(md_file.stat().st_mtime),
+                size_bytes=md_file.stat().st_size,
+            )
+
+            files.append(output_file)
+
+        # Create EpisodeOutput
+        episode_output = cls(
+            metadata=metadata,
+            output_dir=output_dir,
+            files=files,
+            total_files=len(files),
+            total_size_bytes=sum(f.size_bytes for f in files),
+        )
+
+        return episode_output

@@ -5,9 +5,12 @@ This module defines Pydantic models for:
 - Template variables (for prompt customization)
 - Extracted content (validated results)
 - Extraction results (operation envelope)
+- Extraction tracking (summary and attempt records)
 """
 
+from dataclasses import dataclass
 from datetime import datetime
+from enum import Enum
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
@@ -268,3 +271,108 @@ class ExtractionResult(BaseModel):
             )
         else:
             return f"✗ {self.template_name}: Failed - {self.error}"
+
+
+class ExtractionStatus(str, Enum):
+    """Status of an extraction attempt."""
+
+    SUCCESS = "success"
+    FAILED = "failed"
+    CACHED = "cached"
+
+
+@dataclass
+class ExtractionAttempt:
+    """Record of a single extraction attempt.
+
+    Tracks the outcome of attempting to extract content using a template,
+    including success/failure status, timing, and error details.
+
+    Example:
+        >>> attempt = ExtractionAttempt(
+        ...     template_name="summary",
+        ...     status=ExtractionStatus.SUCCESS,
+        ...     result=extraction_result,
+        ...     duration_seconds=2.5
+        ... )
+    """
+
+    template_name: str
+    status: ExtractionStatus
+    result: ExtractionResult | None = None
+    error: Exception | None = None
+    error_message: str | None = None
+    duration_seconds: float | None = None
+
+
+@dataclass
+class ExtractionSummary:
+    """Summary of all extraction attempts.
+
+    Aggregates results from multiple extraction attempts, providing
+    statistics and helper methods for reporting.
+
+    Example:
+        >>> summary = ExtractionSummary(
+        ...     total=4,
+        ...     successful=3,
+        ...     failed=1,
+        ...     cached=1,
+        ...     attempts=[...]
+        ... )
+        >>> print(summary.format_summary())
+    """
+
+    total: int
+    successful: int
+    failed: int
+    cached: int
+    attempts: list[ExtractionAttempt]
+
+    @property
+    def success_rate(self) -> float:
+        """Calculate success rate percentage.
+
+        Returns:
+            Success rate as percentage (0-100)
+        """
+        if self.total == 0:
+            return 0.0
+        return (self.successful / self.total) * 100
+
+    @property
+    def failed_templates(self) -> list[str]:
+        """Get list of failed template names.
+
+        Returns:
+            List of template names that failed extraction
+        """
+        return [
+            attempt.template_name
+            for attempt in self.attempts
+            if attempt.status == ExtractionStatus.FAILED
+        ]
+
+    def format_summary(self) -> str:
+        """Format summary for user display.
+
+        Returns:
+            Formatted string with extraction statistics and error details
+        """
+        lines = [
+            "\nExtraction Summary:",
+            f"  Total: {self.total}",
+            f"  Successful: {self.successful}",
+            f"  Failed: {self.failed}",
+            f"  Cached: {self.cached}",
+            f"  Success Rate: {self.success_rate:.1f}%",
+        ]
+
+        if self.failed > 0:
+            lines.append("\nFailed Templates:")
+            for attempt in self.attempts:
+                if attempt.status == ExtractionStatus.FAILED:
+                    error_msg = attempt.error_message or str(attempt.error)
+                    lines.append(f"  - {attempt.template_name}: {error_msg}")
+
+        return "\n".join(lines)

@@ -333,7 +333,7 @@ class OutputManager:
         if "schema_version" not in metadata_dict or metadata_dict["schema_version"] is None:
             metadata_dict["schema_version"] = self.CURRENT_METADATA_SCHEMA_VERSION
 
-        # Write with integrity checksum (uses atomic write internally)
+        # Write with integrity checksum via atomic write (temp file + rename)
         YAMLWithIntegrity.write_yaml_with_checksum(metadata_file, metadata_dict)
 
     def list_episodes(self) -> list[Path]:

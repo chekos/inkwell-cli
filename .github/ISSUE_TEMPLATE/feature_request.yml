@@ -1,0 +1,106 @@
+name: Feature Request
+description: Suggest a new feature for Inkwell CLI
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting a new feature! Please fill out the sections below to help us understand your idea.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem statement
+      description: What problem does this feature solve? What friction are you experiencing?
+      placeholder: |
+        I'm frustrated when...
+        It would be helpful if...
+        I often need to...
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: How would you like to solve this problem? Describe the feature you'd like to see.
+      placeholder: |
+        I would like Inkwell to...
+        A new command that...
+        Add support for...
+    validations:
+      required: true
+
+  - type: textarea
+    id: example
+    attributes:
+      label: Usage example
+      description: Show how you would use this feature with a concrete example
+      placeholder: |
+        ```bash
+        # Example command usage
+        inkwell <new-feature> <args>
+        ```
+
+        Or describe the workflow:
+        1. I would run...
+        2. Then I would...
+        3. Finally...
+    validations:
+      required: false
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Have you considered any alternative solutions or workarounds?
+      placeholder: |
+        - I tried using... but it doesn't work because...
+        - I considered... but that would require...
+        - Currently I work around this by... but it's tedious because...
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      description: How important is this feature to you?
+      options:
+        - "Nice to have - Would make my workflow slightly better"
+        - "Important - Would significantly improve my workflow"
+        - "Critical - Blocking my use of Inkwell"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: willingness
+    attributes:
+      label: Contribution
+      description: Would you be willing to contribute this feature?
+      options:
+        - "Yes, I can implement this myself with guidance"
+        - "Yes, I can help with testing and feedback"
+        - "No, I'm just requesting the feature"
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: |
+        Add any other context, screenshots, or examples about the feature request here:
+        - Similar features in other tools
+        - Mockups or diagrams
+        - Related issues or discussions
+        - Performance considerations
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Pre-submission checklist
+      options:
+        - label: I have searched existing issues to ensure this is not a duplicate
+          required: true
+        - label: I have reviewed the documentation to confirm this feature doesn't already exist
+          required: true

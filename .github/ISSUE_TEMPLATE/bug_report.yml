@@ -1,0 +1,116 @@
+name: Bug Report
+description: Report a bug in Inkwell CLI
+title: "[Bug]: "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug! Please fill out the sections below to help us fix the issue.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Describe the bug
+      description: A clear and concise description of what the bug is
+      placeholder: When I run `inkwell process <url>`, I get...
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Minimal steps to reproduce the issue
+      placeholder: |
+        1. Run `inkwell add "https://example.com/feed.xml" --name test`
+        2. Run `inkwell process test --latest`
+        3. See error...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What should have happened?
+      placeholder: The episode should process successfully and create markdown files in the output directory.
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What actually happened?
+      placeholder: The command fails with an error message...
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: |
+        Please provide the following information:
+        - Run `inkwell --version` and paste the output
+        - Run `python --version` and paste the output
+        - Your operating system (macOS, Linux, Windows)
+      render: shell
+      placeholder: |
+        $ inkwell --version
+        Inkwell CLI version 1.0.0
+
+        $ python --version
+        Python 3.11.5
+
+        OS: macOS 14.0 (Sonoma)
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: |
+        Please paste relevant logs. Run your command with `--verbose` flag for detailed logs.
+        Example: `inkwell process test --latest --verbose`
+      render: shell
+      placeholder: Paste your logs here...
+
+  - type: textarea
+    id: config
+    attributes:
+      label: Configuration
+      description: |
+        If relevant, paste your configuration file (with API keys removed!)
+        File location: `~/.config/inkwell/config.yaml`
+      render: yaml
+      placeholder: |
+        version: "1"
+        log_level: INFO
+        default_provider: gemini
+        # ... (remove API keys before pasting)
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: |
+        Add any other context about the problem here:
+        - Screenshots
+        - Feed URLs (if public)
+        - Workarounds you've tried
+        - Related issues
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Pre-submission checklist
+      options:
+        - label: I have searched existing issues to ensure this is not a duplicate
+          required: true
+        - label: I have tried with the latest version of Inkwell CLI
+          required: true
+        - label: I have removed any sensitive information (API keys, private URLs) from this report
+          required: true

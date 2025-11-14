@@ -97,8 +97,8 @@ class RetryConfig:
             jitter: Whether to add ±25% jitter to wait times
         """
         self.max_attempts = max_attempts
-        self.max_wait_seconds: int | float = max_wait_seconds
-        self.min_wait_seconds: int | float = min_wait_seconds
+        self.max_wait_seconds = max_wait_seconds
+        self.min_wait_seconds = min_wait_seconds
         self.jitter = jitter
 
 

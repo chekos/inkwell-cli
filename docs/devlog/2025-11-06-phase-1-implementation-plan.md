@@ -665,7 +665,7 @@ def setup_logging(level: str = "INFO", log_file: Optional[Path] = None) -> None:
 - [ ] Implement feed models (feeds/models.py)
 - [ ] Implement feed validator (feeds/validator.py)
 - [ ] Write feed tests with fixtures
-- [ ] Implement FeedManager (feeds/manager.py)
+- [x] ~~Implement FeedManager~~ (Not needed - ConfigManager handles feed operations)
 
 **Day 5: CLI Commands**
 - [ ] Implement main CLI entry point (cli.py)

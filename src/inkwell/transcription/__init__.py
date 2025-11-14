@@ -25,7 +25,7 @@ from inkwell.transcription.models import (
     TranscriptionResult,
     TranscriptSegment,
 )
-from inkwell.transcription.youtube import TranscriptionError, YouTubeTranscriber
+from inkwell.transcription.youtube import YouTubeTranscriber
 
 __all__ = [
     "CacheError",
@@ -37,6 +37,5 @@ __all__ = [
     "TranscriptionManager",
     "TranscriptSegment",
     "TranscriptionResult",
-    "TranscriptionError",
     "YouTubeTranscriber",
 ]

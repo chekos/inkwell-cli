@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 from anthropic.types import ContentBlock, Message
 
-from inkwell.extraction.errors import ProviderError, ValidationError
+from inkwell.utils.errors import APIError, ValidationError
 from inkwell.extraction.extractors.claude import ClaudeExtractor
 from inkwell.extraction.models import ExtractionTemplate
 from inkwell.utils.api_keys import APIKeyError
@@ -241,14 +241,14 @@ class TestClaudeExtractorExtract:
     async def test_extract_api_error(
         self, mock_api_key: str, sample_template: ExtractionTemplate
     ) -> None:
-        """Test extraction with API error raises ProviderError."""
+        """Test extraction with API error raises APIError."""
         extractor = ClaudeExtractor()
 
         # Mock API error
         with patch.object(extractor.client.messages, "create", new=AsyncMock()) as mock_create:
             mock_create.side_effect = Exception("API error")
 
-            with pytest.raises(ProviderError) as exc_info:
+            with pytest.raises(APIError) as exc_info:
                 await extractor.extract(
                     template=sample_template,
                     transcript="Test",

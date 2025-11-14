@@ -9,7 +9,7 @@ from httpx import Response
 
 from inkwell.config.schema import AuthConfig
 from inkwell.feeds.parser import RSSParser
-from inkwell.utils.errors import AuthenticationError, FeedParseError, NetworkError
+from inkwell.utils.errors import APIError, SecurityError, ValidationError
 
 
 @pytest.fixture
@@ -94,7 +94,7 @@ class TestRSSParser:
         )
 
         parser = RSSParser()
-        with pytest.raises(AuthenticationError, match="Authentication failed"):
+        with pytest.raises(SecurityError, match="Authentication failed"):
             await parser.fetch_feed("https://example.com/feed.rss")
 
     @pytest.mark.asyncio
@@ -106,7 +106,7 @@ class TestRSSParser:
         )
 
         parser = RSSParser()
-        with pytest.raises(NetworkError, match="HTTP error"):
+        with pytest.raises(APIError, match="HTTP error"):
             await parser.fetch_feed("https://example.com/feed.rss")
 
     @pytest.mark.asyncio
@@ -120,7 +120,7 @@ class TestRSSParser:
         )
 
         parser = RSSParser(timeout=1)
-        with pytest.raises(NetworkError, match="Timeout"):
+        with pytest.raises(APIError, match="Timeout"):
             await parser.fetch_feed("https://example.com/feed.rss")
 
     @pytest.mark.asyncio
@@ -141,14 +141,14 @@ class TestRSSParser:
     @pytest.mark.asyncio
     @respx.mock
     async def test_fetch_feed_no_entries_raises(self) -> None:
-        """Test that feed with no entries raises FeedParseError."""
+        """Test that feed with no entries raises ValidationError."""
         empty_feed = '<?xml version="1.0"?><rss><channel></channel></rss>'
         respx.get("https://example.com/feed.rss").mock(
             return_value=Response(200, content=empty_feed.encode())
         )
 
         parser = RSSParser()
-        with pytest.raises(FeedParseError, match="No episodes found"):
+        with pytest.raises(ValidationError, match="No episodes found"):
             await parser.fetch_feed("https://example.com/feed.rss")
 
     def test_get_latest_episode(self, valid_rss_feed: str) -> None:
@@ -174,11 +174,11 @@ class TestRSSParser:
         assert episode.episode_number == 99
 
     def test_get_episode_by_title_not_found(self, valid_rss_feed: str) -> None:
-        """Test that non-matching keyword raises FeedParseError."""
+        """Test that non-matching keyword raises ValidationError."""
         feed = feedparser.parse(valid_rss_feed)
         parser = RSSParser()
 
-        with pytest.raises(FeedParseError, match="No episode found matching"):
+        with pytest.raises(ValidationError, match="No episode found matching"):
             parser.get_episode_by_title(feed, "nonexistent", "Tech Talks")
 
     def test_extract_episode_metadata(self, valid_rss_feed: str) -> None:
@@ -195,19 +195,19 @@ class TestRSSParser:
         assert episode.episode_number == 100
 
     def test_extract_episode_no_title_raises(self) -> None:
-        """Test that episode without title raises FeedParseError."""
+        """Test that episode without title raises ValidationError."""
         parser = RSSParser()
         entry = {}  # No title
 
-        with pytest.raises(FeedParseError, match="missing required field: title"):
+        with pytest.raises(ValidationError, match="missing required field: title"):
             parser.extract_episode_metadata(entry, "Test")
 
     def test_extract_episode_no_enclosure_raises(self) -> None:
-        """Test that episode without audio enclosure raises FeedParseError."""
+        """Test that episode without audio enclosure raises ValidationError."""
         parser = RSSParser()
         entry = {"title": "Test Episode"}  # No enclosure
 
-        with pytest.raises(FeedParseError, match="has no audio enclosure"):
+        with pytest.raises(ValidationError, match="has no audio enclosure"):
             parser.extract_episode_metadata(entry, "Test")
 
     def test_extract_duration_hms_format(self) -> None:

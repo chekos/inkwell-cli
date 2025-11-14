@@ -1,5 +1,6 @@
 """Unit tests for output manager."""
 
+import logging
 import os
 from datetime import datetime
 from pathlib import Path
@@ -862,13 +863,13 @@ class TestOutputManagerSecurityEdgeCases:
         # Backup should exist temporarily but might be cleaned up
         # The important thing is the operation succeeded
 
-    def test_overwrite_restores_backup_on_failure(
+    def test_overwrite_restores_backup_on_mkdir_failure(
         self,
         temp_output_dir: Path,
         episode_metadata: EpisodeMetadata,
         extraction_results: list[ExtractionResult],
     ) -> None:
-        """Test that backup is restored if overwrite fails."""
+        """Test that backup is restored if mkdir fails during overwrite."""
         manager = OutputManager(output_dir=temp_output_dir)
 
         # Write episode first time
@@ -881,7 +882,7 @@ class TestOutputManagerSecurityEdgeCases:
 
         def failing_mkdir(self, *args, **kwargs):
             if self == original_dir:
-                raise OSError("Simulated failure")
+                raise OSError("Simulated mkdir failure")
             return original_mkdir(self, *args, **kwargs)
 
         with patch.object(Path, "mkdir", failing_mkdir):
@@ -894,6 +895,110 @@ class TestOutputManagerSecurityEdgeCases:
         assert (original_dir / ".metadata.yaml").exists()
         restored_content = (original_dir / ".metadata.yaml").read_text()
         assert restored_content == original_metadata_content
+
+    def test_overwrite_restores_backup_on_file_write_failure(
+        self,
+        temp_output_dir: Path,
+        episode_metadata: EpisodeMetadata,
+        extraction_results: list[ExtractionResult],
+    ) -> None:
+        """Test that backup is restored if file write fails after directory creation."""
+        manager = OutputManager(output_dir=temp_output_dir)
+
+        # Write episode first time
+        output1 = manager.write_episode(episode_metadata, extraction_results)
+        original_dir = output1.directory
+        original_summary_content = (original_dir / "summary.md").read_text()
+        original_metadata_content = (original_dir / ".metadata.yaml").read_text()
+
+        # Mock _write_file_atomic to fail on second file write
+        write_count = 0
+        original_write = manager._write_file_atomic
+
+        def failing_write(path, content):
+            nonlocal write_count
+            write_count += 1
+            if write_count == 2:
+                raise OSError("Disk full")
+            original_write(path, content)
+
+        with patch.object(manager, '_write_file_atomic', failing_write):
+            # Should raise OSError and restore backup
+            with pytest.raises(OSError, match="Disk full"):
+                manager.write_episode(episode_metadata, extraction_results, overwrite=True)
+
+        # Original directory should be restored with all files intact
+        assert original_dir.exists()
+        assert (original_dir / "summary.md").exists()
+        assert (original_dir / "quotes.md").exists()
+        assert (original_dir / ".metadata.yaml").exists()
+
+        # Verify content is restored (not partially overwritten)
+        restored_summary = (original_dir / "summary.md").read_text()
+        restored_metadata = (original_dir / ".metadata.yaml").read_text()
+        assert restored_summary == original_summary_content
+        assert restored_metadata == original_metadata_content
+
+        # Backup directory should not be left behind
+        backup_dir = original_dir.with_suffix('.backup')
+        assert not backup_dir.exists()
+
+    def test_overwrite_restores_backup_on_metadata_write_failure(
+        self,
+        temp_output_dir: Path,
+        episode_metadata: EpisodeMetadata,
+        extraction_results: list[ExtractionResult],
+    ) -> None:
+        """Test that backup is restored if metadata write fails."""
+        manager = OutputManager(output_dir=temp_output_dir)
+
+        # Write episode first time
+        output1 = manager.write_episode(episode_metadata, extraction_results)
+        original_dir = output1.directory
+        original_metadata_content = (original_dir / ".metadata.yaml").read_text()
+
+        # Mock _write_metadata to fail
+        def failing_write_metadata(metadata_file, episode_metadata):
+            raise OSError("Permission denied")
+
+        with patch.object(manager, '_write_metadata', failing_write_metadata):
+            # Should raise OSError and restore backup
+            with pytest.raises(OSError, match="Permission denied"):
+                manager.write_episode(episode_metadata, extraction_results, overwrite=True)
+
+        # Original directory should be restored
+        assert original_dir.exists()
+        assert (original_dir / ".metadata.yaml").exists()
+        restored_content = (original_dir / ".metadata.yaml").read_text()
+        assert restored_content == original_metadata_content
+
+        # Backup directory should not be left behind
+        backup_dir = original_dir.with_suffix('.backup')
+        assert not backup_dir.exists()
+
+    def test_overwrite_removes_backup_on_success(
+        self,
+        temp_output_dir: Path,
+        episode_metadata: EpisodeMetadata,
+        extraction_results: list[ExtractionResult],
+    ) -> None:
+        """Test that backup is removed after successful overwrite."""
+        manager = OutputManager(output_dir=temp_output_dir)
+
+        # Write episode first time
+        output1 = manager.write_episode(episode_metadata, extraction_results)
+        original_dir = output1.directory
+
+        # Overwrite successfully
+        output2 = manager.write_episode(episode_metadata, extraction_results, overwrite=True)
+
+        # Episode should exist
+        assert output2.directory.exists()
+        assert output2.directory == original_dir
+
+        # Backup should be removed
+        backup_dir = original_dir.with_suffix('.backup')
+        assert not backup_dir.exists()
 
     def test_multiple_path_traversal_techniques_combined(
         self,
@@ -1072,3 +1177,193 @@ def test_episode_output_from_directory_multiple_files(temp_output_dir):
     assert loaded_output.get_file("quotes") is not None
     assert loaded_output.get_file("key-concepts") is not None
     assert loaded_output.get_file("tools-mentioned") is not None
+
+
+# Schema Versioning and Migration Tests
+
+
+class TestOutputManagerSchemaVersioning:
+    """Tests for schema versioning and migration."""
+
+    def test_write_metadata_includes_schema_version(
+        self,
+        temp_output_dir: Path,
+        episode_metadata: EpisodeMetadata,
+        extraction_results: list[ExtractionResult],
+    ) -> None:
+        """Test that new metadata files include schema_version."""
+        manager = OutputManager(output_dir=temp_output_dir)
+
+        output = manager.write_episode(episode_metadata, extraction_results)
+
+        # Read metadata file
+        with output.metadata_file.open("r") as f:
+            data = yaml.safe_load(f)
+
+        # Should have schema_version field
+        assert "schema_version" in data
+        assert data["schema_version"] == 1
+
+    def test_load_metadata_v0_migrates_to_v1(
+        self,
+        temp_output_dir: Path,
+    ) -> None:
+        """Test that v0 metadata (no version) is migrated to v1."""
+        manager = OutputManager(output_dir=temp_output_dir)
+
+        episode_dir = temp_output_dir / "test-episode"
+        episode_dir.mkdir()
+
+        # Create v0 metadata (no schema_version field)
+        metadata_file = episode_dir / ".metadata.yaml"
+        v0_metadata = {
+            "podcast_name": "Test Podcast",
+            "episode_title": "Episode 1",
+            "episode_url": "https://example.com/ep1",
+            "transcription_source": "youtube",
+            "processed_date": "2025-11-14T10:00:00+00:00",
+            "templates_applied": [],
+            "transcription_cost_usd": 0.0,
+            "extraction_cost_usd": 0.0,
+            "total_cost_usd": 0.0,
+            "custom_fields": {},
+        }
+        metadata_file.write_text(yaml.dump(v0_metadata))
+
+        # Load should auto-migrate
+        loaded_metadata = manager.load_episode_metadata(episode_dir)
+
+        # Should be migrated to v1
+        assert loaded_metadata.schema_version == 1
+        assert loaded_metadata.podcast_name == "Test Podcast"
+        assert loaded_metadata.episode_title == "Episode 1"
+        assert loaded_metadata.episode_url == "https://example.com/ep1"
+
+    def test_load_metadata_v1_no_migration_needed(
+        self,
+        temp_output_dir: Path,
+    ) -> None:
+        """Test that v1 metadata loads without migration."""
+        manager = OutputManager(output_dir=temp_output_dir)
+
+        episode_dir = temp_output_dir / "test-episode"
+        episode_dir.mkdir()
+
+        # Create v1 metadata (with schema_version)
+        metadata_file = episode_dir / ".metadata.yaml"
+        v1_metadata = {
+            "schema_version": 1,
+            "podcast_name": "Test Podcast",
+            "episode_title": "Episode 1",
+            "episode_url": "https://example.com/ep1",
+            "transcription_source": "youtube",
+            "processed_date": "2025-11-14T10:00:00+00:00",
+            "templates_applied": [],
+            "transcription_cost_usd": 0.0,
+            "extraction_cost_usd": 0.0,
+            "total_cost_usd": 0.0,
+            "custom_fields": {},
+        }
+        metadata_file.write_text(yaml.dump(v1_metadata))
+
+        # Load should work without migration
+        loaded_metadata = manager.load_episode_metadata(episode_dir)
+
+        # Should remain v1
+        assert loaded_metadata.schema_version == 1
+        assert loaded_metadata.podcast_name == "Test Podcast"
+
+    def test_load_metadata_newer_version_warns(
+        self,
+        temp_output_dir: Path,
+        caplog,
+    ) -> None:
+        """Test that loading newer schema version logs warning."""
+        manager = OutputManager(output_dir=temp_output_dir)
+
+        episode_dir = temp_output_dir / "test-episode"
+        episode_dir.mkdir()
+
+        # Create v2 metadata (future version)
+        metadata_file = episode_dir / ".metadata.yaml"
+        v2_metadata = {
+            "schema_version": 2,
+            "podcast_name": "Test Podcast",
+            "episode_title": "Episode 1",
+            "episode_url": "https://example.com/ep1",
+            "transcription_source": "youtube",
+            "processed_date": "2025-11-14T10:00:00+00:00",
+            "templates_applied": [],
+            "transcription_cost_usd": 0.0,
+            "extraction_cost_usd": 0.0,
+            "total_cost_usd": 0.0,
+            "custom_fields": {},
+        }
+        metadata_file.write_text(yaml.dump(v2_metadata))
+
+        # Load should warn about newer version
+        with caplog.at_level(logging.WARNING):
+            loaded_metadata = manager.load_episode_metadata(episode_dir)
+
+        # Should load but log warning
+        assert loaded_metadata.schema_version == 2
+        assert "newer than supported" in caplog.text.lower()
+
+    def test_migrate_metadata_v0_to_v1_preserves_data(
+        self,
+        temp_output_dir: Path,
+    ) -> None:
+        """Test that migration preserves all original data."""
+        manager = OutputManager(output_dir=temp_output_dir)
+
+        episode_dir = temp_output_dir / "test-episode"
+        episode_dir.mkdir()
+
+        # Create v0 metadata with all fields
+        metadata_file = episode_dir / ".metadata.yaml"
+        v0_metadata = {
+            "podcast_name": "Test Podcast",
+            "episode_title": "Episode 1",
+            "episode_url": "https://example.com/ep1",
+            "published_date": "2025-11-01T15:30:00+00:00",
+            "duration_seconds": 3600.0,
+            "transcription_source": "gemini",
+            "processed_date": "2025-11-14T10:00:00+00:00",
+            "templates_applied": ["summary", "quotes"],
+            "transcription_cost_usd": 0.05,
+            "extraction_cost_usd": 0.10,
+            "total_cost_usd": 0.15,
+            "custom_fields": {"test_key": "test_value"},
+        }
+        metadata_file.write_text(yaml.dump(v0_metadata))
+
+        # Load and migrate
+        loaded_metadata = manager.load_episode_metadata(episode_dir)
+
+        # Verify all data preserved
+        assert loaded_metadata.schema_version == 1
+        assert loaded_metadata.podcast_name == "Test Podcast"
+        assert loaded_metadata.episode_title == "Episode 1"
+        assert loaded_metadata.episode_url == "https://example.com/ep1"
+        assert loaded_metadata.duration_seconds == 3600.0
+        assert loaded_metadata.transcription_source == "gemini"
+        assert loaded_metadata.templates_applied == ["summary", "quotes"]
+        assert loaded_metadata.transcription_cost_usd == 0.05
+        assert loaded_metadata.extraction_cost_usd == 0.10
+        assert loaded_metadata.total_cost_usd == 0.15
+        assert loaded_metadata.custom_fields == {"test_key": "test_value"}
+
+    def test_schema_version_constant_is_one(self) -> None:
+        """Test that current schema version is 1."""
+        assert OutputManager.CURRENT_METADATA_SCHEMA_VERSION == 1
+
+    def test_episode_metadata_default_schema_version(self) -> None:
+        """Test that EpisodeMetadata defaults to schema_version=1."""
+        metadata = EpisodeMetadata(
+            podcast_name="Test",
+            episode_title="Test",
+            episode_url="https://example.com/test",
+            transcription_source="youtube",
+        )
+
+        assert metadata.schema_version == 1

@@ -186,9 +186,10 @@ class TestTranscriptCache:
             data = json.load(f)
 
         assert "cached_at" in data
-        assert "episode_url" in data
-        assert "transcript" in data
-        assert data["episode_url"] == url
+        assert "value" in data
+        assert "episode_url" in data["value"]
+        assert "transcript" in data["value"]
+        assert data["value"]["episode_url"] == url
 
         # Verify timestamp is valid
         cached_at = datetime.fromisoformat(data["cached_at"])

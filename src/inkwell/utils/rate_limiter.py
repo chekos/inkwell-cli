@@ -73,32 +73,45 @@ class RateLimiter:
         """
         start_time = time.time()
 
-        while True:
-            with self.lock:
-                self._refill_tokens()
+        with self.lock:
+            self._refill_tokens()
 
-                if self.tokens >= 1:
-                    self.tokens -= 1
-                    return True
+            # If token available, take it immediately
+            if self.tokens >= 1:
+                self.tokens -= 1
+                return True
 
-                if not blocking:
-                    return False
+            # Non-blocking mode: return immediately
+            if not blocking:
+                return False
 
-                # Calculate wait time
-                if self.tokens <= 0:
-                    # Need to wait for one token
-                    wait_time = self.period / self.max_calls
-                else:
-                    wait_time = 0.1  # Check again soon
+            # Calculate exact wait time until next token is available
+            # tokens_needed = 1 - self.tokens (fractional tokens currently available)
+            # time_per_token = self.period / self.max_calls
+            wait_time = (1.0 - self.tokens) * (self.period / self.max_calls)
 
-            # Check timeout
-            if timeout is not None:
-                elapsed = time.time() - start_time
-                if elapsed >= timeout:
-                    return False
+        # If timeout specified, wait only for the minimum of wait_time and remaining timeout
+        if timeout is not None:
+            elapsed = time.time() - start_time
+            remaining_timeout = timeout - elapsed
+            if remaining_timeout <= 0:
+                return False
+            actual_wait = min(wait_time, remaining_timeout)
+        else:
+            actual_wait = wait_time
 
-            # Sleep and retry
-            time.sleep(min(wait_time, 0.1))
+        # Sleep once for exact duration needed
+        time.sleep(actual_wait)
+
+        # Acquire token after wait
+        with self.lock:
+            self._refill_tokens()
+            if self.tokens >= 1:
+                self.tokens -= 1
+                return True
+
+        # Timeout occurred - token not available yet
+        return False
 
     def reset(self) -> None:
         """Reset the rate limiter (refill all tokens)."""

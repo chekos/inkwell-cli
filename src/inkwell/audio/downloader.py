@@ -9,11 +9,7 @@ from pydantic import BaseModel, Field
 from yt_dlp import YoutubeDL
 from yt_dlp.utils import DownloadError, ExtractorError
 
-
-class AudioDownloadError(Exception):
-    """Raised when audio download fails."""
-
-    pass
+from inkwell.utils.errors import APIError
 
 
 class DownloadProgress(BaseModel):
@@ -139,19 +135,19 @@ class AudioDownloader:
             return output_path
 
         except DownloadError as e:
-            raise AudioDownloadError(
+            raise APIError(
                 f"Failed to download audio from {url}. "
                 f"This may be due to network issues, invalid URL, or unsupported source. "
                 f"Error: {e}"
             ) from e
         except ExtractorError as e:
-            raise AudioDownloadError(
+            raise APIError(
                 f"Failed to extract audio information from {url}. "
                 f"The URL may be invalid or the content may not be accessible. "
                 f"Error: {e}"
             ) from e
         except Exception as e:
-            raise AudioDownloadError(
+            raise APIError(
                 f"Unexpected error downloading audio from {url}: {e}"
             ) from e
 
@@ -171,7 +167,7 @@ class AudioDownloader:
             info = ydl.extract_info(url, download=True)
 
             if not info:
-                raise AudioDownloadError("Failed to extract video information")
+                raise APIError("Failed to extract video information")
 
             # Determine output filename
             # yt-dlp will have converted to m4a, so we need to adjust extension
@@ -186,7 +182,7 @@ class AudioDownloader:
                 output_path = Path(output_template)
 
             if not output_path.exists():
-                raise AudioDownloadError(
+                raise APIError(
                     f"Download completed but file not found at expected location: {output_path}"
                 )
 
@@ -216,7 +212,7 @@ class AudioDownloader:
             return info
 
         except (DownloadError, ExtractorError) as e:
-            raise AudioDownloadError(
+            raise APIError(
                 f"Failed to get information from {url}: {e}"
             ) from e
 
@@ -225,5 +221,5 @@ class AudioDownloader:
         with YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
             if not info:
-                raise AudioDownloadError("Failed to extract information")
+                raise APIError("Failed to extract information")
             return info

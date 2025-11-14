@@ -16,7 +16,8 @@ import tempfile
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Literal
+from typing import IO, Any, Literal
+from uuid import uuid4
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -84,6 +85,12 @@ class APIUsage(BaseModel):
 
     Tracks actual token usage and calculated cost.
     """
+
+    # Unique identifier for true deduplication
+    usage_id: str = Field(
+        default_factory=lambda: str(uuid4()),
+        description="Unique identifier for this usage record"
+    )
 
     provider: Literal["gemini", "claude", "youtube"] = Field(
         ..., description="API provider"
@@ -194,6 +201,7 @@ class CostTracker:
     """Track and persist API costs to disk.
 
     Stores cost data in a JSON file for later analysis.
+    Supports dependency injection pattern for testability.
     """
 
     def __init__(self, costs_file: Path | None = None):
@@ -216,6 +224,9 @@ class CostTracker:
         if self.costs_file.exists():
             self._load()
 
+        # In-memory tracking for current session
+        self._session_cost = 0.0
+
     def _load(self) -> None:
         """Load costs from disk with shared lock."""
         try:
@@ -224,9 +235,34 @@ class CostTracker:
                 self._acquire_lock(f, exclusive=False)
                 try:
                     data = json.load(f)
+                    # Migrate old records without usage_id
+                    needs_migration = False
+                    for item in data:
+                        if "usage_id" not in item:
+                            item["usage_id"] = str(uuid4())
+                            needs_migration = True
+
                     self.usage_history = [APIUsage.model_validate(item) for item in data]
                 finally:
                     self._release_lock(f)
+
+            # Save migrated data back to disk (outside the lock context)
+            if needs_migration:
+                logger.info("Migrated %d cost records to include usage_id", len(data))
+                # Write directly to file to avoid merge logic
+                temp_fd, temp_path = tempfile.mkstemp(
+                    dir=self.costs_file.parent, prefix=".tmp_costs_", suffix=".json"
+                )
+                try:
+                    with open(temp_fd, "w") as f:
+                        json.dump(data, f, indent=2)
+                        f.flush()
+                        os.fsync(f.fileno())
+                    # Atomic replace
+                    Path(temp_path).replace(self.costs_file)
+                except Exception:
+                    Path(temp_path).unlink(missing_ok=True)
+                    raise
         except (json.JSONDecodeError, ValueError) as e:
             # Corrupt file - try backup
             logger.warning("Failed to load costs file: %s", e)
@@ -258,7 +294,7 @@ class CostTracker:
 
         self.usage_history = []
 
-    def _acquire_lock(self, file_obj, exclusive: bool = True) -> None:
+    def _acquire_lock(self, file_obj: IO[str], exclusive: bool = True) -> None:
         """Acquire file lock (cross-platform).
 
         Args:
@@ -274,7 +310,7 @@ class CostTracker:
             lock_type = fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH
             fcntl.flock(file_obj.fileno(), lock_type)
 
-    def _release_lock(self, file_obj) -> None:
+    def _release_lock(self, file_obj: IO[str]) -> None:
         """Release file lock (cross-platform).
 
         Args:
@@ -326,29 +362,11 @@ class CostTracker:
                     except (json.JSONDecodeError, ValueError):
                         existing = []
 
-                    # Merge: add entries not already present (by timestamp + operation + provider + episode)
-                    # Using a more detailed key to avoid false duplicates
-                    existing_keys = {
-                        (
-                            u.timestamp.isoformat(),
-                            u.operation,
-                            u.provider,
-                            u.episode_title,
-                            u.input_tokens,
-                        )
-                        for u in existing
-                    }
+                    # Merge: add entries not already present (by unique usage_id)
+                    # This prevents false duplicate detection when same episode is processed multiple times
+                    existing_ids = {u.usage_id for u in existing}
                     new_entries = [
-                        u
-                        for u in self.usage_history
-                        if (
-                            u.timestamp.isoformat(),
-                            u.operation,
-                            u.provider,
-                            u.episode_title,
-                            u.input_tokens,
-                        )
-                        not in existing_keys
+                        u for u in self.usage_history if u.usage_id not in existing_ids
                     ]
                     combined = existing + new_entries
 
@@ -380,7 +398,74 @@ class CostTracker:
             usage: APIUsage record to track
         """
         self.usage_history.append(usage)
+        self._session_cost += usage.cost_usd
         self._save()
+
+    def add_cost(
+        self,
+        provider: str,
+        model: str,
+        operation: str,
+        input_tokens: int,
+        output_tokens: int,
+        episode_title: str | None = None,
+        template_name: str | None = None,
+    ) -> float:
+        """Add a cost record and return the calculated cost.
+
+        This is the primary method for managers to track costs.
+
+        Args:
+            provider: API provider (gemini, claude, youtube)
+            model: Model used
+            operation: Operation type (transcription, extraction, etc.)
+            input_tokens: Input tokens used
+            output_tokens: Output tokens used
+            episode_title: Optional episode title
+            template_name: Optional template name
+
+        Returns:
+            Cost in USD for this operation
+        """
+        # Calculate cost
+        cost_usd = calculate_cost_from_usage(
+            provider=provider,
+            model=model,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+        )
+
+        # Create usage record
+        usage = APIUsage(
+            provider=provider,  # type: ignore[arg-type]
+            model=model,
+            operation=operation,  # type: ignore[arg-type]
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            cost_usd=cost_usd,
+            episode_title=episode_title,
+            template_name=template_name,
+        )
+
+        # Track it
+        self.track(usage)
+
+        return cost_usd
+
+    def get_session_cost(self) -> float:
+        """Get total cost for current session.
+
+        Returns:
+            Total cost in USD for operations tracked since initialization
+        """
+        return self._session_cost
+
+    def reset_session_cost(self) -> None:
+        """Reset session cost tracking to zero.
+
+        This does not affect persisted usage history.
+        """
+        self._session_cost = 0.0
 
     def get_summary(
         self,

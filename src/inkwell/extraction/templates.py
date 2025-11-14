@@ -6,25 +6,15 @@ extraction templates from YAML files.
 
 import logging
 from pathlib import Path
+from typing import Any
 
 import yaml
 from pydantic import ValidationError
 
+from ..utils.errors import NotFoundError, ValidationError as InkwellValidationError
 from .models import ExtractionTemplate
 
 logger = logging.getLogger(__name__)
-
-
-class TemplateNotFoundError(Exception):
-    """Raised when a template cannot be found."""
-
-    pass
-
-
-class TemplateLoadError(Exception):
-    """Raised when a template fails to load or validate."""
-
-    pass
 
 
 class TemplateLoader:
@@ -113,7 +103,7 @@ class TemplateLoader:
         # Find template file
         template_path = self._find_template(name)
         if not template_path:
-            raise TemplateNotFoundError(
+            raise NotFoundError("Template",
                 f"Template '{name}' not found in any template directory"
             )
 
@@ -121,7 +111,7 @@ class TemplateLoader:
         try:
             template = self._load_template_file(template_path)
         except Exception as e:
-            raise TemplateLoadError(
+            raise InkwellValidationError(
                 f"Failed to load template '{name}' from {template_path}: {e}"
             ) from e
 
@@ -186,10 +176,10 @@ class TemplateLoader:
             with open(path, encoding="utf-8") as f:
                 data = yaml.safe_load(f)
         except yaml.YAMLError as e:
-            raise TemplateLoadError(f"Invalid YAML syntax in {path}: {e}") from e
+            raise InkwellValidationError(f"Invalid YAML syntax in {path}: {e}") from e
 
         if not isinstance(data, dict):
-            raise TemplateLoadError(f"Template file must contain a YAML object, got {type(data)}")
+            raise InkwellValidationError(f"Template file must contain a YAML object, got {type(data)}")
 
         try:
             template = ExtractionTemplate(**data)
@@ -200,7 +190,7 @@ class TemplateLoader:
                 field = ".".join(str(loc) for loc in error["loc"])
                 errors.append(f"  {field}: {error['msg']}")
             error_msg = "Template validation failed:\n" + "\n".join(errors)
-            raise TemplateLoadError(error_msg) from e
+            raise InkwellValidationError(error_msg) from e
 
         return template
 
@@ -265,7 +255,7 @@ class TemplateLoader:
         except Exception as e:
             return (False, str(e))
 
-    def get_template_info(self, name: str) -> dict[str, any]:
+    def get_template_info(self, name: str) -> dict[str, Any]:
         """Get metadata about a template without fully loading it.
 
         Args:

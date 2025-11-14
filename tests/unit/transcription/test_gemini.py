@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, Mock, patch
 import pytest
 
 from inkwell.transcription import CostEstimate, GeminiTranscriber, GeminiTranscriberWithSegments
-from inkwell.transcription.gemini import TranscriptionError
+from inkwell.utils.errors import APIError
 
 
 class TestCostEstimate:
@@ -255,7 +255,7 @@ class TestGeminiTranscriber:
         """Test transcription fails for missing file."""
         missing_file = tmp_path / "nonexistent.m4a"
 
-        with pytest.raises(TranscriptionError, match="Audio file not found"):
+        with pytest.raises(APIError, match="Audio file not found"):
             await transcriber.transcribe(missing_file)
 
     @pytest.mark.asyncio
@@ -266,7 +266,7 @@ class TestGeminiTranscriber:
         txt_file = tmp_path / "test.txt"
         txt_file.write_text("test")
 
-        with pytest.raises(TranscriptionError, match="Unsupported audio format"):
+        with pytest.raises(APIError, match="Unsupported audio format"):
             await transcriber.transcribe(txt_file)
 
     @pytest.mark.asyncio
@@ -284,7 +284,7 @@ class TestGeminiTranscriber:
         audio_file = tmp_path / "large_audio.m4a"
         audio_file.write_bytes(b"0" * (10 * 1024 * 1024))
 
-        with pytest.raises(TranscriptionError, match="Transcription cancelled"):
+        with pytest.raises(APIError, match="Transcription cancelled"):
             await transcriber.transcribe(audio_file)
 
     @pytest.mark.asyncio
@@ -294,7 +294,7 @@ class TestGeminiTranscriber:
         """Test transcription handles API errors."""
         mock_genai.upload_file.side_effect = Exception("API error")
 
-        with pytest.raises(TranscriptionError, match="Failed to transcribe"):
+        with pytest.raises(APIError, match="Failed to transcribe"):
             await transcriber.transcribe(audio_file)
 
     @pytest.mark.asyncio
@@ -306,7 +306,7 @@ class TestGeminiTranscriber:
         mock_response.text = ""
         transcriber.model.generate_content.return_value = mock_response
 
-        with pytest.raises(TranscriptionError, match="empty transcript"):
+        with pytest.raises(APIError, match="empty transcript"):
             await transcriber.transcribe(audio_file)
 
 

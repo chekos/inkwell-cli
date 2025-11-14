@@ -5,7 +5,6 @@ In a production environment with API keys, these would make real API calls.
 
 Test Coverage:
 - Full pipeline: fetch → transcribe → extract → generate output
-- Obsidian integration: wikilinks, tags, dataview frontmatter
 - Cost tracking
 - Error handling
 - Output validation

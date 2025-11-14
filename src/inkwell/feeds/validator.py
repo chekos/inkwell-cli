@@ -5,7 +5,7 @@ import httpx
 from pydantic import HttpUrl, ValidationError
 
 from inkwell.config.schema import AuthConfig
-from inkwell.utils.errors import AuthenticationError, InvalidConfigError, NetworkError
+from inkwell.utils.errors import APIError, SecurityError, ValidationError as InkwellValidationError
 
 
 class FeedValidator:
@@ -40,7 +40,7 @@ class FeedValidator:
         try:
             HttpUrl(url)
         except ValidationError as e:
-            raise InvalidConfigError(f"Invalid URL format: {url}") from e
+            raise InkwellValidationError(f"Invalid URL format: {url}") from e
 
         # Check if URL is accessible
         try:
@@ -58,7 +58,7 @@ class FeedValidator:
                     )
 
                 if response.status_code == 401:
-                    raise AuthenticationError(
+                    raise SecurityError(
                         f"Authentication required for {url}. "
                         "Use --auth flag to provide credentials."
                     )
@@ -67,20 +67,20 @@ class FeedValidator:
                 return True
 
         except httpx.TimeoutException as e:
-            raise NetworkError(f"Timeout connecting to {url}") from e
+            raise APIError(f"Timeout connecting to {url}") from e
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 401:
                 raise AuthenticationError(
                     f"Authentication failed for {url}"
                 ) from e
             elif e.response.status_code == 404:
-                raise NetworkError(f"Feed not found: {url} (404)") from e
+                raise APIError(f"Feed not found: {url} (404)") from e
             else:
-                raise NetworkError(
+                raise APIError(
                     f"HTTP error accessing {url}: {e.response.status_code}"
                 ) from e
         except httpx.RequestError as e:
-            raise NetworkError(f"Network error accessing {url}: {e}") from e
+            raise APIError(f"Network error accessing {url}: {e}") from e
 
     async def validate_auth(self, url: str, auth: AuthConfig) -> bool:
         """Verify that authentication credentials work.
@@ -114,7 +114,7 @@ class FeedValidator:
                     )
 
                 if response.status_code == 401:
-                    raise AuthenticationError(
+                    raise SecurityError(
                         f"Authentication failed for {url}. "
                         "Check your credentials."
                     )
@@ -123,15 +123,15 @@ class FeedValidator:
                 return True
 
         except httpx.TimeoutException as e:
-            raise NetworkError(f"Timeout connecting to {url}") from e
+            raise APIError(f"Timeout connecting to {url}") from e
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 401:
                 raise AuthenticationError(
                     f"Invalid credentials for {url}"
                 ) from e
-            raise NetworkError(f"HTTP error: {e.response.status_code}") from e
+            raise APIError(f"HTTP error: {e.response.status_code}") from e
         except httpx.RequestError as e:
-            raise NetworkError(f"Network error: {e}") from e
+            raise APIError(f"Network error: {e}") from e
 
     def _build_auth_headers(
         self, auth: AuthConfig | None = None

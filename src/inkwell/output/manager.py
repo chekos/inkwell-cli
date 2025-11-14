@@ -14,6 +14,7 @@ import yaml
 
 from ..extraction.models import ExtractionResult
 from ..utils.errors import SecurityError
+from ..utils.yaml_integrity import YAMLWithIntegrity
 from .markdown import MarkdownGenerator
 from .models import EpisodeMetadata, EpisodeOutput, OutputFile
 
@@ -28,6 +29,7 @@ class OutputManager:
     - Atomic file writes (write to temp, then move)
     - Metadata file generation
     - File conflict resolution
+    - Schema versioning and migrations
 
     Example:
         >>> manager = OutputManager(output_dir=Path("./output"))
@@ -38,6 +40,8 @@ class OutputManager:
         >>> print(output.directory)
         ./output/podcast-name-2025-11-07-episode-title/
     """
+
+    CURRENT_METADATA_SCHEMA_VERSION = 1
 
     def __init__(self, output_dir: Path, markdown_generator: MarkdownGenerator | None = None):
         """Initialize output manager.
@@ -71,51 +75,100 @@ class OutputManager:
         Raises:
             FileExistsError: If directory exists and overwrite=False
         """
-        # Create episode directory
-        episode_dir = self._create_episode_directory(episode_metadata, overwrite)
+        # Pre-calculate episode directory path for backup tracking
+        episode_dir = self._get_episode_directory_path(episode_metadata)
+        backup_dir = None
 
-        # Write markdown files
-        output_files = []
-        total_cost = 0.0
+        # Track backup directory if overwriting existing episode
+        if overwrite and episode_dir.exists():
+            backup_dir = episode_dir.with_suffix('.backup')
 
-        for result in extraction_results:
-            # Generate markdown
-            markdown_content = self.markdown_generator.generate(
-                result,
-                episode_metadata.model_dump(),
-                include_frontmatter=True,
-            )
+        try:
+            # Create episode directory (handles backup internally)
+            episode_dir = self._create_episode_directory(episode_metadata, overwrite)
 
-            # Write file
-            filename = f"{result.template_name}.md"
-            file_path = episode_dir / filename
+            # Write markdown files
+            output_files = []
+            total_cost = 0.0
 
-            self._write_file_atomic(file_path, markdown_content)
-
-            output_files.append(
-                OutputFile(
-                    template_name=result.template_name,
-                    filename=filename,
-                    content=markdown_content,
-                    size_bytes=len(markdown_content.encode("utf-8")),
+            for result in extraction_results:
+                # Generate markdown
+                markdown_content = self.markdown_generator.generate(
+                    result,
+                    episode_metadata.model_dump(),
+                    include_frontmatter=True,
                 )
+
+                # Write file
+                filename = f"{result.template_name}.md"
+                file_path = episode_dir / filename
+
+                self._write_file_atomic(file_path, markdown_content)
+
+                output_files.append(
+                    OutputFile(
+                        template_name=result.template_name,
+                        filename=filename,
+                        content=markdown_content,
+                        size_bytes=len(markdown_content.encode("utf-8")),
+                    )
+                )
+
+                total_cost += result.cost_usd
+
+            # Update metadata with cost
+            episode_metadata.total_cost_usd = total_cost
+            episode_metadata.templates_applied = [r.template_name for r in extraction_results]
+
+            # Write metadata file
+            metadata_file = episode_dir / ".metadata.yaml"
+            self._write_metadata(metadata_file, episode_metadata)
+
+            # Success - remove backup if it exists
+            if backup_dir and backup_dir.exists():
+                logger.debug(f"Removing backup after successful write: {backup_dir}")
+                shutil.rmtree(backup_dir)
+
+            return EpisodeOutput(
+                metadata=episode_metadata,
+                output_dir=episode_dir,
+                files=output_files,
             )
 
-            total_cost += result.cost_usd
+        except Exception:
+            # Restore backup on ANY failure during write operation
+            if backup_dir and backup_dir.exists():
+                logger.warning(f"Write failed, restoring backup from {backup_dir} to {episode_dir}")
+                # Clean up partial episode directory if it exists
+                if episode_dir.exists():
+                    shutil.rmtree(episode_dir)
+                # Restore backup to original location
+                backup_dir.rename(episode_dir)
+            raise
 
-        # Update metadata with cost
-        episode_metadata.total_cost_usd = total_cost
-        episode_metadata.templates_applied = [r.template_name for r in extraction_results]
+    def _get_episode_directory_path(self, episode_metadata: EpisodeMetadata) -> Path:
+        """Get episode directory path without creating it.
 
-        # Write metadata file
-        metadata_file = episode_dir / ".metadata.yaml"
-        self._write_metadata(metadata_file, episode_metadata)
+        This is a helper to calculate the directory path before creating it,
+        useful for backup tracking in write_episode().
 
-        return EpisodeOutput(
-            metadata=episode_metadata,
-            output_dir=episode_dir,
-            files=output_files,
-        )
+        Args:
+            episode_metadata: Episode metadata
+
+        Returns:
+            Path to episode directory (may not exist yet)
+        """
+        # Get directory name from metadata
+        dir_name = episode_metadata.directory_name
+
+        # Sanitize directory name (same as _create_episode_directory)
+        dir_name = dir_name.replace("..", "").replace("/", "-").replace("\\", "-")
+        dir_name = dir_name.replace("\0", "")
+
+        if not dir_name.strip():
+            raise ValueError("Episode directory name is empty after sanitization")
+
+        return self.output_dir / dir_name
 
     def _create_episode_directory(
         self, episode_metadata: EpisodeMetadata, overwrite: bool
@@ -196,13 +249,9 @@ class OutputManager:
                 shutil.rmtree(backup_dir)
             episode_dir.rename(backup_dir)
 
-            try:
-                episode_dir.mkdir(parents=True)
-            except Exception:
-                # Restore backup on failure
-                if backup_dir.exists() and not episode_dir.exists():
-                    backup_dir.rename(episode_dir)
-                raise
+            # Create new directory
+            # Note: Backup restoration is now handled by write_episode() wrapper
+            episode_dir.mkdir(parents=True)
         else:
             episode_dir.mkdir(parents=True, exist_ok=True)
 
@@ -271,7 +320,7 @@ class OutputManager:
             raise
 
     def _write_metadata(self, metadata_file: Path, episode_metadata: EpisodeMetadata) -> None:
-        """Write metadata file.
+        """Write metadata file with schema version and integrity checksum.
 
         Args:
             metadata_file: Path to metadata file
@@ -280,10 +329,12 @@ class OutputManager:
         # Convert to dict
         metadata_dict = episode_metadata.model_dump()
 
-        # Write as YAML
-        content = yaml.dump(metadata_dict, default_flow_style=False, sort_keys=False)
+        # Ensure schema_version is set (should be set by model default, but be explicit)
+        if "schema_version" not in metadata_dict or metadata_dict["schema_version"] is None:
+            metadata_dict["schema_version"] = self.CURRENT_METADATA_SCHEMA_VERSION
 
-        self._write_file_atomic(metadata_file, content)
+        # Write with integrity checksum via atomic write (temp file + rename)
+        YAMLWithIntegrity.write_yaml_with_checksum(metadata_file, metadata_dict)
 
     def list_episodes(self) -> list[Path]:
         """List all episode directories.
@@ -300,13 +351,16 @@ class OutputManager:
         return sorted(episodes)
 
     def load_episode_metadata(self, episode_dir: Path) -> EpisodeMetadata:
-        """Load episode metadata from directory.
+        """Load episode metadata from directory with automatic migration.
+
+        Handles schema versioning by automatically migrating old metadata
+        to the current schema version.
 
         Args:
             episode_dir: Episode directory path
 
         Returns:
-            EpisodeMetadata
+            EpisodeMetadata with current schema version
 
         Raises:
             FileNotFoundError: If metadata file doesn't exist
@@ -316,10 +370,50 @@ class OutputManager:
         if not metadata_file.exists():
             raise FileNotFoundError(f"Metadata file not found: {metadata_file}")
 
-        with metadata_file.open("r") as f:
-            data = yaml.safe_load(f)
+        # Load with integrity verification
+        data = YAMLWithIntegrity.read_yaml_with_verification(metadata_file)
+
+        # Handle schema migrations
+        schema_version = data.get("schema_version", 0)
+
+        if schema_version == 0:
+            # Migrate v0 (no version) -> v1
+            data = self._migrate_metadata_v0_to_v1(data)
+            logger.info(f"Migrated {metadata_file} from schema v0 to v1")
+            schema_version = 1
+
+        # Warn if metadata is from a newer version
+        if schema_version > self.CURRENT_METADATA_SCHEMA_VERSION:
+            logger.warning(
+                f"Metadata schema version {schema_version} is newer than supported "
+                f"version {self.CURRENT_METADATA_SCHEMA_VERSION}. "
+                f"Some fields may be missing or incompatible."
+            )
 
         return EpisodeMetadata(**data)
+
+    def _migrate_metadata_v0_to_v1(self, data: dict) -> dict:
+        """Migrate metadata from v0 (no version) to v1.
+
+        This handles backward compatibility with metadata files created
+        before schema versioning was implemented.
+
+        Args:
+            data: Metadata dictionary without schema_version
+
+        Returns:
+            Migrated metadata dictionary with schema_version = 1
+        """
+        # Add schema version
+        data["schema_version"] = 1
+
+        # v0 -> v1 had no field changes, just added versioning
+        # Future migrations might need to:
+        # - Add new fields with defaults
+        # - Rename existing fields
+        # - Transform field values
+
+        return data
 
     def get_total_size(self) -> int:
         """Get total size of output directory in bytes.

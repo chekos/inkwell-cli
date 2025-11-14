@@ -13,7 +13,6 @@ Test Scenarios:
 For each scenario, we validate:
 - Transcription quality and cost
 - Extraction quality (completeness, accuracy)
-- Obsidian integration (wikilinks, tags, dataview)
 - Cost tracking
 - Output structure
 """

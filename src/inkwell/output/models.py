@@ -30,6 +30,12 @@ class EpisodeMetadata(BaseModel):
         ... )
     """
 
+    # Schema versioning for forward/backward compatibility
+    schema_version: int = Field(
+        default=1,
+        description="Metadata schema version for migration support"
+    )
+
     # Episode information
     podcast_name: str = Field(..., description="Name of the podcast")
     episode_title: str = Field(..., description="Episode title")

@@ -6,7 +6,8 @@ from unittest.mock import MagicMock, Mock, patch
 import pytest
 from yt_dlp.utils import DownloadError, ExtractorError
 
-from inkwell.audio import AudioDownloader, AudioDownloadError, DownloadProgress
+from inkwell.audio import AudioDownloader, DownloadProgress
+from inkwell.utils.errors import APIError
 
 
 class TestDownloadProgress:
@@ -273,7 +274,7 @@ class TestAudioDownloader:
         mock_ydl_class.return_value.__exit__.return_value = None
 
         with patch("inkwell.audio.downloader.YoutubeDL", mock_ydl_class):
-            with pytest.raises(AudioDownloadError) as exc_info:
+            with pytest.raises(APIError) as exc_info:
                 await downloader.download("https://youtube.com/watch?v=test123")
 
         assert "Failed to download audio" in str(exc_info.value)
@@ -292,7 +293,7 @@ class TestAudioDownloader:
         mock_ydl_class.return_value.__exit__.return_value = None
 
         with patch("inkwell.audio.downloader.YoutubeDL", mock_ydl_class):
-            with pytest.raises(AudioDownloadError) as exc_info:
+            with pytest.raises(APIError) as exc_info:
                 await downloader.download("https://invalid.com/video")
 
         assert "Failed to extract audio information" in str(exc_info.value)
@@ -307,7 +308,7 @@ class TestAudioDownloader:
         mock_ydl.extract_info.side_effect = RuntimeError("Unexpected error")
 
         with patch("inkwell.audio.downloader.YoutubeDL", return_value=mock_ydl):
-            with pytest.raises(AudioDownloadError) as exc_info:
+            with pytest.raises(APIError) as exc_info:
                 await downloader.download("https://youtube.com/watch?v=test123")
 
         assert "Unexpected error" in str(exc_info.value)
@@ -320,7 +321,7 @@ class TestAudioDownloader:
         # Don't create the output file to simulate failure
 
         with patch("inkwell.audio.downloader.YoutubeDL", mock_ydl_class):
-            with pytest.raises(AudioDownloadError) as exc_info:
+            with pytest.raises(APIError) as exc_info:
                 await downloader.download("https://youtube.com/watch?v=test123")
 
         assert "file not found at expected location" in str(exc_info.value)
@@ -353,7 +354,7 @@ class TestAudioDownloader:
         mock_ydl_class.return_value.__exit__.return_value = None
 
         with patch("inkwell.audio.downloader.YoutubeDL", mock_ydl_class):
-            with pytest.raises(AudioDownloadError) as exc_info:
+            with pytest.raises(APIError) as exc_info:
                 await downloader.get_info("https://invalid.com/video")
 
         assert "Failed to get information" in str(exc_info.value)
@@ -369,7 +370,7 @@ class TestAudioDownloader:
         mock_ydl_class.return_value.__exit__.return_value = None
 
         with patch("inkwell.audio.downloader.YoutubeDL", mock_ydl_class):
-            with pytest.raises(AudioDownloadError) as exc_info:
+            with pytest.raises(APIError) as exc_info:
                 await downloader.get_info("https://youtube.com/watch?v=test123")
 
         assert "Failed to extract information" in str(exc_info.value)

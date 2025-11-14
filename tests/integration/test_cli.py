@@ -19,7 +19,7 @@ class TestCLIVersion:
 
         assert result.exit_code == 0
         assert "Inkwell CLI" in result.stdout
-        assert "0.1.0" in result.stdout
+        assert "1.0.0" in result.stdout
 
 
 class TestCLIAdd:
@@ -50,7 +50,7 @@ class TestCLIAdd:
         import pytest
 
         from inkwell.config.schema import AuthConfig, FeedConfig
-        from inkwell.utils.errors import DuplicateFeedError
+        from inkwell.utils.errors import ValidationError as DuplicateFeedError
 
         feed_config = FeedConfig(
             url="https://example.com/feed.rss",  # type: ignore
@@ -61,7 +61,7 @@ class TestCLIAdd:
         manager.add_feed("test-podcast", feed_config)
 
         # Try to add again - should raise error
-        with pytest.raises(DuplicateFeedError):
+        with pytest.raises(ValidationError):
             manager.add_feed("test-podcast", feed_config)
 
 
@@ -146,9 +146,9 @@ class TestCLIRemove:
 
         import pytest
 
-        from inkwell.utils.errors import FeedNotFoundError
+        from inkwell.utils.errors import NotFoundError as FeedNotFoundError
 
-        with pytest.raises(FeedNotFoundError):
+        with pytest.raises(NotFoundError):
             manager.remove_feed("nonexistent")
 
 

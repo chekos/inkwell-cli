@@ -1,5 +1,6 @@
 """Tests for cost tracking utilities."""
 
+import json
 import multiprocessing
 import time
 from datetime import datetime, timedelta, timezone
@@ -765,3 +766,189 @@ class TestCalculateCostFromUsage:
                 input_tokens=1000,
                 output_tokens=500,
             )
+
+
+class TestUUIDDeduplication:
+    """Test UUID-based deduplication fixes for issue #045."""
+
+    def test_cost_tracker_records_duplicate_episodes(self, tmp_path):
+        """Verify same episode processed twice records both costs."""
+        costs_file = tmp_path / "costs.json"
+        tracker = CostTracker(costs_file=costs_file)
+
+        # Process episode first time
+        tracker.add_cost(
+            provider="gemini",
+            model="gemini-1.5-flash",
+            operation="extraction",
+            input_tokens=1000,
+            output_tokens=500,
+            episode_title="Episode 1",
+        )
+
+        # Process same episode again (--overwrite scenario)
+        # Same tokens, same episode, but should record as separate cost
+        tracker.add_cost(
+            provider="gemini",
+            model="gemini-1.5-flash",
+            operation="extraction",
+            input_tokens=1000,  # Same tokens as before
+            output_tokens=500,
+            episode_title="Episode 1",  # Same episode
+        )
+
+        # Both should be recorded (not deduplicated)
+        assert len(tracker.usage_history) == 2
+        # Each record should have different UUID
+        assert tracker.usage_history[0].usage_id != tracker.usage_history[1].usage_id
+
+    def test_cost_tracker_usage_ids_are_unique(self, tmp_path):
+        """Verify each usage record has unique ID."""
+        costs_file = tmp_path / "costs.json"
+        tracker = CostTracker(costs_file=costs_file)
+
+        # Track 10 identical operations
+        for _ in range(10):
+            tracker.add_cost(
+                provider="gemini",
+                model="gemini-1.5-flash",
+                operation="extraction",
+                input_tokens=1000,
+                output_tokens=500,
+                episode_title="Episode 1",
+            )
+
+        # All UUIDs should be unique
+        usage_ids = [u.usage_id for u in tracker.usage_history]
+        assert len(usage_ids) == len(set(usage_ids)), "UUIDs should be unique"
+        assert len(usage_ids) == 10
+
+    def test_cost_tracker_migrates_old_records(self, tmp_path):
+        """Verify old records without UUID are migrated."""
+        costs_file = tmp_path / "costs.json"
+
+        # Create old-format record (no usage_id)
+        old_record = {
+            "timestamp": "2025-11-14T10:00:00+00:00",
+            "operation": "extraction",
+            "provider": "gemini",
+            "model": "gemini-1.5-flash",
+            "input_tokens": 1000,
+            "output_tokens": 500,
+            "cost_usd": 0.005,
+            "total_tokens": 1500,
+        }
+        costs_file.write_text(json.dumps([old_record], indent=2))
+
+        # Load with tracker (should trigger migration)
+        tracker = CostTracker(costs_file=costs_file)
+
+        # Should have UUID added
+        assert len(tracker.usage_history) == 1
+        assert tracker.usage_history[0].usage_id is not None
+        assert len(tracker.usage_history[0].usage_id) == 36  # UUID format
+
+        # Verify migration saved to disk
+        data = json.loads(costs_file.read_text())
+        assert "usage_id" in data[0]
+
+    def test_same_uuid_correctly_deduplicated(self, tmp_path):
+        """Verify entries with same UUID are correctly identified as duplicates."""
+        costs_file = tmp_path / "costs.json"
+
+        # Create usage with specific UUID
+        usage = APIUsage(
+            usage_id="test-uuid-12345",
+            provider="gemini",
+            model="gemini-1.5-flash",
+            operation="extraction",
+            input_tokens=1000,
+            output_tokens=500,
+            cost_usd=0.005,
+            episode_title="Episode 1",
+        )
+
+        # Save it
+        tracker1 = CostTracker(costs_file=costs_file)
+        tracker1.track(usage)
+
+        # Try to save same UUID again (simulating duplicate)
+        tracker2 = CostTracker(costs_file=costs_file)
+        tracker2.usage_history.append(usage)
+        tracker2._save()
+
+        # Should only have one record
+        tracker3 = CostTracker(costs_file=costs_file)
+        assert len(tracker3.usage_history) == 1
+
+    def test_different_uuids_not_deduplicated(self, tmp_path):
+        """Verify entries with different UUIDs are not treated as duplicates."""
+        costs_file = tmp_path / "costs.json"
+
+        # Create two usages with identical data but different UUIDs
+        usage1 = APIUsage(
+            usage_id="uuid-1",
+            provider="gemini",
+            model="gemini-1.5-flash",
+            operation="extraction",
+            input_tokens=1000,
+            output_tokens=500,
+            cost_usd=0.005,
+            episode_title="Episode 1",
+            timestamp=datetime(2025, 11, 14, 10, 0, 0, tzinfo=timezone.utc),
+        )
+
+        usage2 = APIUsage(
+            usage_id="uuid-2",
+            provider="gemini",
+            model="gemini-1.5-flash",
+            operation="extraction",
+            input_tokens=1000,  # Same tokens
+            output_tokens=500,
+            cost_usd=0.005,
+            episode_title="Episode 1",  # Same episode
+            timestamp=datetime(2025, 11, 14, 10, 0, 0, tzinfo=timezone.utc),  # Same time
+        )
+
+        tracker = CostTracker(costs_file=costs_file)
+        tracker.track(usage1)
+        tracker.track(usage2)
+
+        # Should have both records (not deduplicated despite identical data)
+        assert len(tracker.usage_history) == 2
+
+    def test_api_usage_auto_generates_uuid(self):
+        """Verify APIUsage automatically generates UUID."""
+        usage = APIUsage(
+            provider="gemini",
+            model="gemini-1.5-flash",
+            operation="extraction",
+            input_tokens=1000,
+            output_tokens=500,
+            cost_usd=0.005,
+        )
+
+        assert usage.usage_id is not None
+        assert len(usage.usage_id) == 36  # UUID format
+
+    def test_multiple_instances_generate_different_uuids(self):
+        """Verify multiple APIUsage instances generate different UUIDs."""
+        usage1 = APIUsage(
+            provider="gemini",
+            model="gemini-1.5-flash",
+            operation="extraction",
+            input_tokens=1000,
+            output_tokens=500,
+            cost_usd=0.005,
+        )
+
+        usage2 = APIUsage(
+            provider="gemini",
+            model="gemini-1.5-flash",
+            operation="extraction",
+            input_tokens=1000,
+            output_tokens=500,
+            cost_usd=0.005,
+        )
+
+        assert usage1.usage_id != usage2.usage_id

@@ -10,7 +10,7 @@ from inkwell.transcription import (
     TranscriptionManager,
     TranscriptSegment,
 )
-from inkwell.transcription.youtube import TranscriptionError
+from inkwell.utils.errors import APIError
 
 
 class TestTranscriptionManager:
@@ -165,7 +165,7 @@ class TestTranscriptionManager:
     ) -> None:
         """Test fallback to Gemini when YouTube fails."""
         mock_cache.get.return_value = None
-        mock_youtube.transcribe.side_effect = TranscriptionError("YouTube failed")
+        mock_youtube.transcribe.side_effect = APIError("YouTube failed")
 
         gemini_transcript = sample_transcript.model_copy(
             update={"source": "gemini", "cost_usd": 0.001}
@@ -201,7 +201,7 @@ class TestTranscriptionManager:
     ) -> None:
         """Test handling when all tiers fail."""
         mock_cache.get.return_value = None
-        mock_youtube.transcribe.side_effect = TranscriptionError("YouTube failed")
+        mock_youtube.transcribe.side_effect = APIError("YouTube failed")
         mock_gemini.transcribe.side_effect = Exception("Gemini failed")
 
         result = await manager.transcribe("https://youtube.com/watch?v=test")
@@ -277,7 +277,7 @@ class TestTranscriptionManager:
         )
 
         mock_cache.get.return_value = None
-        mock_youtube.transcribe.side_effect = TranscriptionError("YouTube failed")
+        mock_youtube.transcribe.side_effect = APIError("YouTube failed")
 
         result = await manager.transcribe("https://youtube.com/watch?v=test")
 
@@ -310,7 +310,7 @@ class TestTranscriptionManager:
     ) -> None:
         """Test get_transcript returns None on failure."""
         mock_cache.get.return_value = None
-        mock_youtube.transcribe.side_effect = TranscriptionError("Failed")
+        mock_youtube.transcribe.side_effect = APIError("Failed")
         mock_gemini.transcribe.side_effect = Exception("Failed")
 
         transcript = await manager.get_transcript("https://example.com/episode")

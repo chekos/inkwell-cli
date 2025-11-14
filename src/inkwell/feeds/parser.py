@@ -8,7 +8,7 @@ import httpx
 
 from inkwell.config.schema import AuthConfig
 from inkwell.feeds.models import Episode
-from inkwell.utils.errors import AuthenticationError, FeedParseError, NetworkError
+from inkwell.utils.errors import APIError, SecurityError, ValidationError
 
 
 class RSSParser:
@@ -48,7 +48,7 @@ class RSSParser:
 
                 # Check for auth errors
                 if response.status_code == 401:
-                    raise AuthenticationError(
+                    raise SecurityError(
                         f"Authentication failed for {url}. "
                         "Check your credentials."
                     )
@@ -65,25 +65,25 @@ class RSSParser:
                         error_msg = getattr(
                             feed, "bozo_exception", "Unknown parsing error"
                         )
-                        raise FeedParseError(
+                        raise ValidationError(
                             f"Failed to parse feed from {url}: {error_msg}"
                         )
 
                 if not feed.entries:
-                    raise FeedParseError(f"No episodes found in feed: {url}")
+                    raise ValidationError(f"No episodes found in feed: {url}")
 
                 return feed
 
         except httpx.TimeoutException as e:
-            raise NetworkError(f"Timeout fetching feed from {url}") from e
+            raise APIError(f"Timeout fetching feed from {url}") from e
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 401:
                 raise AuthenticationError(
                     f"Authentication required for {url}"
                 ) from e
-            raise NetworkError(f"HTTP error fetching {url}: {e}") from e
+            raise APIError(f"HTTP error fetching {url}: {e}") from e
         except httpx.RequestError as e:
-            raise NetworkError(f"Network error fetching {url}: {e}") from e
+            raise APIError(f"Network error fetching {url}: {e}") from e
 
     def _build_auth_headers(
         self, auth: AuthConfig | None = None
@@ -131,7 +131,7 @@ class RSSParser:
             FeedParseError: If no episodes found
         """
         if not feed.entries:
-            raise FeedParseError("No episodes found in feed")
+            raise ValidationError("No episodes found in feed")
 
         # Entries are typically sorted newest first
         latest_entry = feed.entries[0]
@@ -163,7 +163,7 @@ class RSSParser:
             if title_keyword_lower in entry_title:
                 return self.extract_episode_metadata(entry, podcast_name)
 
-        raise FeedParseError(
+        raise ValidationError(
             f"No episode found matching '{title_keyword}' in feed"
         )
 
@@ -185,12 +185,12 @@ class RSSParser:
         # Required fields
         title = entry.get("title")
         if not title:
-            raise FeedParseError("Episode missing required field: title")
+            raise ValidationError("Episode missing required field: title")
 
         # Extract audio/video URL from enclosure
         enclosure_url = self._extract_enclosure_url(entry)
         if not enclosure_url:
-            raise FeedParseError(f"Episode '{title}' has no audio enclosure")
+            raise ValidationError(f"Episode '{title}' has no audio enclosure")
 
         # Extract published date
         published = self._extract_published_date(entry)

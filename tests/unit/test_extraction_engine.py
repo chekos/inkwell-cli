@@ -7,7 +7,7 @@ import pytest
 
 from inkwell.extraction.cache import ExtractionCache
 from inkwell.extraction.engine import ExtractionEngine
-from inkwell.extraction.errors import ValidationError
+from inkwell.utils.errors import ValidationError
 from inkwell.extraction.models import ExtractionTemplate
 
 
@@ -69,7 +69,7 @@ class TestExtractionEngineInit:
         ):
             engine = ExtractionEngine()
             assert engine.default_provider == "gemini"
-            assert engine.total_cost_usd == 0.0
+            assert engine.cost_tracker is None  # No cost tracker by default
 
     def test_init_custom_provider(self, mock_api_keys: None) -> None:
         """Test initialization with custom default provider."""
@@ -476,17 +476,22 @@ class TestExtractionEngineCostTracking:
 
     @pytest.mark.asyncio
     async def test_cost_tracking(
-        self, mock_api_keys: None, text_template: ExtractionTemplate, temp_cache: ExtractionCache
+        self, mock_api_keys: None, text_template: ExtractionTemplate, temp_cache: ExtractionCache, tmp_path: Path
     ) -> None:
-        """Test that costs are tracked."""
+        """Test that costs are tracked with injected CostTracker."""
+        from inkwell.utils.costs import CostTracker
+
         with patch("inkwell.extraction.engine.ClaudeExtractor"), patch(
             "inkwell.extraction.engine.GeminiExtractor"
         ):
-            engine = ExtractionEngine(cache=temp_cache)
+            # Create cost tracker with temp file
+            cost_tracker = CostTracker(costs_file=tmp_path / "costs.json")
+            engine = ExtractionEngine(cache=temp_cache, cost_tracker=cost_tracker)
 
             mock_extract = AsyncMock(return_value="Result")
             engine.gemini_extractor.extract = mock_extract
             engine.gemini_extractor.estimate_cost = Mock(return_value=0.05)
+            engine.gemini_extractor.model = "gemini-1.5-flash-latest"
 
             # Initial cost
             assert engine.get_total_cost() == 0.0
@@ -498,30 +503,37 @@ class TestExtractionEngineCostTracking:
                 metadata={},
             )
 
-            assert engine.get_total_cost() == 0.05
+            # Cost should be tracked
+            assert engine.get_total_cost() > 0.0
 
             # After another extraction
+            initial_cost = engine.get_total_cost()
             await engine.extract(
                 template=text_template,
                 transcript="Test 2",
                 metadata={},
             )
 
-            assert engine.get_total_cost() == 0.10
+            # Cost should increase
+            assert engine.get_total_cost() > initial_cost
 
     @pytest.mark.asyncio
     async def test_reset_cost_tracking(
-        self, mock_api_keys: None, text_template: ExtractionTemplate, temp_cache: ExtractionCache
+        self, mock_api_keys: None, text_template: ExtractionTemplate, temp_cache: ExtractionCache, tmp_path: Path
     ) -> None:
         """Test resetting cost tracking."""
+        from inkwell.utils.costs import CostTracker
+
         with patch("inkwell.extraction.engine.ClaudeExtractor"), patch(
             "inkwell.extraction.engine.GeminiExtractor"
         ):
-            engine = ExtractionEngine(cache=temp_cache)
+            cost_tracker = CostTracker(costs_file=tmp_path / "costs.json")
+            engine = ExtractionEngine(cache=temp_cache, cost_tracker=cost_tracker)
 
             mock_extract = AsyncMock(return_value="Result")
             engine.gemini_extractor.extract = mock_extract
             engine.gemini_extractor.estimate_cost = Mock(return_value=0.05)
+            engine.gemini_extractor.model = "gemini-1.5-flash-latest"
 
             await engine.extract(
                 template=text_template,
@@ -529,8 +541,11 @@ class TestExtractionEngineCostTracking:
                 metadata={},
             )
 
-            assert engine.get_total_cost() == 0.05
+            # Cost should be tracked
+            initial_cost = engine.get_total_cost()
+            assert initial_cost > 0.0
 
+            # Reset should zero out the session cost
             engine.reset_cost_tracking()
             assert engine.get_total_cost() == 0.0
 

@@ -5,7 +5,7 @@ including individual segments with timing information and complete transcripts.
 """
 
 from datetime import datetime, timedelta
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -183,7 +183,7 @@ class Transcript(BaseModel):
 
         return v
 
-    def model_post_init(self, __context) -> None:
+    def model_post_init(self, __context: Any) -> None:
         """Post-initialization hook to calculate optional fields."""
         # Calculate word count if not provided
         if self.word_count is None and self.segments:
@@ -225,7 +225,7 @@ class TranscriptionResult(BaseModel):
     @field_validator("transcript")
     @classmethod
     def transcript_required_if_success(
-        cls, v: Transcript | None, info
+        cls, v: Transcript | None, info: Any
     ) -> Transcript | None:
         """Validate that transcript is provided if success is True."""
         if info.data.get("success") and v is None:
@@ -234,7 +234,7 @@ class TranscriptionResult(BaseModel):
 
     @field_validator("error")
     @classmethod
-    def error_required_if_failure(cls, v: str | None, info) -> str | None:
+    def error_required_if_failure(cls, v: str | None, info: Any) -> str | None:
         """Validate that error is provided if success is False."""
         if not info.data.get("success") and not v:
             raise ValueError("error message is required when success is False")

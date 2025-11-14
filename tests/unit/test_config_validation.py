@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from inkwell.config.manager import ConfigManager
-from inkwell.utils.errors import InvalidConfigError
+from inkwell.utils.errors import ConfigError
 
 
 class TestConfigValidationErrors:
@@ -25,7 +25,7 @@ default_output_dir: ~/podcasts
 
         manager = ConfigManager(config_dir=tmp_path)
 
-        with pytest.raises(InvalidConfigError) as exc_info:
+        with pytest.raises(ConfigError) as exc_info:
             manager.load_config()
 
         error_msg = str(exc_info.value)
@@ -51,7 +51,7 @@ feeds:
 
         manager = ConfigManager(config_dir=tmp_path)
 
-        with pytest.raises(InvalidConfigError) as exc_info:
+        with pytest.raises(ConfigError) as exc_info:
             manager.load_feeds()
 
         error_msg = str(exc_info.value)
@@ -75,7 +75,7 @@ feeds:
 
         manager = ConfigManager(config_dir=tmp_path)
 
-        with pytest.raises(InvalidConfigError) as exc_info:
+        with pytest.raises(ConfigError) as exc_info:
             manager.load_feeds()
 
         error_msg = str(exc_info.value)
@@ -96,7 +96,7 @@ invalid yaml syntax here: [unclosed bracket
 
         manager = ConfigManager(config_dir=tmp_path)
 
-        with pytest.raises(InvalidConfigError) as exc_info:
+        with pytest.raises(ConfigError) as exc_info:
             manager.load_config()
 
         error_msg = str(exc_info.value)
@@ -122,7 +122,7 @@ feeds:
 
         manager = ConfigManager(config_dir=tmp_path)
 
-        with pytest.raises(InvalidConfigError) as exc_info:
+        with pytest.raises(ConfigError) as exc_info:
             manager.load_feeds()
 
         error_msg = str(exc_info.value)

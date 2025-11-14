@@ -1,5 +1,6 @@
 """Gemini (Google AI) extractor implementation."""
 
+import asyncio
 from typing import Any
 
 import google.generativeai as genai
@@ -7,9 +8,9 @@ from google.generativeai import GenerativeModel
 from google.generativeai.types import GenerateContentResponse
 
 from ...utils.api_keys import get_validated_api_key
+from ...utils.errors import APIError, ValidationError
 from ...utils.json_utils import JSONParsingError, safe_json_loads
 from ...utils.rate_limiter import get_rate_limiter
-from ..errors import ProviderError, ValidationError
 from ..models import ExtractionTemplate
 from .base import BaseExtractor
 
@@ -122,15 +123,15 @@ class GeminiExtractor(BaseExtractor):
                 raise
 
             # Wrap API errors
-            raise ProviderError(f"Gemini API error: {str(e)}", provider="gemini") from e
+            raise APIError(f"Gemini API error: {str(e)}", provider="gemini") from e
 
     async def _generate_async(
         self, prompt: str, generation_config: dict[str, Any]
     ) -> GenerateContentResponse:
-        """Wrap sync generate_content in async.
+        """Generate content using Gemini API (async wrapper).
 
-        The Gemini SDK doesn't provide async version, so we need to wrap it.
-        For production, would use asyncio.to_thread or similar.
+        The Gemini SDK is synchronous, so we run it in a thread pool
+        to avoid blocking the event loop and enable concurrent processing.
 
         Args:
             prompt: Full prompt text
@@ -143,9 +144,12 @@ class GeminiExtractor(BaseExtractor):
         limiter = get_rate_limiter("gemini")
         limiter.acquire()
 
-        # For now, just call sync version
-        # In production, would use: await asyncio.to_thread(...)
-        return self.model.generate_content(prompt, generation_config=generation_config)
+        # Run sync SDK call in thread pool to avoid blocking event loop
+        return await asyncio.to_thread(
+            self.model.generate_content,
+            prompt,
+            generation_config=generation_config
+        )
 
     def estimate_cost(
         self,

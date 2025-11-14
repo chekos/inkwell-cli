@@ -377,7 +377,8 @@ class TestGeminiExtractorComparison:
             from inkwell.extraction.extractors.claude import ClaudeExtractor
 
             gemini = GeminiExtractor()
-            claude = ClaudeExtractor(api_key="test-key")
+            # Use valid-format Claude API key for testing
+            claude = ClaudeExtractor(api_key="sk-ant-api03-" + "X" * 32)
 
             template = ExtractionTemplate(
                 name="test",

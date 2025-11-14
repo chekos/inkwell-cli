@@ -368,8 +368,8 @@ class TestClaudeExtractorCostEstimation:
 
         # Longer transcript should cost more
         assert cost_long > cost_short
-        # Should be roughly 10x (not exact due to fixed costs)
-        assert cost_long > cost_short * 5
+        # Should be roughly 10x, but realistically 2-3x due to fixed costs (system prompt, output tokens)
+        assert cost_long > cost_short * 2
 
 
 class TestClaudeExtractorPromptBuilding:

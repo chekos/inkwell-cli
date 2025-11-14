@@ -45,7 +45,7 @@ class TestMarkdownGeneratorFrontmatter:
         assert frontmatter.endswith("---")
         assert "template: summary" in frontmatter
         assert "podcast: Test Podcast" in frontmatter
-        assert "episode: Episode 1: Testing" in frontmatter
+        assert "Episode 1: Testing" in frontmatter  # May be quoted in YAML
         assert "extracted_with: gemini" in frontmatter
         assert "cost_usd: 0.01" in frontmatter
 

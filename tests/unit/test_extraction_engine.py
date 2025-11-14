@@ -128,11 +128,16 @@ class TestExtractionEngineExtract:
         ):
             engine = ExtractionEngine(cache=temp_cache)
 
-            # Mock extractor
+            # Mock both extractors (quotes template uses Claude by default)
             json_output = '{"quotes": ["one", "two"]}'
-            mock_extract = AsyncMock(return_value=json_output)
-            engine.gemini_extractor.extract = mock_extract
+            engine.claude_extractor.extract = AsyncMock(return_value=json_output)
+            engine.claude_extractor.estimate_cost = Mock(return_value=0.10)
+            engine.gemini_extractor.extract = AsyncMock(return_value=json_output)
             engine.gemini_extractor.estimate_cost = Mock(return_value=0.01)
+
+            # Fix class name for provider detection
+            engine.claude_extractor.__class__.__name__ = "ClaudeExtractor"
+            engine.gemini_extractor.__class__.__name__ = "GeminiExtractor"
 
             result = await engine.extract(
                 template=json_template,
@@ -216,23 +221,32 @@ class TestExtractionEngineExtract:
     async def test_extract_invalid_json(
         self, mock_api_keys: None, json_template: ExtractionTemplate, temp_cache: ExtractionCache
     ) -> None:
-        """Test extraction with invalid JSON raises error."""
+        """Test extraction with invalid JSON returns failed result."""
         with patch("inkwell.extraction.engine.ClaudeExtractor"), patch(
             "inkwell.extraction.engine.GeminiExtractor"
         ):
             engine = ExtractionEngine(cache=temp_cache)
 
-            # Mock extractor returning invalid JSON
-            mock_extract = AsyncMock(return_value="not valid json")
-            engine.gemini_extractor.extract = mock_extract
+            # Mock both extractors returning invalid JSON (quotes template uses Claude)
+            engine.claude_extractor.extract = AsyncMock(return_value="not valid json")
+            engine.claude_extractor.estimate_cost = Mock(return_value=0.10)
+            engine.gemini_extractor.extract = AsyncMock(return_value="not valid json")
             engine.gemini_extractor.estimate_cost = Mock(return_value=0.01)
 
-            with pytest.raises(ValidationError):
-                await engine.extract(
-                    template=json_template,
-                    transcript="Test transcript",
-                    metadata={},
-                )
+            # Fix class name for provider detection
+            engine.claude_extractor.__class__.__name__ = "ClaudeExtractor"
+            engine.gemini_extractor.__class__.__name__ = "GeminiExtractor"
+
+            result = await engine.extract(
+                template=json_template,
+                transcript="Test transcript",
+                metadata={},
+            )
+
+            # Should return failed result, not raise exception
+            assert result.success is False
+            assert result.extracted_content is None
+            assert "invalid json" in result.error.lower()
 
 
 class TestExtractionEngineProviderSelection:
@@ -258,6 +272,10 @@ class TestExtractionEngineProviderSelection:
             engine.gemini_extractor.extract = mock_gemini
             engine.claude_extractor.estimate_cost = Mock(return_value=0.10)
             engine.gemini_extractor.estimate_cost = Mock(return_value=0.01)
+
+            # Fix class name for provider detection
+            engine.claude_extractor.__class__.__name__ = "ClaudeExtractor"
+            engine.gemini_extractor.__class__.__name__ = "GeminiExtractor"
 
             result = await engine.extract(
                 template=text_template,
@@ -330,6 +348,10 @@ class TestExtractionEngineProviderSelection:
             engine.claude_extractor.estimate_cost = Mock(return_value=0.10)
             engine.gemini_extractor.estimate_cost = Mock(return_value=0.01)
 
+            # Fix class name for provider detection
+            engine.claude_extractor.__class__.__name__ = "ClaudeExtractor"
+            engine.gemini_extractor.__class__.__name__ = "GeminiExtractor"
+
             result = await engine.extract(
                 template=quote_template,
                 transcript="Test",
@@ -354,6 +376,10 @@ class TestExtractionEngineProviderSelection:
             mock_claude = AsyncMock(return_value="Result")
             engine.claude_extractor.extract = mock_claude
             engine.claude_extractor.estimate_cost = Mock(return_value=0.10)
+
+            # Fix class name for provider detection
+            engine.claude_extractor.__class__.__name__ = "ClaudeExtractor"
+            engine.gemini_extractor.__class__.__name__ = "GeminiExtractor"
 
             result = await engine.extract(
                 template=text_template,
@@ -381,15 +407,15 @@ class TestExtractionEngineMultipleExtractions:
         ):
             engine = ExtractionEngine(cache=temp_cache)
 
-            # Mock extractor
-            def mock_extract_fn(template, transcript, metadata):
-                if template.name == "summary":
-                    return AsyncMock(return_value="Summary text")()
-                else:
-                    return AsyncMock(return_value='{"quotes": []}')()
-
-            engine.gemini_extractor.extract = mock_extract_fn
+            # Mock both extractors (summary uses Gemini, quotes uses Claude)
+            engine.gemini_extractor.extract = AsyncMock(return_value="Summary text")
             engine.gemini_extractor.estimate_cost = Mock(return_value=0.01)
+            engine.claude_extractor.extract = AsyncMock(return_value='{"quotes": []}')
+            engine.claude_extractor.estimate_cost = Mock(return_value=0.10)
+
+            # Fix class name for provider detection
+            engine.claude_extractor.__class__.__name__ = "ClaudeExtractor"
+            engine.gemini_extractor.__class__.__name__ = "GeminiExtractor"
 
             results, summary = await engine.extract_all(
                 templates=[text_template, json_template],
@@ -521,14 +547,15 @@ class TestExtractionEngineCostTracking:
             engine = ExtractionEngine()
 
             engine.gemini_extractor.estimate_cost = Mock(return_value=0.01)
+            engine.claude_extractor.estimate_cost = Mock(return_value=0.10)
 
             total = engine.estimate_total_cost(
                 templates=[text_template, json_template],
                 transcript="Test transcript",
             )
 
-            # Both templates use Gemini (default)
-            assert total == 0.02
+            # text_template uses Gemini (0.01), json_template ("quotes") uses Claude (0.10)
+            assert total == 0.11
 
 
 class TestExtractionEngineOutputParsing:

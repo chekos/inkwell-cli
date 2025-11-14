@@ -292,14 +292,15 @@ class TestExtractionEngineWithSummary:
         ):
             engine = ExtractionEngine()
 
-            # Setup mock extractor with different responses for different templates
-            async def mock_extract(template, transcript, metadata):
-                if template.expected_format == "json":
-                    return '{"quotes": []}'
-                return "Test output"
-
-            engine.gemini_extractor.extract = mock_extract
+            # Setup mock extractors (summary uses Gemini, quotes uses Claude)
+            engine.gemini_extractor.extract = AsyncMock(return_value="Test output")
             engine.gemini_extractor.estimate_cost = lambda t, l: 0.01
+            engine.claude_extractor.extract = AsyncMock(return_value='{"quotes": []}')
+            engine.claude_extractor.estimate_cost = lambda t, l: 0.10
+
+            # Fix class name for provider detection
+            engine.claude_extractor.__class__.__name__ = "ClaudeExtractor"
+            engine.gemini_extractor.__class__.__name__ = "GeminiExtractor"
 
             templates = [summary_template, quotes_template]
             transcript = "Test transcript"
@@ -440,21 +441,28 @@ class TestExtractionEngineWithSummary:
         mock_api_keys: None,
         summary_template: ExtractionTemplate,
         quotes_template: ExtractionTemplate,
+        tmp_path,
     ) -> None:
         """Test extract_all properly tracks cached vs fresh extractions."""
+        from pathlib import Path
+        from inkwell.extraction.cache import ExtractionCache
+
         with patch("inkwell.extraction.engine.ClaudeExtractor"), patch(
             "inkwell.extraction.engine.GeminiExtractor"
         ):
-            engine = ExtractionEngine()
+            # Use temp cache to avoid cross-test contamination
+            temp_cache = ExtractionCache(cache_dir=tmp_path / "cache")
+            engine = ExtractionEngine(cache=temp_cache)
 
-            # Setup mock with different responses for different templates
-            async def mock_extract(template, transcript, metadata):
-                if template.expected_format == "json":
-                    return '{"quotes": []}'
-                return "Test output"
-
-            engine.gemini_extractor.extract = mock_extract
+            # Setup mock extractors (summary uses Gemini, quotes uses Claude)
+            engine.gemini_extractor.extract = AsyncMock(return_value="Test output")
             engine.gemini_extractor.estimate_cost = lambda t, l: 0.01
+            engine.claude_extractor.extract = AsyncMock(return_value='{"quotes": []}')
+            engine.claude_extractor.estimate_cost = lambda t, l: 0.10
+
+            # Fix class name for provider detection
+            engine.claude_extractor.__class__.__name__ = "ClaudeExtractor"
+            engine.gemini_extractor.__class__.__name__ = "GeminiExtractor"
 
             templates = [summary_template, quotes_template]
             transcript = "Test transcript"

@@ -74,8 +74,11 @@ def test_create_manager_from_env(tmp_path, monkeypatch):
     assert manager.api_key == "env-api-key"
 
 
-def test_create_manager_no_api_key_raises():
+def test_create_manager_no_api_key_raises(monkeypatch):
     """Test that missing API key raises error."""
+    # Remove environment variable to ensure no API key is available
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
     with pytest.raises(ValueError, match="Anthropic API key required"):
         InterviewManager(api_key=None)
 

@@ -6,7 +6,8 @@ import pytest
 from pydantic import ValidationError
 
 from inkwell.extraction.models import ExtractionTemplate
-from inkwell.extraction.templates import TemplateLoader, TemplateNotFoundError, TemplateLoadError
+from inkwell.extraction.templates import TemplateLoader
+from inkwell.utils.errors import NotFoundError, ValidationError as InkwellValidationError
 
 
 @pytest.fixture
@@ -139,7 +140,7 @@ class TestTemplateLoader:
             template_dirs=[],
         )
 
-        with pytest.raises(TemplateNotFoundError) as exc_info:
+        with pytest.raises(NotFoundError) as exc_info:
             loader.load_template("nonexistent")
 
         assert "not found" in str(exc_info.value).lower()
@@ -156,7 +157,7 @@ class TestTemplateLoader:
             template_dirs=[],
         )
 
-        with pytest.raises(TemplateLoadError):
+        with pytest.raises(ValidationError):
             loader.load_template("invalid")
 
     def test_load_malformed_yaml(self, temp_template_dir: Path) -> None:
@@ -387,7 +388,7 @@ expected_format: json
             template_dirs=[],
         )
 
-        with pytest.raises(TemplateLoadError) as exc_info:
+        with pytest.raises(ValidationError) as exc_info:
             loader.load_template("invalid")
 
         assert "alphanumeric" in str(exc_info.value).lower()
@@ -410,7 +411,7 @@ expected_format: json
             template_dirs=[],
         )
 
-        with pytest.raises(TemplateLoadError) as exc_info:
+        with pytest.raises(ValidationError) as exc_info:
             loader.load_template("test")
 
         assert "jinja2" in str(exc_info.value).lower()

@@ -6,9 +6,9 @@ from anthropic import Anthropic, AsyncAnthropic
 from anthropic.types import Message
 
 from ...utils.api_keys import get_validated_api_key
+from ...utils.errors import APIError, ValidationError
 from ...utils.json_utils import JSONParsingError, safe_json_loads
 from ...utils.rate_limiter import get_rate_limiter
-from ..errors import ProviderError, ValidationError
 from ..models import ExtractionTemplate
 from .base import BaseExtractor
 
@@ -123,7 +123,7 @@ class ClaudeExtractor(BaseExtractor):
 
             # Wrap API errors
             status_code = getattr(e, "status_code", None)
-            raise ProviderError(
+            raise APIError(
                 f"Claude API error: {str(e)}", provider="claude", status_code=status_code
             ) from e
 

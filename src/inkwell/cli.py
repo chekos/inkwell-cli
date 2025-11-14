@@ -20,18 +20,18 @@ from inkwell.extraction import ExtractionEngine
 from inkwell.extraction.template_selector import TemplateSelector
 from inkwell.extraction.templates import TemplateLoader
 from inkwell.feeds.models import Episode
-from inkwell.interview import InterviewManager
-from inkwell.interview.models import InterviewGuidelines
+from inkwell.interview import SimpleInterviewer, conduct_interview_from_output
 from inkwell.output import EpisodeMetadata, OutputManager
+from inkwell.pipeline import PipelineOptions, PipelineOrchestrator
 from inkwell.transcription import CostEstimate, TranscriptionManager
 from inkwell.utils.api_keys import APIKeyError, get_validated_api_key
 from inkwell.utils.datetime import format_duration, now_utc
 from inkwell.utils.display import truncate_url
 from inkwell.utils.errors import (
-    DuplicateFeedError,
-    FeedNotFoundError,
+    ConfigError,
     InkwellError,
-    InvalidConfigError,
+    NotFoundError,
+    ValidationError,
 )
 
 app = typer.Typer(
@@ -88,11 +88,16 @@ def add_feed(
         auth_config = AuthConfig(type="none")
         if auth:
             console.print("\n[bold]Authentication required[/bold]")
-            auth_type = typer.prompt(
+            auth_type: str = typer.prompt(
                 "Auth type",
-                type=typer.Choice(["basic", "bearer"]),
+                type=str,
                 default="basic",
             )
+
+            # Validate auth_type
+            if auth_type not in ["basic", "bearer"]:
+                console.print("[red]✗[/red] Invalid auth type. Must be 'basic' or 'bearer'")
+                sys.exit(1)
 
             if auth_type == "basic":
                 username = typer.prompt("Username")
@@ -105,8 +110,9 @@ def add_feed(
                 auth_config = AuthConfig(type="bearer", token=token)
 
         # Create feed config
+        from pydantic import HttpUrl
         feed_config = FeedConfig(
-            url=url,  # type: ignore
+            url=HttpUrl(url),
             auth=auth_config,
             category=category,
         )
@@ -122,14 +128,13 @@ def add_feed(
                 "[dim]  Credentials encrypted and stored securely[/dim]"
             )
 
-    except DuplicateFeedError as e:
+    except ValidationError as e:
         console.print(f"[red]✗[/red] {e}")
-        console.print(
-            f"[dim]  Use 'inkwell remove {name}' first, or choose a different name[/dim]"
-        )
+        if e.suggestion:
+            console.print(f"[dim]  {e.suggestion}[/dim]")
         sys.exit(1)
-    except InvalidConfigError as e:
-        console.print(f"[red]✗[/red] Invalid URL: {e}")
+    except ConfigError as e:
+        console.print(f"[red]✗[/red] {e}")
         sys.exit(1)
     except InkwellError as e:
         console.print(f"[red]✗[/red] Error: {e}")
@@ -200,7 +205,7 @@ def remove_feed(
         # Check if feed exists
         try:
             feed = manager.get_feed(name)
-        except FeedNotFoundError:
+        except NotFoundError:
             console.print(
                 f"[red]✗[/red] Feed '[bold]{name}[/bold]' not found"
             )
@@ -214,7 +219,7 @@ def remove_feed(
         if not force:
             console.print(f"\nFeed: [bold]{name}[/bold]")
             console.print(f"URL:  [dim]{feed.url}[/dim]")
-            confirm = typer.confirm("\nAre you sure you want to remove this feed?")
+            confirm: bool = typer.confirm("\nAre you sure you want to remove this feed?")
             if not confirm:
                 console.print("[yellow]Cancelled[/yellow]")
                 return
@@ -328,6 +333,7 @@ def config_command(
                 # Get the field type to do proper conversion
                 field_type = type(getattr(config, key))
 
+                value_converted: bool | Path | str
                 if field_type is bool:
                     value_converted = value.lower() in ("true", "yes", "1")
                 elif field_type is Path:
@@ -503,7 +509,7 @@ def cache_command(
                     console.print(f"  • {source}: {count}")
 
         elif action == "clear":
-            confirm = typer.confirm("\nAre you sure you want to clear all cached transcripts?")
+            confirm: bool = typer.confirm("\nAre you sure you want to clear all cached transcripts?")
             if not confirm:
                 console.print("[yellow]Cancelled[/yellow]")
                 return
@@ -566,6 +572,9 @@ def fetch_command(
     no_resume: bool = typer.Option(
         False, "--no-resume", help="Don't resume previous interview session"
     ),
+    resume_session: str | None = typer.Option(
+        None, "--resume-session", help="Resume specific interview session by ID"
+    ),
 ) -> None:
     """Fetch and process a podcast episode.
 
@@ -587,283 +596,134 @@ def fetch_command(
 
     async def run_fetch() -> None:
         try:
+            # Load configuration
             config = ConfigManager().load_config()
-            output_path = output_dir or config.default_output_dir
 
-            # Determine total steps
+            # Determine total steps for progress display
             will_interview = interview or config.interview.auto_start
             total_steps = 5 if will_interview else 4
 
             console.print("[bold cyan]Inkwell Extraction Pipeline[/bold cyan]\n")
 
-            # Step 1: Transcribe
-            console.print(f"[bold]Step 1/{total_steps}:[/bold] Transcribing episode...")
-
-            transcription_manager = TranscriptionManager()
-
-            with Progress(
-                SpinnerColumn(),
-                TextColumn("[progress.description]{task.description}"),
-                console=console,
-            ) as progress:
-                task = progress.add_task("Transcribing...", total=None)
-
-                result = await transcription_manager.transcribe(
-                    url, use_cache=True, skip_youtube=False
-                )
-
-                progress.update(task, completed=True)
-
-            if not result.success:
-                console.print(f"[red]✗[/red] Transcription failed: {result.error}")
-                sys.exit(1)
-
-            assert result.transcript is not None
-
-            console.print(f"[green]✓[/green] Transcribed ({result.transcript.source})")
-            console.print(f"  Duration: {result.duration_seconds:.1f}s")
-            console.print(f"  Words: ~{len(result.transcript.full_text.split())}")
-
-            # Step 2: Select templates
-            console.print(f"\n[bold]Step 2/{total_steps}:[/bold] Selecting templates...")
-
-            loader = TemplateLoader()
-            selector = TemplateSelector(loader=loader)
-
-            # Parse custom templates if provided
-            custom_template_list = None
-            if templates:
-                custom_template_list = [t.strip() for t in templates.split(",")]
-
-            # Create episode object for template selection
-            episode = Episode(
-                title=f"Episode from {url}",
-                url=url,  # type: ignore
-                published=now_utc(),
-                description="",
-                podcast_name="Unknown Podcast",  # Would come from RSS in real implementation
-            )
-
-            # Create episode metadata for output
-            episode_metadata = EpisodeMetadata(
-                podcast_name=episode.podcast_name,
-                episode_title=episode.title,
-                episode_url=url,
-                transcription_source=result.transcript.source,
-            )
-
-            # Select templates
-            selected_templates = selector.select_templates(
-                episode=episode,
+            # Create pipeline options from CLI arguments
+            options = PipelineOptions(
+                url=url,
                 category=category,
-                custom_templates=custom_template_list,
-                transcript=result.transcript.full_text,
-            )
-
-            console.print(f"[green]✓[/green] Selected {len(selected_templates)} templates:")
-            for tmpl in selected_templates:
-                console.print(f"  • {tmpl.name} (priority: {tmpl.priority})")
-
-            # Step 3: Extract
-            console.print(f"\n[bold]Step 3/{total_steps}:[/bold] Extracting content...")
-
-            # Initialize extraction engine
-            engine = ExtractionEngine(
-                default_provider=provider or "gemini"
-            )
-
-            # Estimate cost
-            estimated_cost = engine.estimate_total_cost(
-                templates=selected_templates,
-                transcript=result.transcript.full_text,
-            )
-
-            console.print(f"  Estimated cost: [yellow]${estimated_cost:.4f}[/yellow]")
-
-            if dry_run:
-                console.print("\n[yellow]Dry run mode - stopping here[/yellow]")
-                console.print(f"Total estimated cost: ${estimated_cost:.4f}")
-                return
-
-            # Extract with progress
-            with Progress(
-                SpinnerColumn(),
-                TextColumn("[progress.description]{task.description}"),
-                console=console,
-            ) as progress:
-                task = progress.add_task("Extracting content...", total=None)
-
-                # Use batched extraction for better performance (75% fewer API calls)
-                extraction_results, extraction_summary = await engine.extract_all_batched(
-                    templates=selected_templates,
-                    transcript=result.transcript.full_text,
-                    metadata=episode_metadata.model_dump(),
-                    use_cache=not skip_cache,
-                )
-
-                progress.update(task, completed=True)
-
-            # Report extraction results with detailed summary
-            if extraction_summary.failed > 0:
-                # Show warning if any templates failed
-                console.print(extraction_summary.format_summary(), style="yellow")
-                console.print(
-                    f"\n[yellow]⚠[/yellow] {extraction_summary.failed} template(s) failed. "
-                    f"Check logs for details."
-                )
-                console.print(
-                    f"[green]✓[/green] Extracted {extraction_summary.successful} of {extraction_summary.total} templates"
-                )
-            else:
-                # Success message if all succeeded
-                console.print(
-                    f"[green]✓[/green] All {extraction_summary.total} templates extracted successfully"
-                )
-
-            # Show cache and cost information
-            if extraction_summary.cached > 0:
-                console.print(
-                    f"  • {extraction_summary.cached} from cache (saved ${engine.get_total_cost():.4f})"
-                )
-            console.print(f"  • Total cost: [yellow]${engine.get_total_cost():.4f}[/yellow]")
-
-            # Step 4: Write output
-            console.print(f"\n[bold]Step 4/{total_steps}:[/bold] Writing markdown files...")
-
-            output_manager = OutputManager(output_dir=output_path)
-
-            episode_output = output_manager.write_episode(
-                episode_metadata=episode_metadata,
-                extraction_results=extraction_results,
+                templates=[t.strip() for t in templates.split(",")] if templates else None,
+                provider=provider,
+                interview=interview,
+                no_resume=no_resume,
+                resume_session=resume_session,
+                output_dir=output_dir,
+                skip_cache=skip_cache,
+                dry_run=dry_run,
                 overwrite=overwrite,
+                interview_template=interview_template,
+                interview_format=interview_format,
+                max_questions=max_questions,
             )
 
-            console.print(f"[green]✓[/green] Wrote {len(episode_output.output_files)} files")
-            console.print(f"  Directory: [cyan]{episode_output.directory}[/cyan]")
+            # Create orchestrator and progress callback
+            orchestrator = PipelineOrchestrator(config)
 
-            # Step 5: Interview (optional)
-            interview_cost = 0.0
-            interview_conducted = False
+            # Progress callback for displaying pipeline steps
+            from typing import Any
+            def handle_progress(step_name: str, step_data: dict[str, Any]) -> None:
+                if step_name == "transcription_start":
+                    console.print(f"[bold]Step 1/{total_steps}:[/bold] Transcribing episode...")
+                    with Progress(
+                        SpinnerColumn(),
+                        TextColumn("[progress.description]{task.description}"),
+                        console=console,
+                    ) as progress:
+                        progress.add_task("Transcribing...", total=None)
 
-            if interview or config.interview.auto_start:
-                console.print("\n[bold]Step 5/5:[/bold] Conducting interview...")
+                elif step_name == "transcription_complete":
+                    console.print(f"[green]✓[/green] Transcribed ({step_data['source']})")
+                    console.print(f"  Duration: {step_data['duration_seconds']:.1f}s")
+                    console.print(f"  Words: ~{step_data['word_count']}")
 
-                try:
-                    # Get interview configuration
-                    template_name = interview_template or config.interview.default_template
-                    format_style = interview_format or config.interview.format_style
-                    questions = max_questions or config.interview.question_count
+                elif step_name == "template_selection_start":
+                    console.print(f"\n[bold]Step 2/{total_steps}:[/bold] Selecting templates...")
 
-                    # Create guidelines from config
-                    guidelines = None
-                    if config.interview.guidelines:
-                        guidelines = InterviewGuidelines(text=config.interview.guidelines)
+                elif step_name == "template_selection_complete":
+                    console.print(f"[green]✓[/green] Selected {step_data['template_count']} templates:")
+                    for tmpl_name in step_data['templates']:
+                        console.print(f"  • {tmpl_name}")
 
-                    # Validate Anthropic API key
-                    try:
-                        anthropic_key = get_validated_api_key("ANTHROPIC_API_KEY", "claude")
-                    except APIKeyError as e:
-                        console.print("[yellow]⚠[/yellow] Interview skipped - API key validation failed:")
-                        console.print(f"[dim]  {str(e)}[/dim]")
+                elif step_name == "extraction_start":
+                    console.print(f"\n[bold]Step 3/{total_steps}:[/bold] Extracting content...")
+
+                elif step_name == "extraction_complete":
+                    if step_data['failed'] > 0:
+                        console.print(
+                            f"[yellow]⚠[/yellow] {step_data['failed']} template(s) failed. "
+                            f"Check logs for details."
+                        )
+                        console.print(
+                            f"[green]✓[/green] Extracted {step_data['successful']} of "
+                            f"{step_data['successful'] + step_data['failed']} templates"
+                        )
                     else:
-                        # Initialize interview manager
-                        interview_manager = InterviewManager(
-                            api_key=anthropic_key,
-                            model=config.interview.model
+                        console.print(
+                            f"[green]✓[/green] All {step_data['successful']} templates extracted successfully"
                         )
 
-                        session_id = resume_session
+                    if step_data['cached'] > 0:
+                        console.print(f"  • {step_data['cached']} from cache")
+                    console.print(f"  • Total cost: [yellow]${step_data['cost_usd']:.4f}[/yellow]")
 
-                        # Auto-discover resumable sessions if not explicitly specified
-                        if not no_resume and not resume_session:
-                            resumable = interview_manager.session_manager.find_resumable_sessions(url)
+                elif step_name == "output_start":
+                    console.print(f"\n[bold]Step 4/{total_steps}:[/bold] Writing markdown files...")
 
-                            if resumable:
-                                # Show most recent session
-                                latest = resumable[0]
-                                elapsed = (now_utc() - latest.updated_at).total_seconds()
-                                elapsed_str = format_duration(elapsed)
+                elif step_name == "output_complete":
+                    console.print(f"[green]✓[/green] Wrote {step_data['file_count']} files")
+                    console.print(f"  Directory: [cyan]{step_data['directory']}[/cyan]")
 
-                                console.print(f"\n[yellow]Found incomplete session from {elapsed_str} ago:[/yellow]")
-                                console.print(f"  Session ID: {latest.session_id}")
-                                console.print(f"  Questions: {len(latest.exchanges)}/{latest.max_questions}")
-                                console.print(f"  Started: {latest.started_at.strftime('%Y-%m-%d %H:%M')}")
+                elif step_name == "interview_start":
+                    console.print("\n[bold]Step 5/5:[/bold] Conducting interview...")
 
-                                # Interactive prompt
-                                if Confirm.ask("\nResume this session?", default=True):
-                                    session_id = latest.session_id
-                                    console.print(f"[green]✓[/green] Resuming session {session_id}")
-                                else:
-                                    console.print("[dim]Starting new session...[/dim]")
+                elif step_name == "interview_complete":
+                    console.print("[green]✓[/green] Interview complete")
+                    console.print(f"  Questions: {step_data['question_count']}")
+                    console.print("  Saved to: my-notes.md")
 
-                        # Conduct interview
-                        interview_result = await interview_manager.conduct_interview(
-                            episode_url=url,
-                            episode_title=episode_metadata.episode_title,
-                            podcast_name=episode_metadata.podcast_name,
-                            output_dir=episode_output.directory,
-                            template_name=template_name,
-                            max_questions=questions,
-                            guidelines=guidelines,
-                            format_style=format_style,
-                            resume_session_id=session_id,
-                        )
-
-                        # Save interview output
-                        interview_path = episode_output.directory / "my-notes.md"
-                        interview_path.write_text(interview_result.transcript)
-
-                        console.print("[green]✓[/green] Interview complete")
-                        console.print(f"  Questions: {len(interview_result.exchanges)}")
-                        console.print("  Saved to: my-notes.md")
-
-                        interview_cost = interview_result.total_cost
-                        interview_conducted = True
-
-                        # Update metadata with interview info
-                        metadata_path = episode_output.directory / ".metadata.yaml"
-                        if metadata_path.exists():
-                            metadata = yaml.safe_load(metadata_path.read_text())
-                            metadata["interview_conducted"] = True
-                            metadata["interview_template"] = template_name
-                            metadata["interview_format"] = format_style
-                            metadata["interview_questions"] = len(interview_result.exchanges)
-                            metadata["interview_cost_usd"] = interview_cost
-                            metadata_path.write_text(yaml.safe_dump(metadata, default_flow_style=False))
-
-                except KeyboardInterrupt:
+                elif step_name == "interview_cancelled":
                     console.print("\n[yellow]Interview cancelled by user[/yellow]")
-                    # Continue to summary even if interview cancelled
-                except Exception as e:
-                    console.print(f"[red]✗[/red] Interview failed: {e}")
+
+                elif step_name == "interview_failed":
+                    console.print(f"[red]✗[/red] Interview failed: {step_data['error']}")
                     console.print("[dim]  Extraction completed successfully, continuing...[/dim]")
 
-            # Summary
+            # Execute pipeline
+            result = await orchestrator.process_episode(
+                options=options,
+                progress_callback=handle_progress,
+            )
+
+            # Display summary
             console.print("\n[bold green]✓ Complete![/bold green]")
 
             # Format output directory path for display
             try:
-                # Try to show path relative to current directory
-                output_display = str(episode_output.directory.relative_to(Path.cwd()))
+                output_display = str(result.episode_output.directory.relative_to(Path.cwd()))
             except ValueError:
-                # If not under cwd, show absolute path
-                output_display = str(episode_output.directory)
+                output_display = str(result.episode_output.directory)
 
             table = Table(show_header=False, box=None, padding=(0, 2))
             table.add_column("Key", style="dim")
             table.add_column("Value", style="white")
 
-            table.add_row("Episode:", episode_metadata.episode_title)
-            table.add_row("Templates:", f"{len(extraction_results)}")
+            table.add_row("Episode:", result.episode_output.directory.name)
+            table.add_row("Templates:", f"{len(result.extraction_results)}")
 
-            if interview_conducted:
-                total_cost = engine.get_total_cost() + interview_cost
-                table.add_row("Extraction cost:", f"${engine.get_total_cost():.4f}")
-                table.add_row("Interview cost:", f"${interview_cost:.4f}")
-                table.add_row("Total cost:", f"${total_cost:.4f}")
+            if result.interview_result:
+                table.add_row("Extraction cost:", f"${result.extraction_cost_usd:.4f}")
+                table.add_row("Interview cost:", f"${result.interview_cost_usd:.4f}")
+                table.add_row("Total cost:", f"${result.total_cost_usd:.4f}")
                 table.add_row("Interview:", "✓ Completed")
             else:
-                table.add_row("Total cost:", f"${engine.get_total_cost():.4f}")
+                table.add_row("Total cost:", f"${result.extraction_cost_usd:.4f}")
 
             table.add_row("Output:", output_display)
 
@@ -875,8 +735,11 @@ def fetch_command(
         except FileExistsError as e:
             console.print(f"\n[red]✗[/red] {e}")
             sys.exit(1)
-        except Exception as e:
+        except InkwellError as e:
             console.print(f"\n[red]✗[/red] Error: {e}")
+            sys.exit(1)
+        except Exception as e:
+            console.print(f"\n[red]✗[/red] Unexpected error: {e}")
             import traceback
             console.print(f"[dim]{traceback.format_exc()}[/dim]")
             sys.exit(1)

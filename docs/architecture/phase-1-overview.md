@@ -79,7 +79,7 @@ User: inkwell add https://feed.url/rss --name "podcast" --auth
   │     │
   │     └─► Fernet: Symmetric encryption
   │
-  ├─► FeedManager: Add feed to feeds.yaml
+  ├─► ConfigManager: Add feed to feeds.yaml
   │     │
   │     └─► Pydantic: Validate FeedConfig
   │
@@ -93,7 +93,7 @@ User: inkwell list
   │
   ├─► CLI: Invoke list command
   │
-  ├─► FeedManager: Load all feeds
+  ├─► ConfigManager: Load all feeds
   │     │
   │     ├─► Read ~/.config/inkwell/feeds.yaml
   │     │
@@ -315,12 +315,11 @@ tests/
 │   │     ├─► test_key_permissions()
 │   │     └─► test_empty_string_handling()
 │   │
-│   └── test_feeds.py        # RSSParser, FeedManager
+│   └── test_feeds.py        # RSSParser
 │         ├─► test_parse_valid_rss()
 │         ├─► test_parse_atom_feed()
 │         ├─► test_extract_episode_metadata()
-│         ├─► test_auth_header_construction()
-│         └─► test_feed_crud_operations()
+│         └─► test_auth_header_construction()
 │
 └── integration/
     └── test_cli.py          # End-to-end CLI tests

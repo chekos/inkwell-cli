@@ -3,12 +3,17 @@
 import asyncio
 from collections.abc import Callable
 from datetime import datetime, timezone
+from typing import TYPE_CHECKING
 
 from inkwell.audio import AudioDownloader
 from inkwell.transcription.cache import TranscriptCache
 from inkwell.transcription.gemini import CostEstimate, GeminiTranscriber
 from inkwell.transcription.models import Transcript, TranscriptionResult
-from inkwell.transcription.youtube import TranscriptionError, YouTubeTranscriber
+from inkwell.transcription.youtube import YouTubeTranscriber
+from inkwell.utils.errors import APIError
+
+if TYPE_CHECKING:
+    from inkwell.utils.costs import CostTracker
 
 
 class TranscriptionManager:
@@ -31,6 +36,7 @@ class TranscriptionManager:
         gemini_transcriber: GeminiTranscriber | None = None,
         gemini_api_key: str | None = None,
         cost_confirmation_callback: Callable[[CostEstimate], bool] | None = None,
+        cost_tracker: "CostTracker | None" = None,
     ):
         """Initialize transcription manager.
 
@@ -41,12 +47,15 @@ class TranscriptionManager:
             gemini_transcriber: Gemini transcriber (default: new instance)
             gemini_api_key: Google AI API key for Gemini (default: from env)
             cost_confirmation_callback: Callback for Gemini cost confirmation
+            cost_tracker: Cost tracker for recording API usage (optional, for DI)
         """
         self.cache = cache or TranscriptCache()
         self.youtube_transcriber = youtube_transcriber or YouTubeTranscriber()
         self.audio_downloader = audio_downloader or AudioDownloader()
+        self.cost_tracker = cost_tracker
 
         # Initialize Gemini transcriber if API key available
+        self.gemini_transcriber: GeminiTranscriber | None
         if gemini_transcriber:
             self.gemini_transcriber = gemini_transcriber
         elif gemini_api_key:
@@ -125,7 +134,7 @@ class TranscriptionManager:
                     from_cache=False,
                 )
 
-            except TranscriptionError:
+            except APIError:
                 # YouTube failed - continue to Gemini tier
                 pass
 
@@ -153,6 +162,20 @@ class TranscriptionManager:
             # Track cost
             if transcript.cost_usd:
                 total_cost += transcript.cost_usd
+
+                # Track in CostTracker if available
+                if self.cost_tracker:
+                    # Estimate token counts from transcript
+                    # Note: This is approximate; real counts would come from Gemini API
+                    transcript_tokens = len(transcript.text) // 4
+                    self.cost_tracker.add_cost(
+                        provider="gemini",
+                        model="gemini-1.5-flash-latest",
+                        operation="transcription",
+                        input_tokens=transcript_tokens,
+                        output_tokens=transcript_tokens,
+                        episode_title=None,  # Not available here
+                    )
 
             # Cache successful result
             if use_cache:

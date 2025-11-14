@@ -5,11 +5,13 @@ Coordinates template selection, provider selection, caching, and result parsing.
 
 import logging
 import time
-from typing import Any
 
+# Type-only import to avoid circular dependency
+from typing import TYPE_CHECKING, Any
+
+from ..utils.errors import ValidationError
 from ..utils.json_utils import JSONParsingError, safe_json_loads
 from .cache import ExtractionCache
-from .errors import ValidationError
 from .extractors import BaseExtractor, ClaudeExtractor, GeminiExtractor
 from .models import (
     ExtractedContent,
@@ -19,6 +21,9 @@ from .models import (
     ExtractionSummary,
     ExtractionTemplate,
 )
+
+if TYPE_CHECKING:
+    from ..utils.costs import CostTracker
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +54,7 @@ class ExtractionEngine:
         gemini_api_key: str | None = None,
         cache: ExtractionCache | None = None,
         default_provider: str = "gemini",
+        cost_tracker: "CostTracker | None" = None,
     ) -> None:
         """Initialize extraction engine.
 
@@ -57,14 +63,13 @@ class ExtractionEngine:
             gemini_api_key: Google AI API key (defaults to env var)
             cache: Cache instance (defaults to new ExtractionCache)
             default_provider: Default provider to use ("claude" or "gemini")
+            cost_tracker: Cost tracker for recording API usage (optional, for DI)
         """
         self.claude_extractor = ClaudeExtractor(api_key=claude_api_key)
         self.gemini_extractor = GeminiExtractor(api_key=gemini_api_key)
         self.cache = cache or ExtractionCache()
         self.default_provider = default_provider
-
-        # Track total cost
-        self.total_cost_usd = 0.0
+        self.cost_tracker = cost_tracker
 
     async def extract(
         self,
@@ -128,8 +133,22 @@ class ExtractionEngine:
             if use_cache:
                 await self.cache.set(template.name, template.version, transcript, raw_output)
 
-            # Track cost
-            self.total_cost_usd += estimated_cost
+            # Track cost in CostTracker if available
+            if self.cost_tracker:
+                # Estimate token counts based on transcript length
+                # This is an approximation; real token counts would come from API response
+                input_tokens = len(transcript) // 4  # Rough approximation
+                output_tokens = len(raw_output) // 4
+
+                self.cost_tracker.add_cost(
+                    provider=provider_name,
+                    model=extractor.model if hasattr(extractor, 'model') else "unknown",
+                    operation="extraction",
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                    episode_title=metadata.get("episode_title"),
+                    template_name=template.name,
+                )
 
             return ExtractionResult(
                 episode_url=episode_url,
@@ -259,6 +278,56 @@ class ExtractionEngine:
 
         return successful_results, summary
 
+    async def _batch_cache_lookup(
+        self,
+        templates: list[ExtractionTemplate],
+        transcript: str,
+        episode_url: str,
+    ) -> dict[str, ExtractionResult]:
+        """Lookup multiple templates in cache concurrently.
+
+        Args:
+            templates: List of templates to check
+            transcript: Episode transcript for cache key
+            episode_url: Episode URL for results
+
+        Returns:
+            Dict mapping template name to ExtractionResult (only cache hits)
+        """
+        import asyncio
+
+        async def lookup_one(
+            template: ExtractionTemplate,
+        ) -> tuple[ExtractionTemplate, str | None]:
+            """Lookup single template in cache."""
+            result = await self.cache.get(
+                template.name,
+                template.version,
+                transcript,
+            )
+            return (template, result)
+
+        # Run all lookups in parallel
+        results = await asyncio.gather(*[lookup_one(t) for t in templates])
+
+        # Filter to only cache hits and parse results
+        cached_results = {}
+        for template, cached_raw in results:
+            if cached_raw is not None:
+                # Parse cached result
+                content = self._parse_output(cached_raw, template)
+                cached_results[template.name] = ExtractionResult(
+                    episode_url=episode_url,
+                    template_name=template.name,
+                    success=True,
+                    extracted_content=content,
+                    cost_usd=0.0,
+                    provider="cache",
+                    from_cache=True,
+                )
+
+        return cached_results
+
     async def extract_all_batched(
         self,
         templates: list[ExtractionTemplate],
@@ -301,26 +370,25 @@ class ExtractionEngine:
         # Get episode URL from metadata
         episode_url = metadata.get("episode_url", "")
 
-        # Check cache for each template
+        # Check cache for all templates in parallel
         cached_results = {}
         uncached_templates = []
 
         if use_cache:
+            # Batch lookup all templates at once
+            cache_start = time.time()
+            cached_results = await self._batch_cache_lookup(templates, transcript, episode_url)
+            cache_duration = time.time() - cache_start
+
+            # Log cache performance
+            logger.debug(
+                f"Cache lookup took {cache_duration:.3f}s for {len(templates)} templates "
+                f"({len(cached_results)} hits, {len(templates) - len(cached_results)} misses)"
+            )
+
+            # Separate cached from uncached
             for template in templates:
-                cached = await self.cache.get(template.name, template.version, transcript)
-                if cached:
-                    # Parse cached result
-                    content = self._parse_output(cached, template)
-                    cached_results[template.name] = ExtractionResult(
-                        episode_url=episode_url,
-                        template_name=template.name,
-                        success=True,
-                        extracted_content=content,
-                        cost_usd=0.0,
-                        provider="cache",
-                        from_cache=True,
-                    )
-                else:
+                if template.name not in cached_results:
                     uncached_templates.append(template)
         else:
             uncached_templates = templates
@@ -392,8 +460,23 @@ class ExtractionEngine:
                             template.name, template.version, transcript, raw_output
                         )
 
-            # Track cost
-            self.total_cost_usd += estimated_cost
+            # Track cost in CostTracker if available
+            if self.cost_tracker:
+                # Estimate token counts for batch operation
+                input_tokens = len(batched_prompt) // 4
+                output_tokens = len(response) // 4
+
+                # Track once for the batch (distributed across templates)
+                for template in uncached_templates:
+                    self.cost_tracker.add_cost(
+                        provider=provider_name,
+                        model=extractor.model if hasattr(extractor, 'model') else "unknown",
+                        operation="extraction",
+                        input_tokens=input_tokens // len(uncached_templates),
+                        output_tokens=output_tokens // len(uncached_templates),
+                        episode_title=metadata.get("episode_title"),
+                        template_name=template.name,
+                    )
 
             logger.info(f"Batch extraction successful for {len(batch_results)} templates")
 
@@ -588,11 +671,14 @@ class ExtractionEngine:
         Returns:
             Total cost in USD
         """
-        return self.total_cost_usd
+        if self.cost_tracker:
+            return self.cost_tracker.get_session_cost()
+        return 0.0
 
     def reset_cost_tracking(self) -> None:
         """Reset cost tracking to zero."""
-        self.total_cost_usd = 0.0
+        if self.cost_tracker:
+            self.cost_tracker.reset_session_cost()
 
     def _create_batch_prompt(
         self,

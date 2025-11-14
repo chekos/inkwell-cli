@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 from google.generativeai.types import GenerateContentResponse
 
-from inkwell.extraction.errors import ProviderError, ValidationError
+from inkwell.utils.errors import APIError, ValidationError
 from inkwell.extraction.extractors.gemini import GeminiExtractor
 from inkwell.extraction.models import ExtractionTemplate
 from inkwell.utils.api_keys import APIKeyError
@@ -215,7 +215,7 @@ class TestGeminiExtractorExtract:
     async def test_extract_api_error(
         self, mock_api_key: str, sample_template: ExtractionTemplate
     ) -> None:
-        """Test extraction with API error raises ProviderError."""
+        """Test extraction with API error raises APIError."""
         with patch("inkwell.extraction.extractors.gemini.genai.configure"):
             extractor = GeminiExtractor()
 
@@ -223,7 +223,7 @@ class TestGeminiExtractorExtract:
             with patch.object(extractor, "_generate_async", new=AsyncMock()) as mock_gen:
                 mock_gen.side_effect = Exception("API error")
 
-                with pytest.raises(ProviderError) as exc_info:
+                with pytest.raises(APIError) as exc_info:
                     await extractor.extract(
                         template=sample_template,
                         transcript="Test",

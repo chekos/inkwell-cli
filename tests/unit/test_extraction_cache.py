@@ -172,7 +172,8 @@ class TestExtractionCache:
 
         stats = await cache.get_stats()
         assert stats["total_entries"] == 2
-        assert stats["total_size_mb"] >= 0  # Size in MB may be very small, but should be non-negative
+        # Size in MB may be very small, but should be non-negative
+        assert stats["total_size_mb"] >= 0
         assert stats["oldest_entry_age_days"] >= 0
 
     @pytest.mark.asyncio
@@ -265,13 +266,15 @@ class TestExtractionCache:
         with cache_files[0].open("r") as f:
             data = json.load(f)
 
-        assert "timestamp" in data
-        assert "template_name" in data
-        assert "template_version" in data
-        assert "result" in data
-        assert data["template_name"] == "summary"
-        assert data["template_version"] == "1.0"
-        assert data["result"] == "result"
+        assert "cached_at" in data
+        assert "value" in data
+        assert "timestamp" in data["value"]
+        assert "template_name" in data["value"]
+        assert "template_version" in data["value"]
+        assert "result" in data["value"]
+        assert data["value"]["template_name"] == "summary"
+        assert data["value"]["template_version"] == "1.0"
+        assert data["value"]["result"] == "result"
 
     @pytest.mark.asyncio
     async def test_concurrent_access(self, temp_cache_dir: Path) -> None:
@@ -288,3 +291,78 @@ class TestExtractionCache:
         assert await cache1.get("quotes", "1.0", "transcript2") == "result2"
         assert await cache2.get("summary", "1.0", "transcript1") == "result1"
         assert await cache2.get("quotes", "1.0", "transcript2") == "result2"
+
+    @pytest.mark.asyncio
+    async def test_cache_get_during_concurrent_write(self, temp_cache_dir: Path) -> None:
+        """Test cache read during write returns None (cache miss)."""
+        cache = ExtractionCache(cache_dir=temp_cache_dir)
+
+        # Create temp file to simulate active write
+        cache_key = cache._make_key("template", "v1", "transcript")
+        cache_file = temp_cache_dir / f"{cache_key}.json"
+        temp_file = cache_file.with_suffix(".tmp")
+        temp_file.write_text('{"partial": ')
+
+        # Should detect active write and return None
+        result = await cache.get("template", "v1", "transcript")
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_cache_get_partial_json_deleted(self, temp_cache_dir: Path) -> None:
+        """Test partial JSON is detected and deleted."""
+        cache = ExtractionCache(cache_dir=temp_cache_dir)
+
+        cache_key = cache._make_key("template", "v1", "transcript")
+        cache_file = temp_cache_dir / f"{cache_key}.json"
+        cache_file.write_text('{"template": "summary", "content": "partial')
+
+        # Should detect partial JSON (doesn't end with }) and delete file
+        result = await cache.get("template", "v1", "transcript")
+        assert result is None
+        assert not cache_file.exists()
+
+    @pytest.mark.asyncio
+    async def test_cache_get_invalid_json_deleted(self, temp_cache_dir: Path) -> None:
+        """Test invalid JSON is detected and deleted."""
+        cache = ExtractionCache(cache_dir=temp_cache_dir)
+
+        cache_key = cache._make_key("template", "v1", "transcript")
+        cache_file = temp_cache_dir / f"{cache_key}.json"
+        cache_file.write_text('{"template": "summary", "broken": }')
+
+        # Should detect invalid JSON and delete file
+        result = await cache.get("template", "v1", "transcript")
+        assert result is None
+        assert not cache_file.exists()
+
+    @pytest.mark.asyncio
+    async def test_cache_get_missing_required_field(self, temp_cache_dir: Path) -> None:
+        """Test cache file with missing required field is deleted."""
+        cache = ExtractionCache(cache_dir=temp_cache_dir)
+
+        cache_key = cache._make_key("template", "v1", "transcript")
+        cache_file = temp_cache_dir / f"{cache_key}.json"
+        # Valid JSON but missing "result" field
+        cache_file.write_text('{"template": "summary", "timestamp": 1234567890}')
+
+        # Should detect missing field and delete file
+        result = await cache.get("template", "v1", "transcript")
+        assert result is None
+        assert not cache_file.exists()
+
+    @pytest.mark.asyncio
+    async def test_cache_get_valid_after_corruption_check(self, temp_cache_dir: Path) -> None:
+        """Test valid cache file passes all corruption checks."""
+        cache = ExtractionCache(cache_dir=temp_cache_dir)
+
+        # Set valid cache entry
+        await cache.set("template", "v1", "transcript", "valid result")
+
+        # Should pass all checks and return result
+        result = await cache.get("template", "v1", "transcript")
+        assert result == "valid result"
+
+        # Verify file still exists (wasn't deleted)
+        cache_key = cache._make_key("template", "v1", "transcript")
+        cache_file = temp_cache_dir / f"{cache_key}.json"
+        assert cache_file.exists()

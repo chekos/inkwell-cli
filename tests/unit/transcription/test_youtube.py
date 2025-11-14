@@ -10,7 +10,8 @@ from youtube_transcript_api._errors import (
     VideoUnavailable,
 )
 
-from inkwell.transcription.youtube import TranscriptionError, YouTubeTranscriber
+from inkwell.utils.errors import APIError
+from inkwell.transcription import YouTubeTranscriber
 
 
 class TestYouTubeURLDetection:
@@ -216,10 +217,10 @@ class TestTranscriptFetching:
 
     @pytest.mark.asyncio
     async def test_invalid_url_raises_error(self, transcriber):
-        """Test that invalid URL raises TranscriptionError."""
+        """Test that invalid URL raises APIError."""
         url = "https://youtube.com/invalid"
 
-        with pytest.raises(TranscriptionError) as exc_info:
+        with pytest.raises(APIError) as exc_info:
             await transcriber.transcribe(url)
 
         assert "Could not extract video ID" in str(exc_info.value)
@@ -235,7 +236,7 @@ class TestTranscriptFetching:
         )
 
         with patch.object(transcriber.api, "list", return_value=mock_transcript_list):
-            with pytest.raises(TranscriptionError) as exc_info:
+            with pytest.raises(APIError) as exc_info:
                 await transcriber.transcribe(url)
 
         assert "disabled" in str(exc_info.value).lower()
@@ -249,7 +250,7 @@ class TestTranscriptFetching:
         mock_transcript_list.find_transcript.side_effect = VideoUnavailable("test123")
 
         with patch.object(transcriber.api, "list", return_value=mock_transcript_list):
-            with pytest.raises(TranscriptionError) as exc_info:
+            with pytest.raises(APIError) as exc_info:
                 await transcriber.transcribe(url)
 
         assert "unavailable" in str(exc_info.value).lower()
@@ -264,7 +265,7 @@ class TestTranscriptFetching:
             "list",
             side_effect=CouldNotRetrieveTranscript("test123"),
         ):
-            with pytest.raises(TranscriptionError) as exc_info:
+            with pytest.raises(APIError) as exc_info:
                 await transcriber.transcribe(url)
 
         error_msg = str(exc_info.value).lower()
@@ -294,7 +295,7 @@ class TestTranscriptFetching:
         )
 
         with patch.object(transcriber.api, "list", return_value=mock_transcript_list):
-            with pytest.raises(TranscriptionError) as exc_info:
+            with pytest.raises(APIError) as exc_info:
                 await transcriber.transcribe(url)
 
         error_msg = str(exc_info.value)
@@ -311,7 +312,7 @@ class TestTranscriptFetching:
             "list",
             side_effect=Exception("Unexpected API error"),
         ):
-            with pytest.raises(TranscriptionError) as exc_info:
+            with pytest.raises(APIError) as exc_info:
                 await transcriber.transcribe(url)
 
         assert "Unexpected error" in str(exc_info.value)

@@ -4,6 +4,7 @@ from unittest.mock import patch
 
 import pytest
 
+from inkwell.utils.errors import SecurityError
 from inkwell.utils.retry import (
     TEST_RETRY_CONFIG,
     AuthenticationError,
@@ -121,7 +122,7 @@ class TestWithRetryDecorator:
             call_count += 1
             raise AuthenticationError("Invalid API key")
 
-        with pytest.raises(AuthenticationError):
+        with pytest.raises(SecurityError):
             auth_error_call()
 
         assert call_count == 1  # No retries
@@ -328,7 +329,7 @@ class TestRetryDecoratorsIntegration:
             call_count += 1
             raise AuthenticationError("Invalid API key")
 
-        with pytest.raises(AuthenticationError):
+        with pytest.raises(SecurityError):
             invalid_api_key()
 
         # Should only try once (no retries for auth errors)

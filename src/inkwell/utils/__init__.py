@@ -1,19 +1,13 @@
 """Utility functions and helpers for Inkwell."""
 
+from inkwell.utils.cache import CacheError, FileCache
 from inkwell.utils.errors import (
-    AuthenticationError,
+    APIError,
     ConfigError,
-    ConfigNotFoundError,
-    DuplicateFeedError,
-    EncryptionError,
-    FeedError,
-    FeedNotFoundError,
-    FeedParseError,
     InkwellError,
-    InvalidConfigError,
-    NetworkConnectionError,
-    NetworkError,
-    NetworkTimeoutError,
+    NotFoundError,
+    SecurityError,
+    ValidationError,
 )
 from inkwell.utils.paths import (
     ensure_config_files_exist,
@@ -27,20 +21,16 @@ from inkwell.utils.paths import (
 )
 
 __all__ = [
-    # Errors
+    # Cache
+    "FileCache",
+    "CacheError",
+    # Errors (5 core types per todo #035)
     "InkwellError",
     "ConfigError",
-    "InvalidConfigError",
-    "ConfigNotFoundError",
-    "EncryptionError",
-    "FeedError",
-    "FeedNotFoundError",
-    "DuplicateFeedError",
-    "FeedParseError",
-    "AuthenticationError",
-    "NetworkError",
-    "NetworkConnectionError",
-    "NetworkTimeoutError",
+    "APIError",
+    "ValidationError",
+    "NotFoundError",
+    "SecurityError",
     # Paths
     "get_config_dir",
     "get_data_dir",

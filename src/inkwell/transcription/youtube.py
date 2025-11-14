@@ -17,12 +17,12 @@ from youtube_transcript_api._errors import (
 )
 
 from inkwell.transcription.models import Transcript, TranscriptSegment
-from inkwell.utils.errors import InkwellError
+from inkwell.utils.errors import APIError
 
 logger = logging.getLogger(__name__)
 
 
-class TranscriptionError(InkwellError):
+class TranscriptionError(APIError):
     """Error during transcription process."""
 
     pass
@@ -141,7 +141,7 @@ class YouTubeTranscriber:
         # Extract video ID
         video_id = self._extract_video_id(url)
         if not video_id:
-            raise TranscriptionError(
+            raise APIError(
                 f"Could not extract video ID from URL: {url}. "
                 "Supported formats: youtube.com/watch?v=..., youtu.be/..., "
                 "youtube.com/embed/..."
@@ -171,7 +171,7 @@ class YouTubeTranscriber:
                     )
                     logger.info("Using auto-generated transcript")
                 except NoTranscriptFound as e:
-                    raise TranscriptionError(
+                    raise APIError(
                         f"No transcript found for video {video_id} in languages: "
                         f"{', '.join(self.preferred_languages)}. "
                         "Available languages: "
@@ -204,21 +204,21 @@ class YouTubeTranscriber:
 
         except TranscriptsDisabled as e:
             logger.warning(f"Transcripts disabled for video {video_id}")
-            raise TranscriptionError(
+            raise APIError(
                 "Transcripts are disabled for this video. "
                 "The video owner has disabled transcript access."
             ) from e
 
         except VideoUnavailable as e:
             logger.warning(f"Video unavailable: {video_id}")
-            raise TranscriptionError(
+            raise APIError(
                 "Video is unavailable. It may be private, deleted, or region-restricted."
             ) from e
 
         except CouldNotRetrieveTranscript as e:
             # This includes 403 errors and other network issues
             logger.warning(f"Could not retrieve transcript for {video_id}: {e}")
-            raise TranscriptionError(
+            raise APIError(
                 "Failed to retrieve transcript from YouTube. "
                 "This may be due to network issues, rate limiting, or access restrictions. "
                 "Will fall back to audio download + Gemini transcription."
@@ -226,7 +226,7 @@ class YouTubeTranscriber:
 
         except Exception as e:
             logger.error(f"Unexpected error fetching YouTube transcript: {e}")
-            raise TranscriptionError(
+            raise APIError(
                 f"Unexpected error while fetching transcript: {e}"
             ) from e
 

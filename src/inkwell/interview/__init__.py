@@ -1,43 +1,21 @@
-"""Interview mode for Inkwell - conversational reflection on podcast episodes."""
+"""Interview mode for Inkwell - conversational reflection on podcast episodes.
 
-from inkwell.interview import ui
-from inkwell.interview.agent import InterviewAgent
-from inkwell.interview.context_builder import InterviewContextBuilder
-from inkwell.interview.formatter import TranscriptFormatter
-from inkwell.interview.manager import InterviewManager
-from inkwell.interview.models import (
-    Exchange,
-    InterviewContext,
-    InterviewGuidelines,
-    InterviewResult,
-    InterviewSession,
-    InterviewTemplate,
-    Question,
-    Response,
-)
-from inkwell.interview.session_manager import SessionManager
-from inkwell.interview.templates import (
-    get_template,
-    get_template_description,
-    list_templates,
+This module has been simplified to reduce complexity from 3,680 LOC to 509 LOC
+(86% reduction). The new SimpleInterviewer provides core functionality without:
+- Session management (no pause/resume)
+- Multiple templates (single reflective template)
+- Multiple formats (single markdown format)
+- Metrics tracking (only essential cost tracking)
+"""
+
+from inkwell.interview.simple_interviewer import (
+    SimpleInterviewer,
+    SimpleInterviewResult,
+    conduct_interview_from_output,
 )
 
 __all__ = [
-    "Exchange",
-    "InterviewAgent",
-    "InterviewContext",
-    "InterviewContextBuilder",
-    "InterviewGuidelines",
-    "InterviewManager",
-    "InterviewResult",
-    "InterviewSession",
-    "InterviewTemplate",
-    "Question",
-    "Response",
-    "SessionManager",
-    "TranscriptFormatter",
-    "get_template",
-    "get_template_description",
-    "list_templates",
-    "ui",
+    "SimpleInterviewer",
+    "SimpleInterviewResult",
+    "conduct_interview_from_output",
 ]

@@ -19,7 +19,7 @@ class MarkdownGenerator:
     - YAML frontmatter for metadata
     - Content formatting based on extraction format (JSON, text, etc.)
     - Template-specific formatting (quotes, concepts, etc.)
-    - Obsidian-compatible markdown
+    - Clean markdown output
 
     Example:
         >>> generator = MarkdownGenerator()
@@ -98,7 +98,7 @@ class MarkdownGenerator:
         return f"---\n{yaml_str}---"
 
     def _generate_tags(self, template_name: str) -> list[str]:
-        """Generate Obsidian tags based on template name.
+        """Generate tags based on template name.
 
         Args:
             template_name: Template name

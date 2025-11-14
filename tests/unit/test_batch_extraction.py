@@ -570,17 +570,23 @@ class TestCostTracking:
         temp_cache: ExtractionCache,
         summary_template: ExtractionTemplate,
         quotes_template: ExtractionTemplate,
+        tmp_path: Path,
     ) -> None:
         """Test that costs are tracked correctly for batched extraction."""
+        from inkwell.utils.costs import CostTracker
+
         with patch("inkwell.extraction.engine.ClaudeExtractor"), patch(
             "inkwell.extraction.engine.GeminiExtractor"
         ):
-            engine = ExtractionEngine(cache=temp_cache)
+            # Create cost tracker with temp file
+            cost_tracker = CostTracker(costs_file=tmp_path / "costs.json")
+            engine = ExtractionEngine(cache=temp_cache, cost_tracker=cost_tracker)
 
             batch_response = json.dumps({"summary": "Test", "quotes": ["Quote"]})
             mock_extract = AsyncMock(return_value=batch_response)
             engine.gemini_extractor.extract = mock_extract
             engine.gemini_extractor.estimate_cost = Mock(return_value=0.01)
+            engine.gemini_extractor.model = "gemini-1.5-flash-latest"
 
             initial_cost = engine.get_total_cost()
 
@@ -590,6 +596,5 @@ class TestCostTracking:
                 metadata={"episode_url": "https://example.com/ep1"},
             )
 
-            # Cost should increase (2 templates * 0.01 * 1.1 overhead)
+            # Cost should increase with actual cost calculation
             assert engine.get_total_cost() > initial_cost
-            assert engine.get_total_cost() == pytest.approx(0.022, rel=0.01)

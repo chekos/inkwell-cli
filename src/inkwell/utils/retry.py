@@ -7,6 +7,7 @@ Based on ADR-027: Retry and Error Handling Strategy.
 import logging
 from collections.abc import Callable
 from functools import wraps
+from typing import Any
 
 from tenacity import (
     RetryCallState,
@@ -83,8 +84,8 @@ class RetryConfig:
     def __init__(
         self,
         max_attempts: int = 3,
-        max_wait_seconds: int = 10,
-        min_wait_seconds: int = 1,
+        max_wait_seconds: int | float = 10,
+        min_wait_seconds: int | float = 1,
         jitter: bool = True,
     ):
         """Initialize retry configuration.
@@ -96,8 +97,8 @@ class RetryConfig:
             jitter: Whether to add ±25% jitter to wait times
         """
         self.max_attempts = max_attempts
-        self.max_wait_seconds = max_wait_seconds
-        self.min_wait_seconds = min_wait_seconds
+        self.max_wait_seconds: int | float = max_wait_seconds
+        self.min_wait_seconds: int | float = min_wait_seconds
         self.jitter = jitter
 
 
@@ -192,7 +193,7 @@ def with_retry(
         )
 
         @wraps(func)
-        def wrapper(*args, **kwargs):
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
             try:
                 return retry_decorator(func)(*args, **kwargs)
             except Exception as e:

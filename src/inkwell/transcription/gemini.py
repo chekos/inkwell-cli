@@ -10,13 +10,8 @@ from google.generativeai.types import GenerateContentResponse
 from pydantic import BaseModel, Field
 
 from inkwell.transcription.models import Transcript, TranscriptSegment
+from inkwell.utils.errors import APIError
 from inkwell.utils.rate_limiter import get_rate_limiter
-
-
-class TranscriptionError(Exception):
-    """Raised when transcription fails."""
-
-    pass
 
 
 class CostEstimate(BaseModel):
@@ -154,11 +149,11 @@ class GeminiTranscriber:
         """
         # Validate file exists
         if not audio_path.exists():
-            raise TranscriptionError(f"Audio file not found: {audio_path}")
+            raise APIError(f"Audio file not found: {audio_path}")
 
         # Check format support
         if not await self.can_transcribe(audio_path):
-            raise TranscriptionError(
+            raise APIError(
                 f"Unsupported audio format: {audio_path.suffix}. "
                 f"Supported formats: MP3, M4A, WAV, AAC, OGG, FLAC"
             )
@@ -168,7 +163,7 @@ class GeminiTranscriber:
 
         # Confirm cost if above threshold
         if not await self._confirm_cost(estimate):
-            raise TranscriptionError(
+            raise APIError(
                 f"Transcription cancelled. Estimated cost: {estimate.formatted_cost} "
                 f"(threshold: ${self.cost_threshold_usd:.2f})"
             )
@@ -189,7 +184,7 @@ class GeminiTranscriber:
             return transcript
 
         except Exception as e:
-            raise TranscriptionError(
+            raise APIError(
                 f"Failed to transcribe audio with Gemini. "
                 f"This may be due to API errors, network issues, or file format problems. "
                 f"Error: {e}"
@@ -239,7 +234,7 @@ class GeminiTranscriber:
             Transcript object
         """
         if not response.text:
-            raise TranscriptionError("Gemini returned empty transcript")
+            raise APIError("Gemini returned empty transcript")
 
         # Parse transcript text into segments
         # Gemini doesn't provide native segment timestamps, so we create one large segment
@@ -281,7 +276,7 @@ class GeminiTranscriberWithSegments(GeminiTranscriber):
             Transcript with parsed segments if possible
         """
         if not response.text:
-            raise TranscriptionError("Gemini returned empty transcript")
+            raise APIError("Gemini returned empty transcript")
 
         # Try to parse timestamp markers like [00:00:00] or [0:00]
         segments = self._parse_timestamps(response.text)

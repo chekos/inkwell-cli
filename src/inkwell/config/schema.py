@@ -27,6 +27,37 @@ class FeedConfig(BaseModel):
     custom_templates: list[str] = Field(default_factory=list)
 
 
+class ObsidianConfig(BaseModel):
+    """Obsidian integration configuration."""
+
+    # Global enable/disable
+    enabled: bool = True
+
+    # Wikilinks
+    wikilinks_enabled: bool = True
+    wikilink_style: Literal["simple", "prefixed"] = "simple"  # [[Name]] or [[Type - Name]]
+    min_confidence: float = 0.7  # Minimum confidence for entity extraction
+    max_entities_per_type: int = 10  # Limit entities per type to avoid clutter
+
+    # Tags (Unit 4 - implemented)
+    tags_enabled: bool = True
+    tag_style: Literal["flat", "hierarchical"] = "hierarchical"
+    max_tags: int = 7
+    min_tag_confidence: float = 0.6
+    include_entity_tags: bool = True  # Generate tags from entities
+    include_llm_tags: bool = True  # Generate tags using LLM
+
+    # Dataview (Unit 5 - implemented)
+    dataview_enabled: bool = True
+    include_episode_number: bool = True
+    include_duration: bool = True
+    include_word_count: bool = True
+    include_ratings: bool = True
+    include_status: bool = True
+    default_status: Literal["inbox", "reading", "completed", "archived"] = "inbox"
+    default_priority: Literal["low", "medium", "high"] = "medium"
+
+
 class InterviewConfig(BaseModel):
     """Interview mode configuration."""
 
@@ -79,6 +110,7 @@ class GlobalConfig(BaseModel):
             "interview": ["books-mentioned", "people-mentioned"],
         }
     )
+    obsidian: ObsidianConfig = Field(default_factory=ObsidianConfig)
     interview: InterviewConfig = Field(default_factory=InterviewConfig)
 
 

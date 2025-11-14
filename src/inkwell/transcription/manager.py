@@ -1,5 +1,6 @@
 """Transcription manager orchestrating multi-tier transcription."""
 
+import asyncio
 from collections.abc import Callable
 from datetime import datetime, timezone
 
@@ -92,7 +93,7 @@ class TranscriptionManager:
         # Step 1: Check cache
         if use_cache:
             attempts.append("cache")
-            cached = self.cache.get(episode_url)
+            cached = await self.cache.get(episode_url)
             if cached:
                 duration = (datetime.now(timezone.utc) - start_time).total_seconds()
                 return TranscriptionResult(
@@ -112,7 +113,7 @@ class TranscriptionManager:
 
                 # Cache successful result
                 if use_cache:
-                    self.cache.set(episode_url, transcript)
+                    await self.cache.set(episode_url, transcript)
 
                 duration = (datetime.now(timezone.utc) - start_time).total_seconds()
                 return TranscriptionResult(
@@ -155,7 +156,7 @@ class TranscriptionManager:
 
             # Cache successful result
             if use_cache:
-                self.cache.set(episode_url, transcript)
+                await self.cache.set(episode_url, transcript)
 
             duration = (datetime.now(timezone.utc) - start_time).total_seconds()
             return TranscriptionResult(
@@ -202,7 +203,7 @@ class TranscriptionManager:
         Returns:
             Number of entries cleared
         """
-        return self.cache.clear()
+        return asyncio.run(self.cache.clear())
 
     def clear_expired_cache(self) -> int:
         """Clear expired cache entries.
@@ -210,7 +211,7 @@ class TranscriptionManager:
         Returns:
             Number of expired entries cleared
         """
-        return self.cache.clear_expired()
+        return asyncio.run(self.cache.clear_expired())
 
     def cache_stats(self) -> dict:
         """Get cache statistics.
@@ -218,4 +219,4 @@ class TranscriptionManager:
         Returns:
             Dictionary with cache stats
         """
-        return self.cache.stats()
+        return asyncio.run(self.cache.stats())

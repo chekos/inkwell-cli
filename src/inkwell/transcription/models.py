@@ -9,6 +9,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
+from inkwell.utils.datetime import now_utc
+
 
 class TranscriptSegment(BaseModel):
     """Single segment of transcript with timing information.
@@ -67,7 +69,7 @@ class Transcript(BaseModel):
     language: str = Field(default="en", description="Language code (ISO 639-1)")
     episode_url: str = Field(..., description="URL of the episode that was transcribed")
     created_at: datetime = Field(
-        default_factory=datetime.utcnow,
+        default_factory=now_utc,
         description="When this transcript was created",
     )
 

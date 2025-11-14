@@ -5,13 +5,17 @@ This module defines Pydantic models for:
 - Template variables (for prompt customization)
 - Extracted content (validated results)
 - Extraction results (operation envelope)
+- Extraction tracking (summary and attempt records)
 """
 
+from dataclasses import dataclass
 from datetime import datetime
-from pathlib import Path
-from typing import Any, Literal, Optional
+from enum import Enum
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
+
+from inkwell.utils.datetime import now_utc
 
 
 class TemplateVariable(BaseModel):
@@ -30,7 +34,7 @@ class TemplateVariable(BaseModel):
 
     name: str = Field(..., description="Variable name (e.g., 'podcast_name')")
     description: str = Field(..., description="Human-readable description")
-    default: Optional[str] = Field(None, description="Default value if not provided")
+    default: str | None = Field(None, description="Default value if not provided")
     required: bool = Field(True, description="Whether this variable is required")
 
     @field_validator("name")
@@ -74,19 +78,19 @@ class ExtractionTemplate(BaseModel):
     expected_format: Literal["json", "markdown", "yaml", "text"] = Field(
         ..., description="Expected output format"
     )
-    output_schema: Optional[dict[str, Any]] = Field(
+    output_schema: dict[str, Any] | None = Field(
         None, description="JSON schema for validation (optional)"
     )
 
     # Template metadata
-    category: Optional[str] = Field(None, description="Template category (e.g., 'tech')")
+    category: str | None = Field(None, description="Template category (e.g., 'tech')")
     applies_to: list[str] = Field(
         default_factory=lambda: ["all"], description="Conditions for template application"
     )
     priority: int = Field(0, description="Execution order (lower = earlier)")
 
     # LLM configuration
-    model_preference: Optional[str] = Field(
+    model_preference: str | None = Field(
         None, description="Preferred LLM provider (e.g., 'claude', 'gemini')"
     )
     max_tokens: int = Field(2000, description="Maximum tokens for LLM response", ge=1)
@@ -177,7 +181,7 @@ class ExtractedContent(BaseModel):
     )
 
     # Quality metrics
-    confidence: Optional[float] = Field(
+    confidence: float | None = Field(
         None, description="Confidence score (0-1)", ge=0, le=1
     )
     warnings: list[str] = Field(
@@ -186,7 +190,7 @@ class ExtractedContent(BaseModel):
 
     # Timestamps
     extracted_at: datetime = Field(
-        default_factory=datetime.utcnow, description="When extraction occurred"
+        default_factory=now_utc, description="When extraction occurred"
     )
 
     @property
@@ -227,24 +231,24 @@ class ExtractionResult(BaseModel):
 
     # Result status
     success: bool = Field(..., description="Whether extraction succeeded")
-    extracted_content: Optional[ExtractedContent] = Field(
+    extracted_content: ExtractedContent | None = Field(
         None, description="Extracted content (if successful)"
     )
-    error: Optional[str] = Field(None, description="Error message (if failed)")
+    error: str | None = Field(None, description="Error message (if failed)")
 
     # Metrics
     duration_seconds: float = Field(0.0, description="Extraction duration", ge=0)
     tokens_used: int = Field(0, description="Total tokens used (input + output)", ge=0)
     cost_usd: float = Field(0.0, description="Cost in USD", ge=0)
-    provider: Optional[str] = Field(None, description="LLM provider used")
+    provider: str | None = Field(None, description="LLM provider used")
 
     # Cache information
     from_cache: bool = Field(False, description="Whether result came from cache")
-    cache_key: Optional[str] = Field(None, description="Cache key if cached")
+    cache_key: str | None = Field(None, description="Cache key if cached")
 
     # Timestamp
     completed_at: datetime = Field(
-        default_factory=datetime.utcnow, description="When extraction completed"
+        default_factory=now_utc, description="When extraction completed"
     )
 
     @property
@@ -267,3 +271,108 @@ class ExtractionResult(BaseModel):
             )
         else:
             return f"✗ {self.template_name}: Failed - {self.error}"
+
+
+class ExtractionStatus(str, Enum):
+    """Status of an extraction attempt."""
+
+    SUCCESS = "success"
+    FAILED = "failed"
+    CACHED = "cached"
+
+
+@dataclass
+class ExtractionAttempt:
+    """Record of a single extraction attempt.
+
+    Tracks the outcome of attempting to extract content using a template,
+    including success/failure status, timing, and error details.
+
+    Example:
+        >>> attempt = ExtractionAttempt(
+        ...     template_name="summary",
+        ...     status=ExtractionStatus.SUCCESS,
+        ...     result=extraction_result,
+        ...     duration_seconds=2.5
+        ... )
+    """
+
+    template_name: str
+    status: ExtractionStatus
+    result: ExtractionResult | None = None
+    error: Exception | None = None
+    error_message: str | None = None
+    duration_seconds: float | None = None
+
+
+@dataclass
+class ExtractionSummary:
+    """Summary of all extraction attempts.
+
+    Aggregates results from multiple extraction attempts, providing
+    statistics and helper methods for reporting.
+
+    Example:
+        >>> summary = ExtractionSummary(
+        ...     total=4,
+        ...     successful=3,
+        ...     failed=1,
+        ...     cached=1,
+        ...     attempts=[...]
+        ... )
+        >>> print(summary.format_summary())
+    """
+
+    total: int
+    successful: int
+    failed: int
+    cached: int
+    attempts: list[ExtractionAttempt]
+
+    @property
+    def success_rate(self) -> float:
+        """Calculate success rate percentage.
+
+        Returns:
+            Success rate as percentage (0-100)
+        """
+        if self.total == 0:
+            return 0.0
+        return (self.successful / self.total) * 100
+
+    @property
+    def failed_templates(self) -> list[str]:
+        """Get list of failed template names.
+
+        Returns:
+            List of template names that failed extraction
+        """
+        return [
+            attempt.template_name
+            for attempt in self.attempts
+            if attempt.status == ExtractionStatus.FAILED
+        ]
+
+    def format_summary(self) -> str:
+        """Format summary for user display.
+
+        Returns:
+            Formatted string with extraction statistics and error details
+        """
+        lines = [
+            "\nExtraction Summary:",
+            f"  Total: {self.total}",
+            f"  Successful: {self.successful}",
+            f"  Failed: {self.failed}",
+            f"  Cached: {self.cached}",
+            f"  Success Rate: {self.success_rate:.1f}%",
+        ]
+
+        if self.failed > 0:
+            lines.append("\nFailed Templates:")
+            for attempt in self.attempts:
+                if attempt.status == ExtractionStatus.FAILED:
+                    error_msg = attempt.error_message or str(attempt.error)
+                    lines.append(f"  - {attempt.template_name}: {error_msg}")
+
+        return "\n".join(lines)

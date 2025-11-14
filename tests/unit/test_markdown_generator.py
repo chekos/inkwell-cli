@@ -1,6 +1,5 @@
 """Unit tests for markdown generator."""
 
-from datetime import datetime
 
 import pytest
 
@@ -32,8 +31,10 @@ class TestMarkdownGeneratorFrontmatter:
     ) -> None:
         """Test basic frontmatter generation."""
         result = ExtractionResult(
+            episode_url="https://example.com/ep1",
             template_name="summary",
-            content=ExtractedContent(format="text", data={"text": "Test"}, raw="Test"),
+            success=True,
+            extracted_content=ExtractedContent(template_name="summary", content="Test"),
             cost_usd=0.01,
             provider="gemini",
         )
@@ -53,8 +54,10 @@ class TestMarkdownGeneratorFrontmatter:
     ) -> None:
         """Test that URL is included in frontmatter."""
         result = ExtractionResult(
+            episode_url="https://example.com/ep1",
             template_name="summary",
-            content=ExtractedContent(format="text", data={"text": "Test"}, raw="Test"),
+            success=True,
+            extracted_content=ExtractedContent(template_name="summary", content="Test"),
             cost_usd=0.0,
             provider="cache",
         )
@@ -68,8 +71,10 @@ class TestMarkdownGeneratorFrontmatter:
     ) -> None:
         """Test that appropriate tags are generated."""
         result = ExtractionResult(
+            episode_url="https://example.com/ep1",
             template_name="quotes",
-            content=ExtractedContent(format="json", data={"quotes": []}, raw="{}"),
+            success=True,
+            extracted_content=ExtractedContent(template_name="quotes", content={"quotes": []}),
             cost_usd=0.0,
             provider="cache",
         )
@@ -102,8 +107,10 @@ class TestMarkdownGeneratorFrontmatter:
     def test_frontmatter_with_missing_metadata(self, generator: MarkdownGenerator) -> None:
         """Test frontmatter generation with missing metadata."""
         result = ExtractionResult(
+            episode_url="https://example.com/ep1",
             template_name="summary",
-            content=ExtractedContent(format="text", data={"text": "Test"}, raw="Test"),
+            success=True,
+            extracted_content=ExtractedContent(template_name="summary", content="Test"),
             cost_usd=0.0,
             provider="cache",
         )
@@ -130,7 +137,7 @@ class TestMarkdownGeneratorQuotes:
             ]
         }
 
-        content = ExtractedContent(format="json", data=data, raw="")
+        _content = ExtractedContent(template_name="quotes", content=data)
         markdown = generator._format_quotes(data)
 
         assert "# Quotes" in markdown
@@ -318,9 +325,8 @@ class TestMarkdownGeneratorGeneric:
     def test_format_markdown_content(self, generator: MarkdownGenerator) -> None:
         """Test markdown content (pass-through)."""
         content = ExtractedContent(
-            format="markdown",
-            data={"text": "# Heading\n\nParagraph text"},
-            raw="# Heading\n\nParagraph text",
+            template_name="summary",
+            content="# Heading\n\nParagraph text",
         )
 
         markdown = generator._format_markdown_content(content)
@@ -329,7 +335,7 @@ class TestMarkdownGeneratorGeneric:
 
     def test_format_yaml_content(self, generator: MarkdownGenerator) -> None:
         """Test YAML content formatting."""
-        content = ExtractedContent(format="yaml", data={"key": "value"}, raw="key: value")
+        content = ExtractedContent(template_name="test", content={"key": "value"})
 
         markdown = generator._format_yaml_content(content)
 
@@ -340,7 +346,7 @@ class TestMarkdownGeneratorGeneric:
     def test_format_text_content(self, generator: MarkdownGenerator) -> None:
         """Test text content formatting."""
         content = ExtractedContent(
-            format="text", data={"text": "Plain text content"}, raw="Plain text content"
+            template_name="summary", content="Plain text content"
         )
 
         markdown = generator._format_text_content(content)
@@ -356,9 +362,11 @@ class TestMarkdownGeneratorFullGeneration:
     ) -> None:
         """Test full markdown generation with frontmatter."""
         result = ExtractionResult(
+            episode_url="https://example.com/ep1",
             template_name="summary",
-            content=ExtractedContent(
-                format="text", data={"text": "Episode summary"}, raw="Episode summary"
+            success=True,
+            extracted_content=ExtractedContent(
+                template_name="summary", content="Episode summary"
             ),
             cost_usd=0.01,
             provider="gemini",
@@ -382,9 +390,11 @@ class TestMarkdownGeneratorFullGeneration:
     ) -> None:
         """Test markdown generation without frontmatter."""
         result = ExtractionResult(
+            episode_url="https://example.com/ep1",
             template_name="summary",
-            content=ExtractedContent(
-                format="text", data={"text": "Episode summary"}, raw="Episode summary"
+            success=True,
+            extracted_content=ExtractedContent(
+                template_name="summary", content="Episode summary"
             ),
             cost_usd=0.0,
             provider="cache",
@@ -404,15 +414,16 @@ class TestMarkdownGeneratorFullGeneration:
     ) -> None:
         """Test generation with JSON quotes."""
         result = ExtractionResult(
+            episode_url="https://example.com/ep1",
             template_name="quotes",
-            content=ExtractedContent(
-                format="json",
-                data={
+            success=True,
+            extracted_content=ExtractedContent(
+                template_name="quotes",
+                content={
                     "quotes": [
                         {"text": "Test quote", "speaker": "Speaker", "timestamp": "10:00"}
                     ]
                 },
-                raw='{"quotes": [...]}',
             ),
             cost_usd=0.01,
             provider="claude",
@@ -432,8 +443,10 @@ class TestMarkdownGeneratorFullGeneration:
         summary_text = "# Summary\n\nThis episode discusses testing.\n\n## Key Points\n\n- Point 1\n- Point 2"
 
         result = ExtractionResult(
+            episode_url="https://example.com/ep1",
             template_name="summary",
-            content=ExtractedContent(format="markdown", data={"text": summary_text}, raw=summary_text),
+            success=True,
+            extracted_content=ExtractedContent(template_name="summary", content=summary_text),
             cost_usd=0.005,
             provider="gemini",
         )
@@ -449,8 +462,10 @@ class TestMarkdownGeneratorFullGeneration:
     ) -> None:
         """Test that cached results are properly marked."""
         result = ExtractionResult(
+            episode_url="https://example.com/ep1",
             template_name="summary",
-            content=ExtractedContent(format="text", data={"text": "Summary"}, raw="Summary"),
+            success=True,
+            extracted_content=ExtractedContent(template_name="summary", content="Summary"),
             cost_usd=0.0,
             provider="cache",
         )
@@ -508,7 +523,7 @@ class TestMarkdownGeneratorEdgeCases:
         """Test handling of very long content."""
         long_text = "x" * 10000
 
-        content = ExtractedContent(format="text", data={"text": long_text}, raw=long_text)
+        content = ExtractedContent(template_name="summary", content=long_text)
 
         markdown = generator._format_text_content(content)
 

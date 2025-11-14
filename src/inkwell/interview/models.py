@@ -1,11 +1,13 @@
 """Interview data models for conversation state and session management."""
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Literal
 from uuid import uuid4
 
 from pydantic import BaseModel, Field, field_validator
+
+from inkwell.utils.datetime import now_utc
 
 
 class InterviewGuidelines(BaseModel):
@@ -53,7 +55,7 @@ class Question(BaseModel):
     question_number: int  # 1-indexed
     depth_level: int = 0  # 0 = top-level, 1+ = follow-up depth
     parent_question_id: str | None = None
-    generated_at: datetime = Field(default_factory=datetime.utcnow)
+    generated_at: datetime = Field(default_factory=now_utc)
     context_used: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("text")
@@ -87,7 +89,7 @@ class Response(BaseModel):
     question_id: str
     text: str
     word_count: int = 0
-    responded_at: datetime = Field(default_factory=datetime.utcnow)
+    responded_at: datetime = Field(default_factory=now_utc)
     thinking_time_seconds: float = 0.0
 
     def __init__(self, **data: Any) -> None:
@@ -141,14 +143,25 @@ class InterviewSession(BaseModel):
     podcast_name: str
 
     # Session metadata
-    started_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    started_at: datetime = Field(default_factory=now_utc)
+    updated_at: datetime = Field(default_factory=now_utc)
     completed_at: datetime | None = None
 
     # Session configuration
     template_name: str = "reflective"
     guidelines: InterviewGuidelines | None = None
     max_questions: int = 5
+
+    @field_validator("started_at", "updated_at", "completed_at", mode="before")
+    @classmethod
+    def ensure_timezone_aware_timestamps(cls, v: datetime | None) -> datetime | None:
+        """Ensure all timestamps are timezone-aware."""
+        if v is None:
+            return None
+        if isinstance(v, datetime) and v.tzinfo is None:
+            # Assume UTC for naive datetimes during deserialization
+            return v.replace(tzinfo=timezone.utc)
+        return v
 
     # Conversation state
     exchanges: list[Exchange] = Field(default_factory=list)
@@ -192,12 +205,12 @@ class InterviewSession(BaseModel):
     @property
     def duration(self) -> timedelta:
         """Return session duration."""
-        end = self.completed_at if self.completed_at else datetime.utcnow()
+        end = self.completed_at if self.completed_at else now_utc()
         return end - self.started_at
 
     def mark_updated(self) -> None:
         """Update the updated_at timestamp."""
-        self.updated_at = datetime.utcnow()
+        self.updated_at = now_utc()
 
     def add_exchange(self, question: Question, response: Response) -> None:
         """Add a question-response exchange to the session."""
@@ -209,7 +222,7 @@ class InterviewSession(BaseModel):
     def complete(self) -> None:
         """Mark session as completed."""
         self.status = "completed"
-        self.completed_at = datetime.utcnow()
+        self.completed_at = now_utc()
         self.mark_updated()
 
     def pause(self) -> None:
@@ -273,6 +286,13 @@ class InterviewContext(BaseModel):
         if self.key_concepts:
             context_parts.extend(["", "## Key Concepts"])
             context_parts.extend([f"- {concept}" for concept in self.key_concepts])
+
+        if self.previous_interviews:
+            context_parts.extend(["", "## Previous Interview Sessions", ""])
+            for i, session_summary in enumerate(self.previous_interviews, 1):
+                context_parts.append(session_summary)
+                if i < len(self.previous_interviews):
+                    context_parts.append("")  # Add blank line between sessions
 
         if self.guidelines:
             context_parts.extend(

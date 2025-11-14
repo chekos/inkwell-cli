@@ -6,7 +6,6 @@ extraction templates from YAML files.
 
 import logging
 from pathlib import Path
-from typing import Optional
 
 import yaml
 from pydantic import ValidationError
@@ -44,8 +43,8 @@ class TemplateLoader:
 
     def __init__(
         self,
-        template_dirs: Optional[list[Path]] = None,
-        user_template_dir: Optional[Path] = None,
+        template_dirs: list[Path] | None = None,
+        user_template_dir: Path | None = None,
     ):
         """Initialize template loader.
 
@@ -131,7 +130,7 @@ class TemplateLoader:
         logger.info(f"Loaded template '{name}' from {template_path}")
         return template
 
-    def _find_template(self, name: str) -> Optional[Path]:
+    def _find_template(self, name: str) -> Path | None:
         """Find template file by name.
 
         Searches in user directory first, then built-in directories.
@@ -205,7 +204,7 @@ class TemplateLoader:
 
         return template
 
-    def list_templates(self, category: Optional[str] = None) -> list[str]:
+    def list_templates(self, category: str | None = None) -> list[str]:
         """List available template names.
 
         Args:
@@ -251,7 +250,7 @@ class TemplateLoader:
         self._template_cache.clear()
         logger.info("Template cache cleared")
 
-    def validate_template(self, path: Path) -> tuple[bool, Optional[str]]:
+    def validate_template(self, path: Path) -> tuple[bool, str | None]:
         """Validate a template file without loading it.
 
         Args:

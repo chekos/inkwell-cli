@@ -476,14 +476,430 @@ def test_load_previous_interviews_nonexistent_dir(context_builder):
 
 def test_load_previous_interviews_with_files(context_builder, tmp_path):
     """Test loading previous interviews when files exist."""
-    # Create some mock session files
-    (tmp_path / "session-001.json").touch()
-    (tmp_path / "session-002.json").touch()
-    (tmp_path / "session-003.json").touch()
+    import json
+    import time
+    from datetime import datetime, timedelta
+
+    # Create some mock session files with valid JSON
+    base_date = datetime(2025, 11, 1, 10, 0, 0)
+    for i in range(1, 4):
+        session_date = base_date + timedelta(days=i)
+        session_data = {
+            "session_id": f"session-{i}",
+            "episode_url": "https://example.com/test",
+            "status": "completed",
+            "completed_at": session_date.isoformat() + "+00:00",
+            "exchanges": [
+                {
+                    "question": {"text": f"Question {i}?", "question_number": 1},
+                    "response": {"text": f"Response {i}.", "word_count": 2}
+                }
+            ]
+        }
+        with open(tmp_path / f"session-00{i}.json", "w") as f:
+            json.dump(session_data, f)
+        # Small delay to ensure different mtimes
+        time.sleep(0.01)
 
     summaries = context_builder.load_previous_interviews(tmp_path, limit=2)
 
-    # Should return most recent 2
+    # Should return most recent 2 (by modification time)
     assert len(summaries) == 2
-    assert any("session-002.json" in s for s in summaries)
-    assert any("session-003.json" in s for s in summaries)
+    # Since files are created in order 1, 2, 3, the most recent by mtime are 2 and 3
+    assert "Question 3?" in summaries[1]  # Most recent
+    assert "Question 2?" in summaries[0]
+
+
+# New _load_previous_interviews Tests (Episode-Specific)
+
+
+def test_load_previous_interviews_no_sessions_dir(context_builder, sample_metadata):
+    """Test loading previous interviews when .sessions directory doesn't exist."""
+    output = EpisodeOutput(
+        metadata=sample_metadata,
+        output_dir=Path("/tmp/test-episode"),
+    )
+
+    summaries = context_builder._load_previous_interviews(output)
+    assert summaries == []
+
+
+def test_load_previous_interviews_empty_sessions_dir(context_builder, sample_metadata, tmp_path):
+    """Test loading previous interviews from empty .sessions directory."""
+    output_dir = tmp_path / "episode-output"
+    output_dir.mkdir()
+    sessions_dir = output_dir / ".sessions"
+    sessions_dir.mkdir()
+
+    output = EpisodeOutput(
+        metadata=sample_metadata,
+        output_dir=output_dir,
+    )
+
+    summaries = context_builder._load_previous_interviews(output)
+    assert summaries == []
+
+
+def test_load_previous_interviews_with_completed_session(
+    context_builder, sample_metadata, tmp_path
+):
+    """Test loading completed interview sessions for an episode."""
+    import json
+
+    output_dir = tmp_path / "episode-output"
+    output_dir.mkdir()
+    sessions_dir = output_dir / ".sessions"
+    sessions_dir.mkdir()
+
+    # Create a completed session with exchanges
+    session_data = {
+        "session_id": "test-session-1",
+        "episode_url": "https://example.com/ep123",
+        "episode_title": "Building Better Software",
+        "podcast_name": "The Changelog",
+        "status": "completed",
+        "completed_at": "2025-11-10T10:30:00+00:00",
+        "exchanges": [
+            {
+                "question": {
+                    "text": "What was the most surprising insight?",
+                    "question_number": 1,
+                },
+                "response": {
+                    "text": (
+                        "The discussion about compound learning effects was "
+                        "eye-opening and really changed my perspective on "
+                        "how I approach daily work."
+                    ),
+                    "word_count": 20,
+                },
+            },
+            {
+                "question": {
+                    "text": "How does this relate to your experience?",
+                    "question_number": 2,
+                },
+                "response": {
+                    "text": (
+                        "I've noticed similar patterns in my own work with "
+                        "distributed systems where small improvements "
+                        "compound over time."
+                    ),
+                    "word_count": 18,
+                },
+            }
+        ]
+    }
+
+    session_file = sessions_dir / "session-test-1.json"
+    with open(session_file, "w") as f:
+        json.dump(session_data, f)
+
+    output = EpisodeOutput(
+        metadata=sample_metadata,
+        output_dir=output_dir,
+    )
+
+    summaries = context_builder._load_previous_interviews(output)
+
+    assert len(summaries) == 1
+    assert "Session on 2025-11-10:" in summaries[0]
+    assert "What was the most surprising insight?" in summaries[0]
+    assert "compound learning effects" in summaries[0]
+    assert "How does this relate to your experience?" in summaries[0]
+
+
+def test_load_previous_interviews_filters_by_episode_url(
+    context_builder, sample_metadata, tmp_path
+):
+    """Test that only sessions matching episode URL are loaded."""
+    import json
+
+    output_dir = tmp_path / "episode-output"
+    output_dir.mkdir()
+    sessions_dir = output_dir / ".sessions"
+    sessions_dir.mkdir()
+
+    # Create session for different episode
+    other_session_data = {
+        "session_id": "other-session",
+        "episode_url": "https://example.com/different-episode",
+        "status": "completed",
+        "completed_at": "2025-11-10T10:30:00+00:00",
+        "exchanges": []
+    }
+
+    # Create session for this episode
+    this_session_data = {
+        "session_id": "this-session",
+        "episode_url": "https://example.com/ep123",  # Matches sample_metadata
+        "status": "completed",
+        "completed_at": "2025-11-11T10:30:00+00:00",
+        "exchanges": [
+            {
+                "question": {"text": "Test question?", "question_number": 1},
+                "response": {"text": "Test response here.", "word_count": 3}
+            }
+        ]
+    }
+
+    with open(sessions_dir / "session-other.json", "w") as f:
+        json.dump(other_session_data, f)
+
+    with open(sessions_dir / "session-this.json", "w") as f:
+        json.dump(this_session_data, f)
+
+    output = EpisodeOutput(
+        metadata=sample_metadata,
+        output_dir=output_dir,
+    )
+
+    summaries = context_builder._load_previous_interviews(output)
+
+    # Should only load the session matching this episode
+    assert len(summaries) == 1
+    assert "Session on 2025-11-11:" in summaries[0]
+    assert "Test question?" in summaries[0]
+
+
+def test_load_previous_interviews_filters_non_completed(context_builder, sample_metadata, tmp_path):
+    """Test that only completed sessions are loaded."""
+    import json
+
+    output_dir = tmp_path / "episode-output"
+    output_dir.mkdir()
+    sessions_dir = output_dir / ".sessions"
+    sessions_dir.mkdir()
+
+    # Create active (non-completed) session
+    active_session = {
+        "session_id": "active-session",
+        "episode_url": "https://example.com/ep123",
+        "status": "active",
+        "exchanges": []
+    }
+
+    # Create completed session
+    completed_session = {
+        "session_id": "completed-session",
+        "episode_url": "https://example.com/ep123",
+        "status": "completed",
+        "completed_at": "2025-11-11T10:30:00+00:00",
+        "exchanges": [
+            {
+                "question": {"text": "Completed question?", "question_number": 1},
+                "response": {"text": "Completed response.", "word_count": 2}
+            }
+        ]
+    }
+
+    with open(sessions_dir / "session-active.json", "w") as f:
+        json.dump(active_session, f)
+
+    with open(sessions_dir / "session-completed.json", "w") as f:
+        json.dump(completed_session, f)
+
+    output = EpisodeOutput(
+        metadata=sample_metadata,
+        output_dir=output_dir,
+    )
+
+    summaries = context_builder._load_previous_interviews(output)
+
+    # Should only load completed session
+    assert len(summaries) == 1
+    assert "Completed question?" in summaries[0]
+
+
+def test_load_previous_interviews_limits_to_recent(context_builder, sample_metadata, tmp_path):
+    """Test that only most recent N sessions are loaded."""
+    import json
+    from datetime import datetime, timedelta
+
+    output_dir = tmp_path / "episode-output"
+    output_dir.mkdir()
+    sessions_dir = output_dir / ".sessions"
+    sessions_dir.mkdir()
+
+    # Create 5 completed sessions with different dates
+    base_date = datetime(2025, 11, 1, 10, 0, 0)
+    for i in range(5):
+        session_date = base_date + timedelta(days=i)
+        session_data = {
+            "session_id": f"session-{i}",
+            "episode_url": "https://example.com/ep123",
+            "status": "completed",
+            "completed_at": session_date.isoformat() + "+00:00",
+            "exchanges": [
+                {
+                    "question": {"text": f"Question {i}?", "question_number": 1},
+                    "response": {"text": f"Response {i}.", "word_count": 2}
+                }
+            ]
+        }
+
+        with open(sessions_dir / f"session-{i}.json", "w") as f:
+            json.dump(session_data, f)
+
+    output = EpisodeOutput(
+        metadata=sample_metadata,
+        output_dir=output_dir,
+    )
+
+    # Request limit of 3 sessions
+    summaries = context_builder._load_previous_interviews(output, limit=3)
+
+    # Should only get 3 most recent (sessions 2, 3, 4)
+    assert len(summaries) == 3
+    assert "Question 4?" in summaries[0]  # Newest first
+    assert "Question 3?" in summaries[1]
+    assert "Question 2?" in summaries[2]
+
+
+def test_load_previous_interviews_truncates_long_responses(
+    context_builder, sample_metadata, tmp_path
+):
+    """Test that long responses are truncated in summaries."""
+    import json
+
+    output_dir = tmp_path / "episode-output"
+    output_dir.mkdir()
+    sessions_dir = output_dir / ".sessions"
+    sessions_dir.mkdir()
+
+    long_response = "A" * 150  # 150 characters, should be truncated to 100
+
+    session_data = {
+        "session_id": "test-session",
+        "episode_url": "https://example.com/ep123",
+        "status": "completed",
+        "completed_at": "2025-11-10T10:30:00+00:00",
+        "exchanges": [
+            {
+                "question": {"text": "Test question?", "question_number": 1},
+                "response": {"text": long_response, "word_count": 1}
+            }
+        ]
+    }
+
+    with open(sessions_dir / "session-test.json", "w") as f:
+        json.dump(session_data, f)
+
+    output = EpisodeOutput(
+        metadata=sample_metadata,
+        output_dir=output_dir,
+    )
+
+    summaries = context_builder._load_previous_interviews(output)
+
+    assert len(summaries) == 1
+    # Response should be truncated to 100 chars + "..."
+    assert "A" * 100 + "..." in summaries[0]
+    assert len("A" * 150) > 100  # Verify our test data is actually long
+
+
+def test_load_previous_interviews_handles_invalid_json(context_builder, sample_metadata, tmp_path):
+    """Test that invalid session files are skipped gracefully."""
+    output_dir = tmp_path / "episode-output"
+    output_dir.mkdir()
+    sessions_dir = output_dir / ".sessions"
+    sessions_dir.mkdir()
+
+    # Create invalid JSON file
+    invalid_file = sessions_dir / "session-invalid.json"
+    with open(invalid_file, "w") as f:
+        f.write("{ invalid json }")
+
+    # Create valid session file
+    valid_session = {
+        "session_id": "valid-session",
+        "episode_url": "https://example.com/ep123",
+        "status": "completed",
+        "completed_at": "2025-11-10T10:30:00+00:00",
+        "exchanges": [
+            {
+                "question": {"text": "Valid question?", "question_number": 1},
+                "response": {"text": "Valid response.", "word_count": 2}
+            }
+        ]
+    }
+
+    with open(sessions_dir / "session-valid.json", "w") as f:
+        import json
+        json.dump(valid_session, f)
+
+    output = EpisodeOutput(
+        metadata=sample_metadata,
+        output_dir=output_dir,
+    )
+
+    summaries = context_builder._load_previous_interviews(output)
+
+    # Should skip invalid file and load only valid one
+    assert len(summaries) == 1
+    assert "Valid question?" in summaries[0]
+
+
+def test_build_context_includes_previous_interviews(context_builder, sample_metadata, tmp_path):
+    """Test that build_context includes previous interview sessions."""
+    import json
+
+    output_dir = tmp_path / "episode-output"
+    output_dir.mkdir()
+    sessions_dir = output_dir / ".sessions"
+    sessions_dir.mkdir()
+
+    # Create a completed session
+    session_data = {
+        "session_id": "test-session",
+        "episode_url": "https://example.com/ep123",
+        "status": "completed",
+        "completed_at": "2025-11-10T10:30:00+00:00",
+        "exchanges": [
+            {
+                "question": {"text": "Previous question?", "question_number": 1},
+                "response": {"text": "Previous response here.", "word_count": 3}
+            }
+        ]
+    }
+
+    with open(sessions_dir / "session-test.json", "w") as f:
+        json.dump(session_data, f)
+
+    output = EpisodeOutput(
+        metadata=sample_metadata,
+        output_dir=output_dir,
+    )
+
+    context = context_builder.build_context(output)
+
+    # Should have previous interviews populated
+    assert len(context.previous_interviews) == 1
+    assert "Session on 2025-11-10:" in context.previous_interviews[0]
+    assert "Previous question?" in context.previous_interviews[0]
+
+
+def test_to_prompt_context_includes_previous_interviews():
+    """Test that previous interviews appear in prompt context."""
+    from inkwell.interview.models import InterviewContext
+
+    context = InterviewContext(
+        podcast_name="Test Podcast",
+        episode_title="Test Episode",
+        episode_url="https://example.com/test",
+        duration_minutes=60.0,
+        summary="Test summary",
+        previous_interviews=[
+            (
+                "Session on 2025-11-10:\n  Q: What was surprising?\n  "
+                "A: The insight about...\n  (2/2 substantive responses)"
+            )
+        ],
+    )
+
+    prompt_text = context.to_prompt_context()
+
+    # Should include previous interviews section
+    assert "## Previous Interview Sessions" in prompt_text
+    assert "Session on 2025-11-10:" in prompt_text
+    assert "What was surprising?" in prompt_text

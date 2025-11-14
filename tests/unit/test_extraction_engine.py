@@ -113,8 +113,8 @@ class TestExtractionEngineExtract:
             )
 
             assert result.template_name == "summary"
-            assert result.content.format == "text"
-            assert result.content.data["text"] == "Extracted summary"
+            assert result.extracted_content is not None
+            assert result.extracted_content.content == "Extracted summary"
             assert result.provider == "gemini"
             assert result.cost_usd == 0.01
 
@@ -140,9 +140,8 @@ class TestExtractionEngineExtract:
                 metadata={},
             )
 
-            assert result.content.format == "json"
-            assert result.content.data == {"quotes": ["one", "two"]}
-            assert result.content.raw == json_output
+            assert result.extracted_content is not None
+            assert result.extracted_content.content == {"quotes": ["one", "two"]}
 
     @pytest.mark.asyncio
     async def test_extract_uses_cache(
@@ -392,7 +391,7 @@ class TestExtractionEngineMultipleExtractions:
             engine.gemini_extractor.extract = mock_extract_fn
             engine.gemini_extractor.estimate_cost = Mock(return_value=0.01)
 
-            results = await engine.extract_all(
+            results, summary = await engine.extract_all(
                 templates=[text_template, json_template],
                 transcript="Test transcript",
                 metadata={},
@@ -401,6 +400,8 @@ class TestExtractionEngineMultipleExtractions:
             assert len(results) == 2
             assert results[0].template_name == "summary"
             assert results[1].template_name == "quotes"
+            assert summary.total == 2
+            assert summary.successful == 2
 
     @pytest.mark.asyncio
     async def test_extract_all_partial_failure(
@@ -429,7 +430,7 @@ class TestExtractionEngineMultipleExtractions:
             engine.gemini_extractor.extract = mock_extract_fn
             engine.gemini_extractor.estimate_cost = Mock(return_value=0.01)
 
-            results = await engine.extract_all(
+            results, summary = await engine.extract_all(
                 templates=[text_template, json_template],
                 transcript="Test transcript",
                 metadata={},
@@ -438,6 +439,10 @@ class TestExtractionEngineMultipleExtractions:
             # Only successful results returned
             assert len(results) == 1
             assert results[0].template_name == "summary"
+            # But summary tracks both attempts
+            assert summary.total == 2
+            assert summary.successful == 1
+            assert summary.failed == 1
 
 
 class TestExtractionEngineCostTracking:
@@ -538,9 +543,8 @@ class TestExtractionEngineOutputParsing:
 
             content = engine._parse_output("Plain text result", text_template)
 
-            assert content.format == "text"
-            assert content.data["text"] == "Plain text result"
-            assert content.raw == "Plain text result"
+            assert content.template_name == "summary"
+            assert content.content == "Plain text result"
 
     def test_parse_json_output(self, mock_api_keys: None, json_template: ExtractionTemplate) -> None:
         """Test parsing JSON output."""
@@ -552,9 +556,8 @@ class TestExtractionEngineOutputParsing:
             json_str = '{"quotes": ["one", "two"]}'
             content = engine._parse_output(json_str, json_template)
 
-            assert content.format == "json"
-            assert content.data == {"quotes": ["one", "two"]}
-            assert content.raw == json_str
+            assert content.template_name == "quotes"
+            assert content.content == {"quotes": ["one", "two"]}
 
     def test_parse_markdown_output(self, mock_api_keys: None) -> None:
         """Test parsing markdown output."""
@@ -574,8 +577,8 @@ class TestExtractionEngineOutputParsing:
 
             content = engine._parse_output("# Summary\n\nContent here", md_template)
 
-            assert content.format == "markdown"
-            assert content.data["text"] == "# Summary\n\nContent here"
+            assert content.template_name == "summary"
+            assert content.content == "# Summary\n\nContent here"
 
     def test_parse_yaml_output(self, mock_api_keys: None) -> None:
         """Test parsing YAML output."""
@@ -596,5 +599,5 @@ class TestExtractionEngineOutputParsing:
             yaml_str = "quotes:\n  - one\n  - two"
             content = engine._parse_output(yaml_str, yaml_template)
 
-            assert content.format == "yaml"
-            assert content.data == {"quotes": ["one", "two"]}
+            assert content.template_name == "data"
+            assert content.content == {"quotes": ["one", "two"]}

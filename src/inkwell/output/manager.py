@@ -3,7 +3,8 @@
 Handles directory creation, atomic file writes, and metadata generation.
 """
 
-import json
+import logging
+import os
 import shutil
 import tempfile
 from pathlib import Path
@@ -12,8 +13,11 @@ from typing import Any
 import yaml
 
 from ..extraction.models import ExtractionResult
+from ..utils.errors import SecurityError
 from .markdown import MarkdownGenerator
 from .models import EpisodeMetadata, EpisodeOutput, OutputFile
+
+logger = logging.getLogger(__name__)
 
 
 class OutputManager:
@@ -108,15 +112,22 @@ class OutputManager:
         self._write_metadata(metadata_file, episode_metadata)
 
         return EpisodeOutput(
-            directory=episode_dir,
-            metadata_file=metadata_file,
-            output_files=output_files,
+            metadata=episode_metadata,
+            output_dir=episode_dir,
+            files=output_files,
         )
 
     def _create_episode_directory(
         self, episode_metadata: EpisodeMetadata, overwrite: bool
     ) -> Path:
-        """Create episode directory.
+        """Create episode directory with comprehensive security checks.
+
+        This method implements defense-in-depth path traversal protection:
+        1. Sanitizes directory names to remove traversal sequences
+        2. Validates resolved paths stay within output directory
+        3. Prevents symlink attacks
+        4. Validates overwrite targets are episode directories
+        5. Creates backups before overwrite with rollback support
 
         Args:
             episode_metadata: Episode metadata
@@ -127,45 +138,132 @@ class OutputManager:
 
         Raises:
             FileExistsError: If directory exists and overwrite=False
+            SecurityError: If path traversal or symlink attack detected
+            ValueError: If directory name is invalid or empty after sanitization
         """
         # Get directory name from metadata
         dir_name = episode_metadata.directory_name
 
+        # Step 1: Sanitize directory name
+        # Remove path traversal sequences and path separators
+        dir_name = dir_name.replace("..", "").replace("/", "-").replace("\\", "-")
+
+        # Step 2: Remove null bytes (path injection)
+        dir_name = dir_name.replace("\0", "")
+
+        # Step 3: Ensure it's not empty after sanitization
+        if not dir_name.strip():
+            raise ValueError("Episode directory name is empty after sanitization")
+
         episode_dir = self.output_dir / dir_name
 
+        # Step 4: Verify resolved path is within output_dir
+        try:
+            resolved_episode = episode_dir.resolve()
+            resolved_output = self.output_dir.resolve()
+            resolved_episode.relative_to(resolved_output)
+        except ValueError:
+            raise SecurityError(
+                f"Invalid directory path: {dir_name}. "
+                f"Resolved path {resolved_episode} is outside output directory."
+            )
+
+        # Step 5: Check it's not a symlink (symlink attack)
+        if episode_dir.exists() and episode_dir.is_symlink():
+            raise SecurityError(
+                f"Episode directory {episode_dir} is a symlink. "
+                f"Refusing to use for security reasons."
+            )
+
+        # Step 6: Handle overwrite with validation
         if episode_dir.exists():
             if not overwrite:
                 raise FileExistsError(
                     f"Episode directory already exists: {episode_dir}\n"
                     f"Use --overwrite to replace existing directory."
                 )
-            # Remove existing directory
-            shutil.rmtree(episode_dir)
 
-        # Create directory
-        episode_dir.mkdir(parents=True, exist_ok=True)
+            # Validate it looks like an episode directory
+            if not (episode_dir / ".metadata.yaml").exists():
+                raise ValueError(
+                    f"Directory {episode_dir} doesn't contain .metadata.yaml. "
+                    f"Refusing to delete (may not be an episode directory)."
+                )
+
+            # Create backup before deletion
+            backup_dir = episode_dir.with_suffix('.backup')
+            if backup_dir.exists():
+                shutil.rmtree(backup_dir)
+            episode_dir.rename(backup_dir)
+
+            try:
+                episode_dir.mkdir(parents=True)
+            except Exception:
+                # Restore backup on failure
+                if backup_dir.exists() and not episode_dir.exists():
+                    backup_dir.rename(episode_dir)
+                raise
+        else:
+            episode_dir.mkdir(parents=True, exist_ok=True)
 
         return episode_dir
 
     def _write_file_atomic(self, file_path: Path, content: str) -> None:
-        """Write file atomically (write to temp, then move).
+        """Write file atomically with guaranteed durability.
+
+        Uses temp file + rename pattern with fsync to ensure data is on disk
+        before rename completes. This protects against data loss from power
+        failure or system crash.
+
+        The implementation follows these steps:
+        1. Write content to temporary file in same directory
+        2. Flush Python buffers to OS (f.flush())
+        3. Sync OS buffers to disk (os.fsync()) - ensures durability
+        4. Atomically rename temp to final (POSIX guarantee)
+        5. Sync directory to persist rename (best effort)
 
         Args:
             file_path: Target file path
             content: File content
+
+        Raises:
+            OSError: If write or sync fails
         """
-        # Write to temporary file
+        # Write to temporary file in same directory (ensures same filesystem)
         temp_fd, temp_path = tempfile.mkstemp(
             dir=file_path.parent, prefix=".tmp_", suffix=".md"
         )
 
         try:
-            # Write content
+            # Write content to temp file
             with open(temp_fd, "w", encoding="utf-8") as f:
                 f.write(content)
 
-            # Move to final location (atomic on same filesystem)
+                # Flush Python buffers to OS
+                f.flush()
+
+                # Sync OS buffers to disk (critical for durability)
+                # This ensures data is actually written to disk, not just buffered
+                # Without this, power loss could result in empty or corrupt files
+                os.fsync(f.fileno())
+
+            # Atomically rename temp to final
+            # This is atomic at filesystem level (POSIX guarantee)
             Path(temp_path).replace(file_path)
+
+            # Sync directory to persist the rename operation
+            # Without this, the rename might not be durable across power loss
+            # This is best effort - some filesystems don't support directory fsync
+            try:
+                dir_fd = os.open(file_path.parent, os.O_RDONLY)
+                try:
+                    os.fsync(dir_fd)
+                finally:
+                    os.close(dir_fd)
+            except (OSError, AttributeError) as e:
+                # Directory fsync not supported on all platforms/filesystems
+                # This is acceptable - the file content is already synced
+                logger.debug(f"Directory fsync not supported: {e}")
 
         except Exception:
             # Clean up temp file on error

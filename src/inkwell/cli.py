@@ -1,23 +1,31 @@
 """CLI entry point for Inkwell."""
 
 import asyncio
+import os
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import typer
+import yaml
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
+from rich.prompt import Confirm
 from rich.table import Table
 
+from inkwell.config.logging import setup_logging
 from inkwell.config.manager import ConfigManager
 from inkwell.config.schema import AuthConfig, FeedConfig
 from inkwell.extraction import ExtractionEngine
 from inkwell.extraction.template_selector import TemplateSelector
 from inkwell.extraction.templates import TemplateLoader
 from inkwell.feeds.models import Episode
+from inkwell.interview import InterviewManager
+from inkwell.interview.models import InterviewGuidelines
 from inkwell.output import EpisodeMetadata, OutputManager
 from inkwell.transcription import CostEstimate, TranscriptionManager
+from inkwell.utils.api_keys import APIKeyError, get_validated_api_key
+from inkwell.utils.datetime import format_duration, now_utc
 from inkwell.utils.display import truncate_url
 from inkwell.utils.errors import (
     DuplicateFeedError,
@@ -32,6 +40,21 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 console = Console()
+
+
+@app.callback()
+def main(
+    ctx: typer.Context,
+    verbose: bool = typer.Option(
+        False, "--verbose", "-v", help="Enable verbose (DEBUG) logging"
+    ),
+    log_file: Path | None = typer.Option(
+        None, "--log-file", help="Write logs to file"
+    ),
+) -> None:
+    """Inkwell - Transform podcasts into structured markdown notes."""
+    # Initialize logging before any command runs
+    setup_logging(verbose=verbose, log_file=log_file)
 
 
 @app.command("version")
@@ -253,10 +276,29 @@ def config_command(
             console.print(table)
 
         elif action == "edit":
-            import os
             import subprocess
 
+            # Define whitelist of allowed editors
+            ALLOWED_EDITORS = {
+                "nano", "vim", "vi", "emacs",
+                "code", "subl", "gedit", "kate",
+                "notepad", "notepad++", "atom",
+                "micro", "helix", "nvim", "ed"
+            }
+
             editor = os.environ.get("EDITOR", "nano")
+
+            # Extract just the executable name (handle paths like /usr/bin/vim)
+            editor_name = Path(editor).name
+
+            # Validate editor against whitelist
+            if editor_name not in ALLOWED_EDITORS:
+                console.print(f"[red]✗[/red] Unsupported editor: {editor}")
+                console.print(f"Allowed editors: {', '.join(sorted(ALLOWED_EDITORS))}")
+                console.print("Set EDITOR environment variable to a supported editor.")
+                console.print(f"Or edit manually: {manager.config_file}")
+                sys.exit(1)
+
             console.print(f"Opening {manager.config_file} in {editor}...")
 
             try:
@@ -509,10 +551,25 @@ def fetch_command(
     overwrite: bool = typer.Option(
         False, "--overwrite", help="Overwrite existing episode directory"
     ),
+    interview: bool = typer.Option(
+        False, "--interview", help="Conduct interactive interview after extraction"
+    ),
+    interview_template: str | None = typer.Option(
+        None, "--interview-template", help="Interview template: reflective, analytical, creative (default: from config)"
+    ),
+    interview_format: str | None = typer.Option(
+        None, "--interview-format", help="Output format: structured, narrative, qa (default: from config)"
+    ),
+    max_questions: int | None = typer.Option(
+        None, "--max-questions", help="Maximum number of interview questions (default: from config)"
+    ),
+    no_resume: bool = typer.Option(
+        False, "--no-resume", help="Don't resume previous interview session"
+    ),
 ) -> None:
     """Fetch and process a podcast episode.
 
-    Complete pipeline: transcribe → extract → generate markdown → write files
+    Complete pipeline: transcribe → extract → generate markdown → write files → [optional interview]
 
     Examples:
         inkwell fetch https://youtube.com/watch?v=xyz
@@ -522,6 +579,10 @@ def fetch_command(
         inkwell fetch https://... --category tech --provider claude
 
         inkwell fetch https://... --dry-run  # Cost estimate only
+
+        inkwell fetch https://... --interview  # With interactive interview
+
+        inkwell fetch https://... --interview --interview-template analytical
     """
 
     async def run_fetch() -> None:
@@ -529,10 +590,14 @@ def fetch_command(
             config = ConfigManager().load_config()
             output_path = output_dir or config.default_output_dir
 
+            # Determine total steps
+            will_interview = interview or config.interview.auto_start
+            total_steps = 5 if will_interview else 4
+
             console.print("[bold cyan]Inkwell Extraction Pipeline[/bold cyan]\n")
 
             # Step 1: Transcribe
-            console.print("[bold]Step 1/4:[/bold] Transcribing episode...")
+            console.print(f"[bold]Step 1/{total_steps}:[/bold] Transcribing episode...")
 
             transcription_manager = TranscriptionManager()
 
@@ -560,7 +625,7 @@ def fetch_command(
             console.print(f"  Words: ~{len(result.transcript.full_text.split())}")
 
             # Step 2: Select templates
-            console.print("\n[bold]Step 2/4:[/bold] Selecting templates...")
+            console.print(f"\n[bold]Step 2/{total_steps}:[/bold] Selecting templates...")
 
             loader = TemplateLoader()
             selector = TemplateSelector(loader=loader)
@@ -574,7 +639,7 @@ def fetch_command(
             episode = Episode(
                 title=f"Episode from {url}",
                 url=url,  # type: ignore
-                published=datetime.now(),
+                published=now_utc(),
                 description="",
                 podcast_name="Unknown Podcast",  # Would come from RSS in real implementation
             )
@@ -600,7 +665,7 @@ def fetch_command(
                 console.print(f"  • {tmpl.name} (priority: {tmpl.priority})")
 
             # Step 3: Extract
-            console.print("\n[bold]Step 3/4:[/bold] Extracting content...")
+            console.print(f"\n[bold]Step 3/{total_steps}:[/bold] Extracting content...")
 
             # Initialize extraction engine
             engine = ExtractionEngine(
@@ -628,7 +693,8 @@ def fetch_command(
             ) as progress:
                 task = progress.add_task("Extracting content...", total=None)
 
-                extraction_results = await engine.extract_all(
+                # Use batched extraction for better performance (75% fewer API calls)
+                extraction_results, extraction_summary = await engine.extract_all_batched(
                     templates=selected_templates,
                     transcript=result.transcript.full_text,
                     metadata=episode_metadata.model_dump(),
@@ -637,15 +703,32 @@ def fetch_command(
 
                 progress.update(task, completed=True)
 
-            # Report extraction results
-            cached_count = sum(1 for r in extraction_results if r.provider == "cache")
-            console.print(f"[green]✓[/green] Extracted {len(extraction_results)} templates")
-            if cached_count > 0:
-                console.print(f"  • {cached_count} from cache (saved ${engine.get_total_cost():.4f})")
+            # Report extraction results with detailed summary
+            if extraction_summary.failed > 0:
+                # Show warning if any templates failed
+                console.print(extraction_summary.format_summary(), style="yellow")
+                console.print(
+                    f"\n[yellow]⚠[/yellow] {extraction_summary.failed} template(s) failed. "
+                    f"Check logs for details."
+                )
+                console.print(
+                    f"[green]✓[/green] Extracted {extraction_summary.successful} of {extraction_summary.total} templates"
+                )
+            else:
+                # Success message if all succeeded
+                console.print(
+                    f"[green]✓[/green] All {extraction_summary.total} templates extracted successfully"
+                )
+
+            # Show cache and cost information
+            if extraction_summary.cached > 0:
+                console.print(
+                    f"  • {extraction_summary.cached} from cache (saved ${engine.get_total_cost():.4f})"
+                )
             console.print(f"  • Total cost: [yellow]${engine.get_total_cost():.4f}[/yellow]")
 
             # Step 4: Write output
-            console.print("\n[bold]Step 4/4:[/bold] Writing markdown files...")
+            console.print(f"\n[bold]Step 4/{total_steps}:[/bold] Writing markdown files...")
 
             output_manager = OutputManager(output_dir=output_path)
 
@@ -657,6 +740,103 @@ def fetch_command(
 
             console.print(f"[green]✓[/green] Wrote {len(episode_output.output_files)} files")
             console.print(f"  Directory: [cyan]{episode_output.directory}[/cyan]")
+
+            # Step 5: Interview (optional)
+            interview_cost = 0.0
+            interview_conducted = False
+
+            if interview or config.interview.auto_start:
+                console.print("\n[bold]Step 5/5:[/bold] Conducting interview...")
+
+                try:
+                    # Get interview configuration
+                    template_name = interview_template or config.interview.default_template
+                    format_style = interview_format or config.interview.format_style
+                    questions = max_questions or config.interview.question_count
+
+                    # Create guidelines from config
+                    guidelines = None
+                    if config.interview.guidelines:
+                        guidelines = InterviewGuidelines(text=config.interview.guidelines)
+
+                    # Validate Anthropic API key
+                    try:
+                        anthropic_key = get_validated_api_key("ANTHROPIC_API_KEY", "claude")
+                    except APIKeyError as e:
+                        console.print("[yellow]⚠[/yellow] Interview skipped - API key validation failed:")
+                        console.print(f"[dim]  {str(e)}[/dim]")
+                    else:
+                        # Initialize interview manager
+                        interview_manager = InterviewManager(
+                            api_key=anthropic_key,
+                            model=config.interview.model
+                        )
+
+                        session_id = resume_session
+
+                        # Auto-discover resumable sessions if not explicitly specified
+                        if not no_resume and not resume_session:
+                            resumable = interview_manager.session_manager.find_resumable_sessions(url)
+
+                            if resumable:
+                                # Show most recent session
+                                latest = resumable[0]
+                                elapsed = (now_utc() - latest.updated_at).total_seconds()
+                                elapsed_str = format_duration(elapsed)
+
+                                console.print(f"\n[yellow]Found incomplete session from {elapsed_str} ago:[/yellow]")
+                                console.print(f"  Session ID: {latest.session_id}")
+                                console.print(f"  Questions: {len(latest.exchanges)}/{latest.max_questions}")
+                                console.print(f"  Started: {latest.started_at.strftime('%Y-%m-%d %H:%M')}")
+
+                                # Interactive prompt
+                                if Confirm.ask("\nResume this session?", default=True):
+                                    session_id = latest.session_id
+                                    console.print(f"[green]✓[/green] Resuming session {session_id}")
+                                else:
+                                    console.print("[dim]Starting new session...[/dim]")
+
+                        # Conduct interview
+                        interview_result = await interview_manager.conduct_interview(
+                            episode_url=url,
+                            episode_title=episode_metadata.episode_title,
+                            podcast_name=episode_metadata.podcast_name,
+                            output_dir=episode_output.directory,
+                            template_name=template_name,
+                            max_questions=questions,
+                            guidelines=guidelines,
+                            format_style=format_style,
+                            resume_session_id=session_id,
+                        )
+
+                        # Save interview output
+                        interview_path = episode_output.directory / "my-notes.md"
+                        interview_path.write_text(interview_result.transcript)
+
+                        console.print("[green]✓[/green] Interview complete")
+                        console.print(f"  Questions: {len(interview_result.exchanges)}")
+                        console.print("  Saved to: my-notes.md")
+
+                        interview_cost = interview_result.total_cost
+                        interview_conducted = True
+
+                        # Update metadata with interview info
+                        metadata_path = episode_output.directory / ".metadata.yaml"
+                        if metadata_path.exists():
+                            metadata = yaml.safe_load(metadata_path.read_text())
+                            metadata["interview_conducted"] = True
+                            metadata["interview_template"] = template_name
+                            metadata["interview_format"] = format_style
+                            metadata["interview_questions"] = len(interview_result.exchanges)
+                            metadata["interview_cost_usd"] = interview_cost
+                            metadata_path.write_text(yaml.safe_dump(metadata, default_flow_style=False))
+
+                except KeyboardInterrupt:
+                    console.print("\n[yellow]Interview cancelled by user[/yellow]")
+                    # Continue to summary even if interview cancelled
+                except Exception as e:
+                    console.print(f"[red]✗[/red] Interview failed: {e}")
+                    console.print("[dim]  Extraction completed successfully, continuing...[/dim]")
 
             # Summary
             console.print("\n[bold green]✓ Complete![/bold green]")
@@ -675,7 +855,16 @@ def fetch_command(
 
             table.add_row("Episode:", episode_metadata.episode_title)
             table.add_row("Templates:", f"{len(extraction_results)}")
-            table.add_row("Total cost:", f"${engine.get_total_cost():.4f}")
+
+            if interview_conducted:
+                total_cost = engine.get_total_cost() + interview_cost
+                table.add_row("Extraction cost:", f"${engine.get_total_cost():.4f}")
+                table.add_row("Interview cost:", f"${interview_cost:.4f}")
+                table.add_row("Total cost:", f"${total_cost:.4f}")
+                table.add_row("Interview:", "✓ Completed")
+            else:
+                table.add_row("Total cost:", f"${engine.get_total_cost():.4f}")
+
             table.add_row("Output:", output_display)
 
             console.print(table)
@@ -694,6 +883,191 @@ def fetch_command(
 
     # Run async function
     asyncio.run(run_fetch())
+
+
+@app.command("costs")
+def costs_command(
+    provider: str | None = typer.Option(
+        None, "--provider", "-p", help="Filter by provider (gemini, claude)"
+    ),
+    operation: str | None = typer.Option(
+        None, "--operation", "-o", help="Filter by operation type"
+    ),
+    episode: str | None = typer.Option(
+        None, "--episode", "-e", help="Filter by episode title"
+    ),
+    days: int | None = typer.Option(
+        None, "--days", "-d", help="Show costs from last N days"
+    ),
+    recent: int | None = typer.Option(
+        None, "--recent", "-r", help="Show N most recent operations"
+    ),
+    clear: bool = typer.Option(
+        False, "--clear", help="Clear all cost history"
+    ),
+) -> None:
+    """View API cost tracking and usage statistics.
+
+    Examples:
+        # Show all costs
+        $ inkwell costs
+
+        # Show costs by provider
+        $ inkwell costs --provider gemini
+
+        # Show costs for specific episode
+        $ inkwell costs --episode "Building Better Software"
+
+        # Show costs from last 7 days
+        $ inkwell costs --days 7
+
+        # Show 10 most recent operations
+        $ inkwell costs --recent 10
+
+        # Clear all cost history
+        $ inkwell costs --clear
+    """
+    from datetime import timedelta
+
+    from rich.panel import Panel
+
+    from inkwell.utils.costs import CostTracker
+
+    try:
+        tracker = CostTracker()
+
+        # Handle clear
+        if clear:
+            if typer.confirm("Are you sure you want to clear all cost history?"):
+                tracker.clear()
+                console.print("[green]✓[/green] Cost history cleared")
+            else:
+                console.print("Cancelled")
+            return
+
+        # Handle recent
+        if recent:
+            recent_usage = tracker.get_recent_usage(limit=recent)
+
+            if not recent_usage:
+                console.print("[yellow]No usage history found[/yellow]")
+                return
+
+            console.print(f"\n[bold]Recent {len(recent_usage)} Operations:[/bold]\n")
+
+            table = Table(show_header=True)
+            table.add_column("Date", style="cyan")
+            table.add_column("Provider", style="magenta")
+            table.add_column("Operation", style="blue")
+            table.add_column("Episode", style="green", max_width=40)
+            table.add_column("Tokens", style="white", justify="right")
+            table.add_column("Cost", style="yellow", justify="right")
+
+            for usage in recent_usage:
+                date_str = usage.timestamp.strftime("%Y-%m-%d %H:%M")
+                episode_str = usage.episode_title or "-"
+                tokens_str = f"{usage.total_tokens:,}"
+                cost_str = f"${usage.cost_usd:.4f}"
+
+                table.add_row(
+                    date_str,
+                    usage.provider,
+                    usage.operation,
+                    episode_str,
+                    tokens_str,
+                    cost_str,
+                )
+
+            console.print(table)
+            console.print(f"\n[bold]Total:[/bold] ${sum(u.cost_usd for u in recent_usage):.4f}")
+            return
+
+        # Calculate since date if days provided
+        since = None
+        if days:
+            since = now_utc() - timedelta(days=days)
+
+        # Get summary with filters
+        summary = tracker.get_summary(
+            provider=provider,
+            operation=operation,
+            episode_title=episode,
+            since=since,
+        )
+
+        if summary.total_operations == 0:
+            console.print("[yellow]No usage found matching filters[/yellow]")
+            return
+
+        # Display summary
+        console.print("\n[bold cyan]API Cost Summary[/bold cyan]\n")
+
+        # Overall stats
+        stats_table = Table(show_header=False, box=None, padding=(0, 2))
+        stats_table.add_column("Metric", style="bold")
+        stats_table.add_column("Value", style="white")
+
+        stats_table.add_row("Total Operations:", f"{summary.total_operations:,}")
+        stats_table.add_row("Total Tokens:", f"{summary.total_tokens:,}")
+        stats_table.add_row("Input Tokens:", f"{summary.total_input_tokens:,}")
+        stats_table.add_row("Output Tokens:", f"{summary.total_output_tokens:,}")
+        stats_table.add_row("Total Cost:", f"[bold yellow]${summary.total_cost_usd:.4f}[/bold yellow]")
+
+        console.print(Panel(stats_table, title="Overall", border_style="blue"))
+
+        # Breakdown by provider
+        if summary.costs_by_provider:
+            console.print("\n[bold]By Provider:[/bold]")
+            provider_table = Table(show_header=False, box=None, padding=(0, 2))
+            provider_table.add_column("Provider", style="magenta")
+            provider_table.add_column("Cost", style="yellow", justify="right")
+
+            for prov, cost in sorted(
+                summary.costs_by_provider.items(), key=lambda x: x[1], reverse=True
+            ):
+                provider_table.add_row(prov, f"${cost:.4f}")
+
+            console.print(provider_table)
+
+        # Breakdown by operation
+        if summary.costs_by_operation:
+            console.print("\n[bold]By Operation:[/bold]")
+            op_table = Table(show_header=False, box=None, padding=(0, 2))
+            op_table.add_column("Operation", style="blue")
+            op_table.add_column("Cost", style="yellow", justify="right")
+
+            for op, cost in sorted(
+                summary.costs_by_operation.items(), key=lambda x: x[1], reverse=True
+            ):
+                op_table.add_row(op, f"${cost:.4f}")
+
+            console.print(op_table)
+
+        # Breakdown by episode (top 10)
+        if summary.costs_by_episode:
+            console.print("\n[bold]By Episode (Top 10):[/bold]")
+            episode_table = Table(show_header=False, box=None, padding=(0, 2))
+            episode_table.add_column("Episode", style="green", max_width=50)
+            episode_table.add_column("Cost", style="yellow", justify="right")
+
+            sorted_episodes = sorted(
+                summary.costs_by_episode.items(), key=lambda x: x[1], reverse=True
+            )
+            for ep, cost in sorted_episodes[:10]:
+                episode_table.add_row(ep, f"${cost:.4f}")
+
+            if len(sorted_episodes) > 10:
+                console.print(f"\n[dim]... and {len(sorted_episodes) - 10} more episodes[/dim]")
+
+            console.print(episode_table)
+
+        console.print()
+
+    except Exception as e:
+        console.print(f"\n[red]✗[/red] Error: {e}")
+        import traceback
+        console.print(f"[dim]{traceback.format_exc()}[/dim]")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

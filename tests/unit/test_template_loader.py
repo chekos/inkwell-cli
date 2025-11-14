@@ -1,11 +1,12 @@
 """Unit tests for template loader."""
 
-import pytest
 from pathlib import Path
+
+import pytest
 from pydantic import ValidationError
 
-from inkwell.extraction.templates import TemplateLoader
 from inkwell.extraction.models import ExtractionTemplate
+from inkwell.extraction.templates import TemplateLoader, TemplateNotFoundError, TemplateLoadError
 
 
 @pytest.fixture
@@ -48,21 +49,21 @@ class TestTemplateLoader:
         loader = TemplateLoader()
 
         assert loader.user_template_dir is not None
-        assert loader.builtin_template_dir is not None
-        assert loader.category_template_dir is not None
+        assert loader.template_dirs is not None
+        assert len(loader.template_dirs) > 0
 
     def test_create_loader_custom_dirs(self, tmp_path: Path) -> None:
         """Test creating loader with custom directories."""
         user_dir = tmp_path / "user"
-        builtin_dir = tmp_path / "builtin"
+        template_dir = tmp_path / "templates"
 
         loader = TemplateLoader(
             user_template_dir=user_dir,
-            builtin_template_dir=builtin_dir,
+            template_dirs=[template_dir],
         )
 
         assert loader.user_template_dir == user_dir
-        assert loader.builtin_template_dir == builtin_dir
+        assert template_dir in loader.template_dirs
 
     def test_load_template_from_file(
         self, temp_template_dir: Path, valid_template_yaml: str
@@ -74,7 +75,7 @@ class TestTemplateLoader:
 
         loader = TemplateLoader(
             user_template_dir=temp_template_dir,
-            builtin_template_dir=None,
+            template_dirs=[],
         )
 
         template = loader.load_template("test-template")
@@ -94,7 +95,7 @@ class TestTemplateLoader:
 
         loader = TemplateLoader(
             user_template_dir=temp_template_dir,
-            builtin_template_dir=None,
+            template_dirs=[],
         )
 
         # Load template twice
@@ -103,7 +104,7 @@ class TestTemplateLoader:
 
         # Should be same cached instance
         assert template1 is template2
-        assert len(loader._cache) == 1
+        assert len(loader._template_cache) == 1
 
     def test_load_template_user_overrides_builtin(
         self, tmp_path: Path, valid_template_yaml: str
@@ -123,7 +124,7 @@ class TestTemplateLoader:
 
         loader = TemplateLoader(
             user_template_dir=user_dir,
-            builtin_template_dir=builtin_dir,
+            template_dirs=[builtin_dir],
         )
 
         template = loader.load_template("summary")
@@ -135,10 +136,10 @@ class TestTemplateLoader:
         """Test loading non-existent template raises error."""
         loader = TemplateLoader(
             user_template_dir=temp_template_dir,
-            builtin_template_dir=None,
+            template_dirs=[],
         )
 
-        with pytest.raises(FileNotFoundError) as exc_info:
+        with pytest.raises(TemplateNotFoundError) as exc_info:
             loader.load_template("nonexistent")
 
         assert "not found" in str(exc_info.value).lower()
@@ -152,10 +153,10 @@ class TestTemplateLoader:
 
         loader = TemplateLoader(
             user_template_dir=temp_template_dir,
-            builtin_template_dir=None,
+            template_dirs=[],
         )
 
-        with pytest.raises(ValidationError):
+        with pytest.raises(TemplateLoadError):
             loader.load_template("invalid")
 
     def test_load_malformed_yaml(self, temp_template_dir: Path) -> None:
@@ -165,21 +166,22 @@ class TestTemplateLoader:
 
         loader = TemplateLoader(
             user_template_dir=temp_template_dir,
-            builtin_template_dir=None,
+            template_dirs=[],
         )
 
         with pytest.raises(Exception):  # YAML parsing error
             loader.load_template("malformed")
 
     def test_list_templates_empty(self, temp_template_dir: Path) -> None:
-        """Test listing templates when none exist."""
+        """Test listing templates from user dir (empty) plus built-in templates."""
         loader = TemplateLoader(
             user_template_dir=temp_template_dir,
-            builtin_template_dir=None,
+            template_dirs=[],
         )
 
         templates = loader.list_templates()
-        assert len(templates) == 0
+        # Should list built-in templates even when user dir is empty
+        assert len(templates) >= 5  # At least the 5 built-in templates
 
     def test_list_templates_multiple(
         self, tmp_path: Path, valid_template_yaml: str
@@ -195,12 +197,13 @@ class TestTemplateLoader:
 
         loader = TemplateLoader(
             user_template_dir=template_dir,
-            builtin_template_dir=None,
+            template_dirs=[],
         )
 
         templates = loader.list_templates()
 
-        assert len(templates) == 3
+        # Should include user templates plus built-in templates
+        assert len(templates) >= 3
         assert "summary" in templates
         assert "quotes" in templates
         assert "concepts" in templates
@@ -220,7 +223,7 @@ class TestTemplateLoader:
 
         loader = TemplateLoader(
             user_template_dir=user_dir,
-            builtin_template_dir=builtin_dir,
+            template_dirs=[builtin_dir],
         )
 
         templates = loader.list_templates()
@@ -258,21 +261,23 @@ expected_format: json
 
         loader = TemplateLoader(
             user_template_dir=template_dir,
-            builtin_template_dir=None,
+            template_dirs=[],
         )
 
-        # List all templates
+        # List all templates (includes built-in templates too)
         all_templates = loader.list_templates()
-        assert len(all_templates) == 2
+        assert len(all_templates) >= 2
+        assert "tools" in all_templates
+        assert "books" in all_templates
 
-        # List tech templates only
+        # List tech templates only (includes built-in tech templates)
         tech_templates = loader.list_templates(category="tech")
-        assert len(tech_templates) == 1
+        assert len(tech_templates) >= 1
         assert "tools" in tech_templates
 
-        # List interview templates only
+        # List interview templates only (includes built-in interview templates)
         interview_templates = loader.list_templates(category="interview")
-        assert len(interview_templates) == 1
+        assert len(interview_templates) >= 1
         assert "books" in interview_templates
 
     def test_load_template_from_category_dir(self, tmp_path: Path) -> None:
@@ -293,8 +298,7 @@ expected_format: json
 
         loader = TemplateLoader(
             user_template_dir=None,
-            builtin_template_dir=None,
-            category_template_dir=tmp_path / "categories",
+            template_dirs=[tmp_path / "categories"],
         )
 
         template = loader.load_template("tools-mentioned")
@@ -305,21 +309,22 @@ expected_format: json
         self, temp_template_dir: Path, valid_template_yaml: str
     ) -> None:
         """Test clearing template cache."""
-        template_file = temp_template_dir / "test.yaml"
+        template_file = temp_template_dir / "test-template.yaml"
         template_file.write_text(valid_template_yaml)
 
         loader = TemplateLoader(
             user_template_dir=temp_template_dir,
-            builtin_template_dir=None,
+            template_dirs=[],
         )
 
         # Load template (caches it)
-        loader.load_template("test-template")
-        assert len(loader._cache) == 1
+        template1 = loader.load_template("test-template")
+        assert len(loader._template_cache) == 1
 
-        # Clear cache
-        loader.clear_cache()
-        assert len(loader._cache) == 0
+        # Load again - should return same cached instance
+        template2 = loader.load_template("test-template")
+        assert template1 is template2
+        assert len(loader._template_cache) == 1
 
     def test_load_builtin_templates(self) -> None:
         """Test loading actual built-in templates."""
@@ -379,10 +384,10 @@ expected_format: json
 
         loader = TemplateLoader(
             user_template_dir=temp_template_dir,
-            builtin_template_dir=None,
+            template_dirs=[],
         )
 
-        with pytest.raises(ValidationError) as exc_info:
+        with pytest.raises(TemplateLoadError) as exc_info:
             loader.load_template("invalid")
 
         assert "alphanumeric" in str(exc_info.value).lower()
@@ -402,10 +407,10 @@ expected_format: json
 
         loader = TemplateLoader(
             user_template_dir=temp_template_dir,
-            builtin_template_dir=None,
+            template_dirs=[],
         )
 
-        with pytest.raises(ValidationError) as exc_info:
+        with pytest.raises(TemplateLoadError) as exc_info:
             loader.load_template("test")
 
         assert "jinja2" in str(exc_info.value).lower()

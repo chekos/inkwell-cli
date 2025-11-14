@@ -8,9 +8,11 @@ This module defines Pydantic models for:
 
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
+
+from inkwell.utils.datetime import now_utc
 
 
 class EpisodeMetadata(BaseModel):
@@ -32,16 +34,16 @@ class EpisodeMetadata(BaseModel):
     podcast_name: str = Field(..., description="Name of the podcast")
     episode_title: str = Field(..., description="Episode title")
     episode_url: str = Field(..., description="Episode URL")
-    published_date: Optional[datetime] = Field(
+    published_date: datetime | None = Field(
         None, description="When episode was published"
     )
-    duration_seconds: Optional[float] = Field(
+    duration_seconds: float | None = Field(
         None, description="Episode duration in seconds", ge=0
     )
 
     # Processing metadata
     processed_date: datetime = Field(
-        default_factory=datetime.utcnow, description="When episode was processed"
+        default_factory=now_utc, description="When episode was processed"
     )
     transcription_source: str = Field(
         ..., description="Transcription source (youtube, gemini, cached)"
@@ -143,7 +145,7 @@ class OutputFile(BaseModel):
 
     # File metadata
     created_at: datetime = Field(
-        default_factory=datetime.utcnow, description="When file was created"
+        default_factory=now_utc, description="When file was created"
     )
     size_bytes: int = Field(0, description="File size in bytes", ge=0)
 
@@ -201,7 +203,7 @@ class EpisodeOutput(BaseModel):
 
     # Timestamps
     created_at: datetime = Field(
-        default_factory=datetime.utcnow, description="When output was created"
+        default_factory=now_utc, description="When output was created"
     )
 
     def add_file(self, file: OutputFile) -> None:
@@ -211,7 +213,7 @@ class EpisodeOutput(BaseModel):
         self.total_files = len(self.files)
         self.total_size_bytes = sum(f.size_bytes for f in self.files)
 
-    def get_file(self, template_name: str) -> Optional[OutputFile]:
+    def get_file(self, template_name: str) -> OutputFile | None:
         """Get output file by template name.
 
         Args:
@@ -225,7 +227,7 @@ class EpisodeOutput(BaseModel):
                 return file
         return None
 
-    def get_file_by_name(self, filename: str) -> Optional[OutputFile]:
+    def get_file_by_name(self, filename: str) -> OutputFile | None:
         """Get output file by filename.
 
         Args:
@@ -238,6 +240,33 @@ class EpisodeOutput(BaseModel):
             if file.filename == filename:
                 return file
         return None
+
+    @property
+    def directory(self) -> Path:
+        """Get output directory path (backward compatibility alias).
+
+        Returns:
+            Output directory path
+        """
+        return self.output_dir
+
+    @property
+    def metadata_file(self) -> Path:
+        """Get metadata file path (backward compatibility alias).
+
+        Returns:
+            Path to .metadata.yaml file
+        """
+        return self.output_dir / ".metadata.yaml"
+
+    @property
+    def output_files(self) -> list[OutputFile]:
+        """Get output files list (backward compatibility alias).
+
+        Returns:
+            List of output files
+        """
+        return self.files
 
     @property
     def directory_name(self) -> str:
@@ -274,3 +303,92 @@ class EpisodeOutput(BaseModel):
             f"in {self.directory_name}/ "
             f"(cost: ${self.metadata.total_cost_usd:.3f})"
         )
+
+    @classmethod
+    def from_directory(cls, output_dir: Path) -> "EpisodeOutput":
+        """Load episode output from directory.
+
+        Reads metadata and all markdown files from an episode output directory.
+
+        Args:
+            output_dir: Directory containing episode output files
+
+        Returns:
+            EpisodeOutput with loaded metadata and files
+
+        Raises:
+            FileNotFoundError: If directory or metadata file doesn't exist
+            ValueError: If metadata file is invalid
+
+        Example:
+            >>> output = EpisodeOutput.from_directory(
+            ...     Path("output/podcast-2025-11-13-episode-title")
+            ... )
+            >>> print(output.metadata.episode_title)
+            >>> print(len(output.files))
+        """
+        import yaml
+
+        # Check directory exists
+        if not output_dir.exists():
+            raise FileNotFoundError(f"Output directory not found: {output_dir}")
+
+        if not output_dir.is_dir():
+            raise ValueError(f"Path is not a directory: {output_dir}")
+
+        # Load metadata
+        metadata_file = output_dir / ".metadata.yaml"
+        if not metadata_file.exists():
+            raise FileNotFoundError(
+                f"Metadata file not found: {metadata_file}. "
+                f"Directory may not be an episode output directory."
+            )
+
+        with metadata_file.open("r") as f:
+            metadata_dict = yaml.safe_load(f)
+
+        metadata = EpisodeMetadata(**metadata_dict)
+
+        # Load all markdown files
+        files: list[OutputFile] = []
+        for md_file in sorted(output_dir.glob("*.md")):
+            # Read file content
+            content = md_file.read_text(encoding="utf-8")
+
+            # Parse frontmatter if present
+            frontmatter: dict[str, Any] = {}
+            file_content = content
+
+            if content.startswith("---\n"):
+                # Has frontmatter
+                parts = content.split("---\n", 2)
+                if len(parts) >= 3:
+                    frontmatter_yaml = parts[1]
+                    file_content = parts[2].lstrip()
+                    frontmatter = yaml.safe_load(frontmatter_yaml) or {}
+
+            # Determine template name from filename (remove .md)
+            template_name = md_file.stem
+
+            # Create OutputFile
+            output_file = OutputFile(
+                filename=md_file.name,
+                template_name=template_name,
+                content=file_content,
+                frontmatter=frontmatter,
+                created_at=datetime.fromtimestamp(md_file.stat().st_mtime),
+                size_bytes=md_file.stat().st_size,
+            )
+
+            files.append(output_file)
+
+        # Create EpisodeOutput
+        episode_output = cls(
+            metadata=metadata,
+            output_dir=output_dir,
+            files=files,
+            total_files=len(files),
+            total_size_bytes=sum(f.size_bytes for f in files),
+        )
+
+        return episode_output

@@ -10,6 +10,7 @@ from google.generativeai.types import GenerateContentResponse
 from pydantic import BaseModel, Field
 
 from inkwell.transcription.models import Transcript, TranscriptSegment
+from inkwell.utils.rate_limiter import get_rate_limiter
 
 
 class TranscriptionError(Exception):
@@ -203,6 +204,10 @@ class GeminiTranscriber:
         Returns:
             Gemini API response
         """
+        # Apply rate limiting before API call
+        limiter = get_rate_limiter("gemini")
+        limiter.acquire()
+
         # Upload audio file
         audio_file = genai.upload_file(path=str(audio_path))
 

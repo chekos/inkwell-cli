@@ -1,12 +1,13 @@
 """Claude (Anthropic) extractor implementation."""
 
-import json
-import os
 from typing import Any
 
 from anthropic import Anthropic, AsyncAnthropic
 from anthropic.types import Message
 
+from ...utils.api_keys import get_validated_api_key
+from ...utils.json_utils import JSONParsingError, safe_json_loads
+from ...utils.rate_limiter import get_rate_limiter
 from ..errors import ProviderError, ValidationError
 from ..models import ExtractionTemplate
 from .base import BaseExtractor
@@ -39,14 +40,17 @@ class ClaudeExtractor(BaseExtractor):
             api_key: Anthropic API key (defaults to ANTHROPIC_API_KEY env var)
 
         Raises:
-            ValueError: If API key not provided
+            APIKeyError: If API key not provided or invalid
         """
-        self.api_key = api_key or os.getenv("ANTHROPIC_API_KEY")
-        if not self.api_key:
-            raise ValueError(
-                "Anthropic API key required. Set ANTHROPIC_API_KEY environment variable "
-                "or pass api_key parameter."
-            )
+        # Validate API key
+        if api_key:
+            # If provided directly, still validate it
+            from ...utils.api_keys import validate_api_key
+
+            self.api_key = validate_api_key(api_key, "claude", "ANTHROPIC_API_KEY")
+        else:
+            # Get from environment and validate
+            self.api_key = get_validated_api_key("ANTHROPIC_API_KEY", "claude")
 
         self.client = AsyncAnthropic(api_key=self.api_key)
         self._sync_client = Anthropic(api_key=self.api_key)
@@ -88,6 +92,10 @@ class ClaudeExtractor(BaseExtractor):
             request_params["response_format"] = {"type": "json_object"}
 
         try:
+            # Apply rate limiting before API call
+            limiter = get_rate_limiter("claude")
+            limiter.acquire()
+
             # Make API call
             response: Message = await self.client.messages.create(**request_params)
 
@@ -175,8 +183,10 @@ class ClaudeExtractor(BaseExtractor):
             ValidationError: If validation fails
         """
         try:
-            data = json.loads(output)
-        except json.JSONDecodeError as e:
+            # Use safe JSON parsing with size/depth limits
+            # 5MB for extraction results, depth of 10 for structured data
+            data = safe_json_loads(output, max_size=5_000_000, max_depth=10)
+        except JSONParsingError as e:
             raise ValidationError(f"Invalid JSON from Claude: {str(e)}") from e
 
         # Basic schema validation

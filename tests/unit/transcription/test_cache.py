@@ -105,17 +105,18 @@ class TestTranscriptCache:
         just_before = datetime.now(timezone.utc) - timedelta(days=29, hours=23)
         assert cache._is_expired(just_before) is False
 
-    def test_set_and_get(
+    @pytest.mark.asyncio
+    async def test_set_and_get(
         self, cache: TranscriptCache, sample_transcript: Transcript
     ) -> None:
         """Test caching and retrieval."""
         url = "https://example.com/episode"
 
         # Cache transcript
-        cache.set(url, sample_transcript)
+        await cache.set(url, sample_transcript)
 
         # Retrieve transcript
-        cached = cache.get(url)
+        cached = await cache.get(url)
 
         assert cached is not None
         assert len(cached.segments) == 2
@@ -124,13 +125,15 @@ class TestTranscriptCache:
         assert cached.source == "cached"  # Source updated to indicate cache hit
         assert cached.language == "en"
 
-    def test_get_missing(self, cache: TranscriptCache) -> None:
+    @pytest.mark.asyncio
+    async def test_get_missing(self, cache: TranscriptCache) -> None:
         """Test retrieval of non-existent entry."""
-        result = cache.get("https://nonexistent.com")
+        result = await cache.get("https://nonexistent.com")
 
         assert result is None
 
-    def test_get_expired(
+    @pytest.mark.asyncio
+    async def test_get_expired(
         self, cache: TranscriptCache, sample_transcript: Transcript, temp_cache_dir: Path
     ) -> None:
         """Test retrieval of expired entry."""
@@ -148,12 +151,13 @@ class TestTranscriptCache:
             json.dump(data, f)
 
         # Should return None and delete expired entry
-        result = cache.get(url)
+        result = await cache.get(url)
 
         assert result is None
         assert not cache_path.exists()
 
-    def test_get_corrupted_file(
+    @pytest.mark.asyncio
+    async def test_get_corrupted_file(
         self, cache: TranscriptCache, temp_cache_dir: Path
     ) -> None:
         """Test retrieval with corrupted cache file."""
@@ -164,17 +168,18 @@ class TestTranscriptCache:
         cache_path.write_text("invalid json{")
 
         # Should return None and remove corrupted file
-        result = cache.get(url)
+        result = await cache.get(url)
 
         assert result is None
         assert not cache_path.exists()
 
-    def test_set_with_metadata(
+    @pytest.mark.asyncio
+    async def test_set_with_metadata(
         self, cache: TranscriptCache, sample_transcript: Transcript
     ) -> None:
         """Test that cached data includes metadata."""
         url = "https://example.com/episode"
-        cache.set(url, sample_transcript)
+        await cache.set(url, sample_transcript)
 
         cache_path = cache._get_cache_path(url)
         with cache_path.open("r") as f:
@@ -189,7 +194,8 @@ class TestTranscriptCache:
         cached_at = datetime.fromisoformat(data["cached_at"])
         assert cached_at.tzinfo is not None
 
-    def test_set_preserves_cost_metadata(self, cache: TranscriptCache) -> None:
+    @pytest.mark.asyncio
+    async def test_set_preserves_cost_metadata(self, cache: TranscriptCache) -> None:
         """Test that cost metadata is preserved in cache."""
         transcript = Transcript(
             segments=[TranscriptSegment(text="Test", start=0.0, duration=1.0)],
@@ -200,59 +206,64 @@ class TestTranscriptCache:
         )
 
         url = "https://example.com/episode"
-        cache.set(url, transcript)
+        await cache.set(url, transcript)
 
-        cached = cache.get(url)
+        cached = await cache.get(url)
         assert cached is not None
         assert cached.cost_usd == 0.001
 
-    def test_delete_existing(
+    @pytest.mark.asyncio
+    async def test_delete_existing(
         self, cache: TranscriptCache, sample_transcript: Transcript
     ) -> None:
         """Test deleting existing entry."""
         url = "https://example.com/episode"
-        cache.set(url, sample_transcript)
+        await cache.set(url, sample_transcript)
 
-        result = cache.delete(url)
+        result = await cache.delete(url)
 
         assert result is True
-        assert cache.get(url) is None
+        assert await cache.get(url) is None
 
-    def test_delete_nonexistent(self, cache: TranscriptCache) -> None:
+    @pytest.mark.asyncio
+    async def test_delete_nonexistent(self, cache: TranscriptCache) -> None:
         """Test deleting non-existent entry."""
-        result = cache.delete("https://nonexistent.com")
+        result = await cache.delete("https://nonexistent.com")
 
         assert result is False
 
-    def test_clear(
+    @pytest.mark.asyncio
+    async def test_clear(
         self, cache: TranscriptCache, sample_transcript: Transcript
     ) -> None:
         """Test clearing all cache entries."""
         # Add multiple entries
-        cache.set("https://example.com/episode1", sample_transcript)
-        cache.set("https://example.com/episode2", sample_transcript)
-        cache.set("https://example.com/episode3", sample_transcript)
+        await cache.set("https://example.com/episode1", sample_transcript)
+        await cache.set("https://example.com/episode2", sample_transcript)
+        await cache.set("https://example.com/episode3", sample_transcript)
 
-        count = cache.clear()
+        count = await cache.clear()
 
         assert count == 3
-        assert cache.get("https://example.com/episode1") is None
-        assert cache.get("https://example.com/episode2") is None
-        assert cache.get("https://example.com/episode3") is None
+        assert await cache.get("https://example.com/episode1") is None
+        assert await cache.get("https://example.com/episode2") is None
+        assert await cache.get("https://example.com/episode3") is None
 
-    def test_clear_empty(self, cache: TranscriptCache) -> None:
+    @pytest.mark.asyncio
+    async def test_clear_empty(self, cache: TranscriptCache) -> None:
         """Test clearing empty cache."""
-        count = cache.clear()
+        count = await cache.clear()
 
         assert count == 0
 
-    def test_clear_expired(
+    @pytest.mark.asyncio
+    async def test_clear_expired(
         self, cache: TranscriptCache, sample_transcript: Transcript, temp_cache_dir: Path
     ) -> None:
         """Test clearing only expired entries."""
         # Add fresh entry
         fresh_url = "https://example.com/fresh"
-        cache.set(fresh_url, sample_transcript)
+        await cache.set(fresh_url, sample_transcript)
 
         # Add expired entry
         expired_url = "https://example.com/expired"
@@ -265,13 +276,14 @@ class TestTranscriptCache:
         with expired_path.open("w") as f:
             json.dump(data, f)
 
-        count = cache.clear_expired()
+        count = await cache.clear_expired()
 
         assert count == 1
-        assert cache.get(fresh_url) is not None  # Fresh entry still there
+        assert await cache.get(fresh_url) is not None  # Fresh entry still there
         assert not expired_path.exists()  # Expired entry removed
 
-    def test_clear_expired_corrupted(
+    @pytest.mark.asyncio
+    async def test_clear_expired_corrupted(
         self, cache: TranscriptCache, temp_cache_dir: Path
     ) -> None:
         """Test that clear_expired removes corrupted files."""
@@ -279,14 +291,15 @@ class TestTranscriptCache:
         corrupted_path = temp_cache_dir / "corrupted.json"
         corrupted_path.write_text("invalid json{")
 
-        count = cache.clear_expired()
+        count = await cache.clear_expired()
 
         assert count == 1
         assert not corrupted_path.exists()
 
-    def test_stats_empty(self, cache: TranscriptCache) -> None:
+    @pytest.mark.asyncio
+    async def test_stats_empty(self, cache: TranscriptCache) -> None:
         """Test stats for empty cache."""
-        stats = cache.stats()
+        stats = await cache.stats()
 
         assert stats["total"] == 0
         assert stats["expired"] == 0
@@ -295,12 +308,13 @@ class TestTranscriptCache:
         assert stats["sources"] == {}
         assert "cache_dir" in stats
 
-    def test_stats_with_entries(
+    @pytest.mark.asyncio
+    async def test_stats_with_entries(
         self, cache: TranscriptCache, sample_transcript: Transcript, temp_cache_dir: Path
     ) -> None:
         """Test stats with multiple entries."""
         # Add fresh entries
-        cache.set("https://example.com/episode1", sample_transcript)
+        await cache.set("https://example.com/episode1", sample_transcript)
 
         transcript2 = Transcript(
             segments=[TranscriptSegment(text="Test", start=0.0, duration=1.0)],
@@ -308,7 +322,7 @@ class TestTranscriptCache:
             language="en",
             episode_url="https://example.com/episode2",
         )
-        cache.set("https://example.com/episode2", transcript2)
+        await cache.set("https://example.com/episode2", transcript2)
 
         # Add expired entry
         expired_url = "https://example.com/expired"
@@ -321,7 +335,7 @@ class TestTranscriptCache:
         with expired_path.open("w") as f:
             json.dump(data, f)
 
-        stats = cache.stats()
+        stats = await cache.stats()
 
         assert stats["total"] == 3
         assert stats["expired"] == 1
@@ -330,7 +344,8 @@ class TestTranscriptCache:
         assert stats["sources"]["youtube"] == 2  # Original source preserved
         assert stats["sources"]["gemini"] == 1
 
-    def test_stats_with_corrupted(
+    @pytest.mark.asyncio
+    async def test_stats_with_corrupted(
         self, cache: TranscriptCache, temp_cache_dir: Path
     ) -> None:
         """Test that stats counts but skips processing corrupted files."""
@@ -338,7 +353,7 @@ class TestTranscriptCache:
         corrupted_path = temp_cache_dir / "corrupted.json"
         corrupted_path.write_text("invalid json{")
 
-        stats = cache.stats()
+        stats = await cache.stats()
 
         # Should count the file but not crash processing it
         assert stats["total"] == 1
@@ -346,13 +361,14 @@ class TestTranscriptCache:
         assert stats["valid"] == 1  # Can't determine expiration, counts as valid
         assert stats["sources"] == {}  # No source info extracted
 
-    def test_cache_atomic_write(
+    @pytest.mark.asyncio
+    async def test_cache_atomic_write(
         self, cache: TranscriptCache, sample_transcript: Transcript, temp_cache_dir: Path
     ) -> None:
         """Test that writes are atomic (temp file + rename)."""
         url = "https://example.com/episode"
 
-        cache.set(url, sample_transcript)
+        await cache.set(url, sample_transcript)
 
         # Verify final file exists
         cache_path = cache._get_cache_path(url)
@@ -362,7 +378,8 @@ class TestTranscriptCache:
         temp_path = cache_path.with_suffix(".tmp")
         assert not temp_path.exists()
 
-    def test_cache_different_ttl(self, temp_cache_dir: Path, sample_transcript: Transcript) -> None:
+    @pytest.mark.asyncio
+    async def test_cache_different_ttl(self, temp_cache_dir: Path, sample_transcript: Transcript) -> None:
         """Test cache with different TTL."""
         cache = TranscriptCache(cache_dir=temp_cache_dir, ttl_days=7)
 
@@ -379,6 +396,6 @@ class TestTranscriptCache:
             json.dump(data, f)
 
         # Should be expired
-        result = cache.get(url)
+        result = await cache.get(url)
         assert result is None
         assert not cache_path.exists()

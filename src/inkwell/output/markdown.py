@@ -74,11 +74,13 @@ class MarkdownGenerator:
         Returns:
             YAML frontmatter block (with --- delimiters)
         """
+        from datetime import timezone
+
         frontmatter_data = {
             "template": result.template_name,
             "podcast": episode_metadata.get("podcast_name", "Unknown"),
             "episode": episode_metadata.get("episode_title", "Unknown"),
-            "date": datetime.now().strftime("%Y-%m-%d"),
+            "date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
             "extracted_with": result.provider,
             "cost_usd": round(result.cost_usd, 4),
         }

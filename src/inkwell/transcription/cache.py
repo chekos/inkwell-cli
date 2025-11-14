@@ -201,7 +201,7 @@ class TranscriptCache(FileCache[Transcript]):
                 is_expired = self._is_expired(cached_at)
 
                 # Get source from transcript data
-                source = data["value"]["transcript"].get("source", "unknown")
+                source = data.get("transcript", {}).get("source", "unknown")
 
                 return {
                     "size": file_size,

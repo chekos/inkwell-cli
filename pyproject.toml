@@ -1,25 +1,43 @@
 [project]
 name = "inkwell-cli"
 version = "1.0.0"
-description = "Transform podcast episodes into structured markdown notes"
+description = "Transform podcast episodes into structured, searchable markdown notes for Obsidian"
 readme = "README.md"
 requires-python = ">=3.10"
-license = {text = "MIT"}
+license = {text = "BSD-3-Clause"}
 authors = [
-    {name = "Inkwell Contributors"}
+    {name = "Sergio Sanchez", email = "chekos@users.noreply.github.com"}
+]
+keywords = [
+    "podcast",
+    "markdown",
+    "obsidian",
+    "llm",
+    "transcription",
+    "notes",
+    "knowledge-management",
+    "ai",
+    "claude",
+    "gemini"
 ]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
+    "Environment :: Console",
     "Intended Audience :: Developers",
     "Intended Audience :: End Users/Desktop",
-    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: BSD License",
+    "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Multimedia :: Sound/Audio",
     "Topic :: Text Processing :: Markup :: Markdown",
+    "Topic :: Office/Business :: News/Diary",
+    "Typing :: Typed",
 ]
+
 dependencies = [
     "typer[all]>=0.12.0",
     "pyyaml>=6.0",
@@ -37,6 +55,14 @@ dependencies = [
     "regex>=2023.12.25",
     "aiofiles>=23.2.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/chekos/inkwell-cli"
+Documentation = "https://chekos.github.io/inkwell-cli"
+Repository = "https://github.com/chekos/inkwell-cli"
+"Source Code" = "https://github.com/chekos/inkwell-cli"
+"Bug Tracker" = "https://github.com/chekos/inkwell-cli/issues"
+Changelog = "https://github.com/chekos/inkwell-cli/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 dev = [

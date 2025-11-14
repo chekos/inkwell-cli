@@ -1,0 +1,96 @@
+name: Documentation
+description: Report issues or suggest improvements to documentation
+title: "[Docs]: "
+labels: ["documentation"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping us improve the documentation! Please fill out the sections below.
+
+  - type: dropdown
+    id: doc_type
+    attributes:
+      label: Documentation type
+      description: What type of documentation issue is this?
+      options:
+        - "Error or inaccuracy in existing documentation"
+        - "Missing documentation for existing feature"
+        - "Suggestion for new documentation"
+        - "Unclear or confusing documentation"
+        - "Typo or formatting issue"
+    validations:
+      required: true
+
+  - type: textarea
+    id: location
+    attributes:
+      label: Documentation location
+      description: Where is the documentation you're referring to?
+      placeholder: |
+        - File: docs/user-guide.md (line 123)
+        - URL: https://github.com/chekos/inkwell-cli/blob/main/README.md
+        - Section: "Installation > macOS"
+    validations:
+      required: true
+
+  - type: textarea
+    id: issue
+    attributes:
+      label: Issue description
+      description: What's wrong with the current documentation?
+      placeholder: |
+        The documentation states that...
+        However, when I tried...
+        This is confusing because...
+    validations:
+      required: true
+
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Suggested improvement
+      description: How should the documentation be improved?
+      placeholder: |
+        The documentation should explain...
+        Add a section about...
+        Change the example to...
+        Include a diagram showing...
+    validations:
+      required: true
+
+  - type: textarea
+    id: example
+    attributes:
+      label: Proposed changes
+      description: If you have specific text or code examples, paste them here
+      placeholder: |
+        ```markdown
+        ### Installation on macOS
+
+        Install using Homebrew:
+        ```bash
+        brew install chekos/tap/inkwell
+        ```
+        ```
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: |
+        Add any other context about the documentation issue:
+        - Screenshots showing the problem
+        - Related documentation that could be linked
+        - User feedback or questions you've seen
+        - Links to good examples in other projects
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Pre-submission checklist
+      options:
+        - label: I have searched existing issues to ensure this is not a duplicate
+          required: true
+        - label: I have verified this issue exists in the latest version of the documentation
+          required: true

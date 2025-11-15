@@ -1,0 +1,63 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11  # v4.2.2
+
+      - name: Validate version tag matches pyproject.toml
+        run: |
+          # Extract version from tag (v1.2.3 → 1.2.3)
+          TAG_VERSION=${GITHUB_REF#refs/tags/v}
+
+          # Extract version from pyproject.toml
+          PKG_VERSION=$(python -c "
+          import tomllib
+          with open('pyproject.toml', 'rb') as f:
+              data = tomllib.load(f)
+              print(data['project']['version'])
+          ")
+
+          # Compare versions
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "❌ ERROR: Version mismatch!"
+            echo "  Git tag version: v$TAG_VERSION"
+            echo "  pyproject.toml version: $PKG_VERSION"
+            echo ""
+            echo "Please update pyproject.toml version to match the tag,"
+            echo "or delete the tag and create a new one."
+            exit 1
+          fi
+
+          echo "✅ Version validation passed: $TAG_VERSION"
+
+      - name: Set up Python
+        uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a20  # v5.3.0
+        with:
+          python-version: '3.11'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@fa7dbb46b0c4060a6b1f52f3e0c4a45c3df9e4b6  # v4.0.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: "**/uv.lock"
+
+      - name: Build package
+        run: |
+          uv build
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@ec4db0b4ddc65acdf4bff5fa45ac92d78b56bdf0  # release/v1
+        with:
+          user: __token__
+          password: ${{ secrets.PYPI_TOKEN }}

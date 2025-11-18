@@ -10,19 +10,18 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import yaml
-from rich.prompt import Confirm
 
 from inkwell.config.schema import GlobalConfig
 from inkwell.extraction import ExtractionEngine
 from inkwell.extraction.template_selector import TemplateSelector
 from inkwell.extraction.templates import TemplateLoader
 from inkwell.feeds.models import Episode
-from inkwell.interview import SimpleInterviewer, conduct_interview_from_output
+from inkwell.interview import conduct_interview_from_output
 from inkwell.output import EpisodeMetadata, OutputManager
 from inkwell.transcription import TranscriptionManager
 from inkwell.utils.api_keys import APIKeyError, get_validated_api_key
 from inkwell.utils.costs import CostTracker
-from inkwell.utils.datetime import format_duration, now_utc
+from inkwell.utils.datetime import now_utc
 from inkwell.utils.errors import InkwellError
 
 from .models import PipelineOptions, PipelineResult
@@ -33,7 +32,6 @@ if TYPE_CHECKING:
         ExtractionSummary,
         ExtractionTemplate,
     )
-    from inkwell.interview.models import InterviewResult
     from inkwell.output.models import EpisodeOutput
     from inkwell.transcription.models import TranscriptionResult
 
@@ -270,7 +268,10 @@ class PipelineOrchestrator:
         Raises:
             InkwellError: If transcription fails
         """
-        manager = TranscriptionManager(cost_tracker=self.cost_tracker)
+        manager = TranscriptionManager(
+            model_name=self.config.transcription_model,
+            cost_tracker=self.cost_tracker
+        )
         result = await manager.transcribe(url, use_cache=True, skip_youtube=False)
 
         if not result.success:

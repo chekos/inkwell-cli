@@ -5,7 +5,8 @@ import httpx
 from pydantic import HttpUrl, ValidationError
 
 from inkwell.config.schema import AuthConfig
-from inkwell.utils.errors import APIError, SecurityError, ValidationError as InkwellValidationError
+from inkwell.utils.errors import APIError, SecurityError
+from inkwell.utils.errors import ValidationError as InkwellValidationError
 
 
 class FeedValidator:

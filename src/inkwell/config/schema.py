@@ -66,7 +66,7 @@ class GlobalConfig(BaseModel):
 
     version: str = "1"
     default_output_dir: Path = Field(default=Path("~/podcasts"))
-    transcription_model: str = "gemini-2.0-flash-exp"
+    transcription_model: str = "gemini-2.5-flash"
     interview_model: str = "claude-sonnet-4-5"
     youtube_check: bool = True
     log_level: LogLevel = "INFO"

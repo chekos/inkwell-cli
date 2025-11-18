@@ -10,8 +10,6 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-import yaml
-
 from ..extraction.models import ExtractionResult
 from ..utils.errors import SecurityError
 from ..utils.yaml_integrity import YAMLWithIntegrity

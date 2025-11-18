@@ -1,7 +1,6 @@
 """Logging configuration for Inkwell."""
 
 import logging
-import sys
 from pathlib import Path
 
 from rich.logging import RichHandler

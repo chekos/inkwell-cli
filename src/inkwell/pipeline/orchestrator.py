@@ -269,7 +269,7 @@ class PipelineOrchestrator:
             InkwellError: If transcription fails
         """
         manager = TranscriptionManager(
-            model_name=self.config.transcription_model,
+            config=self.config.transcription,
             cost_tracker=self.cost_tracker
         )
         result = await manager.transcribe(url, use_cache=True, skip_youtube=False)
@@ -346,7 +346,7 @@ class PipelineOrchestrator:
             Tuple of (extraction_results, extraction_summary, total_cost)
         """
         engine = ExtractionEngine(
-            default_provider=provider or "gemini",
+            config=self.config.extraction,
             cost_tracker=self.cost_tracker,
         )
 

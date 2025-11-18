@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 from inkwell.audio import AudioDownloader
+from inkwell.config.schema import TranscriptionConfig
 from inkwell.transcription.cache import TranscriptCache
 from inkwell.transcription.gemini import CostEstimate, GeminiTranscriber
 from inkwell.transcription.models import Transcript, TranscriptionResult
@@ -30,6 +31,7 @@ class TranscriptionManager:
 
     def __init__(
         self,
+        config: TranscriptionConfig | None = None,
         cache: TranscriptCache | None = None,
         youtube_transcriber: YouTubeTranscriber | None = None,
         audio_downloader: AudioDownloader | None = None,
@@ -42,35 +44,52 @@ class TranscriptionManager:
         """Initialize transcription manager.
 
         Args:
+            config: Transcription configuration (recommended, new approach)
             cache: Transcript cache (default: new instance)
             youtube_transcriber: YouTube transcriber (default: new instance)
             audio_downloader: Audio downloader (default: new instance)
             gemini_transcriber: Gemini transcriber (default: new instance)
-            gemini_api_key: Google AI API key for Gemini (default: from env)
-            model_name: Gemini model to use (default: gemini-2.5-flash)
+            gemini_api_key: Google AI API key for Gemini (default: from env) [deprecated, use config]
+            model_name: Gemini model to use (default: gemini-2.5-flash) [deprecated, use config]
             cost_confirmation_callback: Callback for Gemini cost confirmation
             cost_tracker: Cost tracker for recording API usage (optional, for DI)
+
+        Note:
+            Prefer passing `config` over individual parameters. Individual parameters
+            are maintained for backward compatibility but will be deprecated in v2.0.
         """
         self.cache = cache or TranscriptCache()
         self.youtube_transcriber = youtube_transcriber or YouTubeTranscriber()
         self.audio_downloader = audio_downloader or AudioDownloader()
         self.cost_tracker = cost_tracker
 
+        # Extract config values (prefer config object, fall back to individual params)
+        if config:
+            effective_api_key = config.api_key or gemini_api_key
+            effective_model = model_name or config.model_name
+            effective_cost_threshold = config.cost_threshold_usd
+        else:
+            effective_api_key = gemini_api_key
+            effective_model = model_name or "gemini-2.5-flash"
+            effective_cost_threshold = 1.0
+
         # Initialize Gemini transcriber if API key available
         self.gemini_transcriber: GeminiTranscriber | None
         if gemini_transcriber:
             self.gemini_transcriber = gemini_transcriber
-        elif gemini_api_key:
+        elif effective_api_key:
             self.gemini_transcriber = GeminiTranscriber(
-                api_key=gemini_api_key,
-                model_name=model_name or "gemini-2.5-flash",
+                api_key=effective_api_key,
+                model_name=effective_model,
+                cost_threshold_usd=effective_cost_threshold,
                 cost_confirmation_callback=cost_confirmation_callback,
             )
         else:
             # Try to create from environment
             try:
                 self.gemini_transcriber = GeminiTranscriber(
-                    model_name=model_name or "gemini-2.5-flash",
+                    model_name=effective_model,
+                    cost_threshold_usd=effective_cost_threshold,
                     cost_confirmation_callback=cost_confirmation_callback
                 )
             except ValueError:

@@ -89,15 +89,19 @@ class TestGlobalConfig:
         config = GlobalConfig()
         assert config.version == "1"
         assert config.default_output_dir == Path("~/podcasts")
-        assert config.transcription_model == "gemini-2.0-flash-exp"
-        assert config.interview_model == "claude-sonnet-4-5"
-        assert config.youtube_check is True
         assert config.log_level == "INFO"
         assert "summary" in config.default_templates
         assert "quotes" in config.default_templates
         assert "key-concepts" in config.default_templates
         assert "tech" in config.template_categories
         assert "interview" in config.template_categories
+
+        # New nested config structure
+        assert config.transcription.model_name == "gemini-2.5-flash"
+        assert config.transcription.youtube_check is True
+        assert config.transcription.cost_threshold_usd == 1.0
+        assert config.interview.model == "claude-sonnet-4-5"
+        assert config.extraction.default_provider == "gemini"
 
     def test_global_config_from_dict(self, sample_config_dict: dict) -> None:
         """Test GlobalConfig created from dictionary."""
@@ -123,6 +127,18 @@ class TestGlobalConfig:
         assert isinstance(config.template_categories["tech"], list)
         assert "tools-mentioned" in config.template_categories["tech"]
         assert "books-mentioned" in config.template_categories["interview"]
+
+    def test_global_config_backward_compatibility(self) -> None:
+        """Test that deprecated fields still work via migration."""
+        config = GlobalConfig(
+            transcription_model="gemini-1.5-flash",
+            interview_model="claude-opus-4",
+            youtube_check=False,
+        )
+        # Deprecated fields should migrate to new structure
+        assert config.transcription.model_name == "gemini-1.5-flash"
+        assert config.interview.model == "claude-opus-4"
+        assert config.transcription.youtube_check is False
 
 
 class TestFeeds:

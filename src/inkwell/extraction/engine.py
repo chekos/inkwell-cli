@@ -9,6 +9,7 @@ import time
 # Type-only import to avoid circular dependency
 from typing import TYPE_CHECKING, Any
 
+from ..config.schema import ExtractionConfig
 from ..utils.errors import ValidationError
 from ..utils.json_utils import JSONParsingError, safe_json_loads
 from .cache import ExtractionCache
@@ -50,6 +51,7 @@ class ExtractionEngine:
 
     def __init__(
         self,
+        config: ExtractionConfig | None = None,
         claude_api_key: str | None = None,
         gemini_api_key: str | None = None,
         cache: ExtractionCache | None = None,
@@ -59,16 +61,31 @@ class ExtractionEngine:
         """Initialize extraction engine.
 
         Args:
-            claude_api_key: Anthropic API key (defaults to env var)
-            gemini_api_key: Google AI API key (defaults to env var)
+            config: Extraction configuration (recommended, new approach)
+            claude_api_key: Anthropic API key (defaults to env var) [deprecated, use config]
+            gemini_api_key: Google AI API key (defaults to env var) [deprecated, use config]
             cache: Cache instance (defaults to new ExtractionCache)
-            default_provider: Default provider to use ("claude" or "gemini")
+            default_provider: Default provider to use ("claude" or "gemini") [deprecated, use config]
             cost_tracker: Cost tracker for recording API usage (optional, for DI)
+
+        Note:
+            Prefer passing `config` over individual parameters. Individual parameters
+            are maintained for backward compatibility but will be deprecated in v2.0.
         """
-        self.claude_extractor = ClaudeExtractor(api_key=claude_api_key)
-        self.gemini_extractor = GeminiExtractor(api_key=gemini_api_key)
+        # Extract config values (prefer config object, fall back to individual params)
+        if config:
+            effective_claude_key = config.claude_api_key or claude_api_key
+            effective_gemini_key = config.gemini_api_key or gemini_api_key
+            effective_provider = config.default_provider
+        else:
+            effective_claude_key = claude_api_key
+            effective_gemini_key = gemini_api_key
+            effective_provider = default_provider
+
+        self.claude_extractor = ClaudeExtractor(api_key=effective_claude_key)
+        self.gemini_extractor = GeminiExtractor(api_key=effective_gemini_key)
         self.cache = cache or ExtractionCache()
-        self.default_provider = default_provider
+        self.default_provider = effective_provider
         self.cost_tracker = cost_tracker
 
     async def extract(

@@ -27,6 +27,23 @@ class FeedConfig(BaseModel):
     custom_templates: list[str] = Field(default_factory=list)
 
 
+class TranscriptionConfig(BaseModel):
+    """Transcription service configuration."""
+
+    model_name: str = "gemini-2.5-flash"
+    api_key: str | None = None  # If None, will use environment variable
+    cost_threshold_usd: float = 1.0
+    youtube_check: bool = True  # Try YouTube transcripts first (free tier)
+
+
+class ExtractionConfig(BaseModel):
+    """Extraction service configuration."""
+
+    default_provider: Literal["claude", "gemini"] = "gemini"
+    claude_api_key: str | None = None  # If None, will use environment variable
+    gemini_api_key: str | None = None  # If None, will use environment variable
+
+
 class InterviewConfig(BaseModel):
     """Interview mode configuration."""
 
@@ -66,9 +83,6 @@ class GlobalConfig(BaseModel):
 
     version: str = "1"
     default_output_dir: Path = Field(default=Path("~/podcasts"))
-    transcription_model: str = "gemini-2.5-flash"
-    interview_model: str = "claude-sonnet-4-5"
-    youtube_check: bool = True
     log_level: LogLevel = "INFO"
     default_templates: list[str] = Field(
         default_factory=lambda: ["summary", "quotes", "key-concepts"]
@@ -79,7 +93,30 @@ class GlobalConfig(BaseModel):
             "interview": ["books-mentioned", "people-mentioned"],
         }
     )
+
+    # Service configurations
+    transcription: TranscriptionConfig = Field(default_factory=TranscriptionConfig)
+    extraction: ExtractionConfig = Field(default_factory=ExtractionConfig)
     interview: InterviewConfig = Field(default_factory=InterviewConfig)
+
+    # Deprecated fields (for backward compatibility with existing configs)
+    transcription_model: str | None = None
+    interview_model: str | None = None
+    youtube_check: bool | None = None
+
+    def model_post_init(self, __context) -> None:
+        """Handle deprecated config fields."""
+        # Migrate deprecated transcription_model to transcription.model_name
+        if self.transcription_model is not None:
+            self.transcription.model_name = self.transcription_model
+
+        # Migrate deprecated interview_model to interview.model
+        if self.interview_model is not None:
+            self.interview.model = self.interview_model
+
+        # Migrate deprecated youtube_check to transcription.youtube_check
+        if self.youtube_check is not None:
+            self.transcription.youtube_check = self.youtube_check
 
 
 class Feeds(BaseModel):

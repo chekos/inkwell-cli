@@ -13,6 +13,14 @@ from inkwell.transcription.models import Transcript, TranscriptSegment
 from inkwell.utils.errors import APIError
 from inkwell.utils.rate_limiter import get_rate_limiter
 
+# Allowed Gemini models for transcription
+ALLOWED_GEMINI_MODELS = {
+    "gemini-2.5-flash",
+    "gemini-2.5-pro",
+    "gemini-1.5-flash",
+    "gemini-1.5-pro",
+}
+
 
 class CostEstimate(BaseModel):
     """Cost estimate for Gemini transcription."""
@@ -69,6 +77,13 @@ class GeminiTranscriber:
             raise ValueError(
                 "Google AI API key required. "
                 "Provide via api_key parameter or GOOGLE_API_KEY environment variable."
+            )
+
+        # Validate model name
+        if model_name not in ALLOWED_GEMINI_MODELS:
+            raise ValueError(
+                f"Invalid model name '{model_name}'. "
+                f"Allowed models: {', '.join(sorted(ALLOWED_GEMINI_MODELS))}"
             )
 
         genai.configure(api_key=self.api_key)

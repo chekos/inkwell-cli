@@ -3,29 +3,20 @@
 import asyncio
 import os
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 from pathlib import Path
 
 import typer
-import yaml
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
-from rich.prompt import Confirm
 from rich.table import Table
 
 from inkwell.config.logging import setup_logging
 from inkwell.config.manager import ConfigManager
 from inkwell.config.schema import AuthConfig, FeedConfig
-from inkwell.extraction import ExtractionEngine
-from inkwell.extraction.template_selector import TemplateSelector
-from inkwell.extraction.templates import TemplateLoader
-from inkwell.feeds.models import Episode
-from inkwell.interview import SimpleInterviewer, conduct_interview_from_output
-from inkwell.output import EpisodeMetadata, OutputManager
 from inkwell.pipeline import PipelineOptions, PipelineOrchestrator
 from inkwell.transcription import CostEstimate, TranscriptionManager
-from inkwell.utils.api_keys import APIKeyError, get_validated_api_key
-from inkwell.utils.datetime import format_duration, now_utc
+from inkwell.utils.datetime import now_utc
 from inkwell.utils.display import truncate_url
 from inkwell.utils.errors import (
     ConfigError,
@@ -405,8 +396,15 @@ def transcribe_command(
 
     async def run_transcription() -> None:
         try:
-            # Initialize manager with cost confirmation
-            manager = TranscriptionManager(cost_confirmation_callback=confirm_cost)
+            # Load config to get transcription model
+            config_manager = ConfigManager()
+            config = config_manager.load_config()
+
+            # Initialize manager with cost confirmation and config model
+            manager = TranscriptionManager(
+                model_name=config.transcription_model,
+                cost_confirmation_callback=confirm_cost
+            )
 
             # Run transcription with progress indicator
             with Progress(
@@ -790,7 +788,6 @@ def costs_command(
         # Clear all cost history
         $ inkwell costs --clear
     """
-    from datetime import timedelta
 
     from rich.panel import Panel
 

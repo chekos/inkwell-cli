@@ -12,7 +12,6 @@ import yaml
 from pydantic import ValidationError
 
 from inkwell.config.crypto import CredentialEncryptor
-from inkwell.utils.yaml_integrity import YAMLIntegrityError, YAMLWithIntegrity
 from inkwell.config.defaults import (
     DEFAULT_GLOBAL_CONFIG,
     get_default_config_content,
@@ -23,6 +22,8 @@ from inkwell.utils.datetime import now_utc
 from inkwell.utils.errors import (
     ConfigError,
     NotFoundError,
+)
+from inkwell.utils.errors import (
     ValidationError as InkwellValidationError,
 )
 from inkwell.utils.paths import (
@@ -31,6 +32,7 @@ from inkwell.utils.paths import (
     get_feeds_file,
     get_key_file,
 )
+from inkwell.utils.yaml_integrity import YAMLIntegrityError, YAMLWithIntegrity
 
 
 class ConfigManager:

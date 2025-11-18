@@ -18,7 +18,7 @@ from .base import BaseExtractor
 class GeminiExtractor(BaseExtractor):
     """Extractor using Gemini (Google AI) API.
 
-    Supports Gemini 1.5 Flash with:
+    Supports Gemini 2.5 Flash with:
     - Fast, cost-effective extraction
     - Good quality for most tasks
     - Native JSON mode for structured output
@@ -31,7 +31,7 @@ class GeminiExtractor(BaseExtractor):
     """
 
     # Model to use
-    MODEL = "gemini-1.5-flash-latest"
+    MODEL = "gemini-2.5-flash"
 
     # Pricing per million tokens (USD)
     INPUT_PRICE_PER_M_SHORT = 0.075  # < 128K tokens

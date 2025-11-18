@@ -491,7 +491,7 @@ class TestExtractionEngineCostTracking:
             mock_extract = AsyncMock(return_value="Result")
             engine.gemini_extractor.extract = mock_extract
             engine.gemini_extractor.estimate_cost = Mock(return_value=0.05)
-            engine.gemini_extractor.model = "gemini-1.5-flash-latest"
+            engine.gemini_extractor.model = "gemini-2.5-flash-latest"
 
             # Initial cost
             assert engine.get_total_cost() == 0.0
@@ -533,7 +533,7 @@ class TestExtractionEngineCostTracking:
             mock_extract = AsyncMock(return_value="Result")
             engine.gemini_extractor.extract = mock_extract
             engine.gemini_extractor.estimate_cost = Mock(return_value=0.05)
-            engine.gemini_extractor.model = "gemini-1.5-flash-latest"
+            engine.gemini_extractor.model = "gemini-2.5-flash-latest"
 
             await engine.extract(
                 template=text_template,

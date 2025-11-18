@@ -190,7 +190,7 @@ class TranscriptCache(FileCache[Transcript]):
                 file_size = stat.st_size
 
                 # Read content
-                async with aiofiles.open(cache_file, "r") as f:
+                async with aiofiles.open(cache_file) as f:
                     content = await f.read()
                     data = json.loads(content)
 

@@ -35,6 +35,7 @@ class TranscriptionManager:
         audio_downloader: AudioDownloader | None = None,
         gemini_transcriber: GeminiTranscriber | None = None,
         gemini_api_key: str | None = None,
+        model_name: str | None = None,
         cost_confirmation_callback: Callable[[CostEstimate], bool] | None = None,
         cost_tracker: "CostTracker | None" = None,
     ):
@@ -46,6 +47,7 @@ class TranscriptionManager:
             audio_downloader: Audio downloader (default: new instance)
             gemini_transcriber: Gemini transcriber (default: new instance)
             gemini_api_key: Google AI API key for Gemini (default: from env)
+            model_name: Gemini model to use (default: gemini-2.5-flash)
             cost_confirmation_callback: Callback for Gemini cost confirmation
             cost_tracker: Cost tracker for recording API usage (optional, for DI)
         """
@@ -61,12 +63,14 @@ class TranscriptionManager:
         elif gemini_api_key:
             self.gemini_transcriber = GeminiTranscriber(
                 api_key=gemini_api_key,
+                model_name=model_name or "gemini-2.5-flash",
                 cost_confirmation_callback=cost_confirmation_callback,
             )
         else:
             # Try to create from environment
             try:
                 self.gemini_transcriber = GeminiTranscriber(
+                    model_name=model_name or "gemini-2.5-flash",
                     cost_confirmation_callback=cost_confirmation_callback
                 )
             except ValueError:
@@ -170,7 +174,7 @@ class TranscriptionManager:
                     transcript_tokens = len(transcript.text) // 4
                     self.cost_tracker.add_cost(
                         provider="gemini",
-                        model="gemini-1.5-flash-latest",
+                        model="gemini-2.5-flash",
                         operation="transcription",
                         input_tokens=transcript_tokens,
                         output_tokens=transcript_tokens,

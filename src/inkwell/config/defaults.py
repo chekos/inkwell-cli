@@ -17,7 +17,7 @@ version: "1"
 default_output_dir: ~/podcasts
 
 # LLM models to use
-transcription_model: gemini-2.0-flash-exp
+transcription_model: gemini-2.5-flash
 interview_model: claude-sonnet-4-5
 
 # Check YouTube for existing transcripts before transcribing

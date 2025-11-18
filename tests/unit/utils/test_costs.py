@@ -26,7 +26,7 @@ def _track_cost_in_subprocess(i, costs_file_path):
         tracker.track(
             APIUsage(
                 provider="gemini",
-                model="gemini-1.5-flash",
+                model="gemini-2.5-flash",
                 operation="extraction",
                 input_tokens=1000 * (i + 1),
                 output_tokens=100,
@@ -54,7 +54,7 @@ class TestProviderPricing:
         """Test Gemini Flash pricing calculation."""
         pricing = ProviderPricing(
             provider="gemini",
-            model="gemini-1.5-flash",
+            model="gemini-2.5-flash",
             input_price_per_m=0.075,
             output_price_per_m=0.30,
         )
@@ -99,7 +99,7 @@ class TestAPIUsage:
         """Test creating API usage record."""
         usage = APIUsage(
             provider="gemini",
-            model="gemini-1.5-flash",
+            model="gemini-2.5-flash",
             operation="extraction",
             input_tokens=5000,
             output_tokens=1000,
@@ -132,7 +132,7 @@ class TestAPIUsage:
         before = now_utc()
         usage = APIUsage(
             provider="gemini",
-            model="gemini-1.5-flash",
+            model="gemini-2.5-flash",
             operation="extraction",
             input_tokens=1000,
             output_tokens=200,
@@ -158,7 +158,7 @@ class TestCostSummary:
         """Test summary with single usage."""
         usage = APIUsage(
             provider="gemini",
-            model="gemini-1.5-flash",
+            model="gemini-2.5-flash",
             operation="extraction",
             input_tokens=5000,
             output_tokens=1000,
@@ -181,7 +181,7 @@ class TestCostSummary:
         """Test summary with multiple usage records."""
         usage1 = APIUsage(
             provider="gemini",
-            model="gemini-1.5-flash",
+            model="gemini-2.5-flash",
             operation="extraction",
             input_tokens=5000,
             output_tokens=1000,
@@ -201,7 +201,7 @@ class TestCostSummary:
 
         usage3 = APIUsage(
             provider="gemini",
-            model="gemini-1.5-flash",
+            model="gemini-2.5-flash",
             operation="tag_generation",
             input_tokens=3000,
             output_tokens=500,
@@ -248,7 +248,7 @@ class TestCostTracker:
 
         usage = APIUsage(
             provider="gemini",
-            model="gemini-1.5-flash",
+            model="gemini-2.5-flash",
             operation="extraction",
             input_tokens=5000,
             output_tokens=1000,
@@ -269,7 +269,7 @@ class TestCostTracker:
         tracker1 = CostTracker(costs_file=costs_file)
         usage = APIUsage(
             provider="gemini",
-            model="gemini-1.5-flash",
+            model="gemini-2.5-flash",
             operation="extraction",
             input_tokens=5000,
             output_tokens=1000,
@@ -292,7 +292,7 @@ class TestCostTracker:
         tracker.track(
             APIUsage(
                 provider="gemini",
-                model="gemini-1.5-flash",
+                model="gemini-2.5-flash",
                 operation="extraction",
                 input_tokens=5000,
                 output_tokens=1000,
@@ -322,7 +322,7 @@ class TestCostTracker:
         tracker.track(
             APIUsage(
                 provider="gemini",
-                model="gemini-1.5-flash",
+                model="gemini-2.5-flash",
                 operation="extraction",
                 input_tokens=5000,
                 output_tokens=1000,
@@ -343,7 +343,7 @@ class TestCostTracker:
         tracker.track(
             APIUsage(
                 provider="gemini",
-                model="gemini-1.5-flash",
+                model="gemini-2.5-flash",
                 operation="extraction",
                 input_tokens=5000,
                 output_tokens=1000,
@@ -382,7 +382,7 @@ class TestCostTracker:
         tracker.track(
             APIUsage(
                 provider="gemini",
-                model="gemini-1.5-flash",
+                model="gemini-2.5-flash",
                 operation="extraction",
                 input_tokens=5000,
                 output_tokens=1000,
@@ -393,7 +393,7 @@ class TestCostTracker:
         tracker.track(
             APIUsage(
                 provider="gemini",
-                model="gemini-1.5-flash",
+                model="gemini-2.5-flash",
                 operation="tag_generation",
                 input_tokens=3000,
                 output_tokens=500,
@@ -415,7 +415,7 @@ class TestCostTracker:
         tracker.track(
             APIUsage(
                 provider="gemini",
-                model="gemini-1.5-flash",
+                model="gemini-2.5-flash",
                 operation="extraction",
                 input_tokens=5000,
                 output_tokens=1000,
@@ -427,7 +427,7 @@ class TestCostTracker:
         tracker.track(
             APIUsage(
                 provider="gemini",
-                model="gemini-1.5-flash",
+                model="gemini-2.5-flash",
                 operation="extraction",
                 input_tokens=3000,
                 output_tokens=500,
@@ -454,7 +454,7 @@ class TestCostTracker:
         tracker.track(
             APIUsage(
                 provider="gemini",
-                model="gemini-1.5-flash",
+                model="gemini-2.5-flash",
                 operation="extraction",
                 input_tokens=5000,
                 output_tokens=1000,
@@ -466,7 +466,7 @@ class TestCostTracker:
         tracker.track(
             APIUsage(
                 provider="gemini",
-                model="gemini-1.5-flash",
+                model="gemini-2.5-flash",
                 operation="extraction",
                 input_tokens=3000,
                 output_tokens=500,
@@ -491,7 +491,7 @@ class TestCostTracker:
             tracker.track(
                 APIUsage(
                     provider="gemini",
-                    model="gemini-1.5-flash",
+                    model="gemini-2.5-flash",
                     operation="extraction",
                     input_tokens=1000 * (i + 1),
                     output_tokens=200,
@@ -516,7 +516,7 @@ class TestCostTracker:
         tracker.track(
             APIUsage(
                 provider="gemini",
-                model="gemini-1.5-flash",
+                model="gemini-2.5-flash",
                 operation="extraction",
                 input_tokens=5000,
                 output_tokens=1000,
@@ -601,7 +601,7 @@ class TestCostTracker:
         tracker.track(
             APIUsage(
                 provider="gemini",
-                model="gemini-1.5-flash",
+                model="gemini-2.5-flash",
                 operation="extraction",
                 input_tokens=1000,
                 output_tokens=100,
@@ -616,7 +616,7 @@ class TestCostTracker:
         tracker.track(
             APIUsage(
                 provider="gemini",
-                model="gemini-1.5-flash",
+                model="gemini-2.5-flash",
                 operation="extraction",
                 input_tokens=2000,
                 output_tokens=200,
@@ -645,7 +645,7 @@ class TestCostTracker:
         tracker1.track(
             APIUsage(
                 provider="gemini",
-                model="gemini-1.5-flash",
+                model="gemini-2.5-flash",
                 operation="extraction",
                 input_tokens=1000,
                 output_tokens=100,
@@ -694,7 +694,7 @@ class TestCostTracker:
         tracker1 = CostTracker(costs_file=costs_file)
         usage = APIUsage(
             provider="gemini",
-            model="gemini-1.5-flash",
+            model="gemini-2.5-flash",
             operation="extraction",
             input_tokens=1000,
             output_tokens=100,
@@ -723,7 +723,7 @@ class TestCalculateCostFromUsage:
         """Test Gemini cost calculation for short context."""
         cost = calculate_cost_from_usage(
             provider="gemini",
-            model="gemini-1.5-flash",
+            model="gemini-2.5-flash",
             input_tokens=50_000,
             output_tokens=2000,
         )
@@ -736,7 +736,7 @@ class TestCalculateCostFromUsage:
         """Test Gemini cost calculation for long context."""
         cost = calculate_cost_from_usage(
             provider="gemini",
-            model="gemini-1.5-flash",
+            model="gemini-2.5-flash",
             input_tokens=200_000,
             output_tokens=2000,
         )
@@ -779,7 +779,7 @@ class TestUUIDDeduplication:
         # Process episode first time
         tracker.add_cost(
             provider="gemini",
-            model="gemini-1.5-flash",
+            model="gemini-2.5-flash",
             operation="extraction",
             input_tokens=1000,
             output_tokens=500,
@@ -790,7 +790,7 @@ class TestUUIDDeduplication:
         # Same tokens, same episode, but should record as separate cost
         tracker.add_cost(
             provider="gemini",
-            model="gemini-1.5-flash",
+            model="gemini-2.5-flash",
             operation="extraction",
             input_tokens=1000,  # Same tokens as before
             output_tokens=500,
@@ -811,7 +811,7 @@ class TestUUIDDeduplication:
         for _ in range(10):
             tracker.add_cost(
                 provider="gemini",
-                model="gemini-1.5-flash",
+                model="gemini-2.5-flash",
                 operation="extraction",
                 input_tokens=1000,
                 output_tokens=500,
@@ -832,7 +832,7 @@ class TestUUIDDeduplication:
             "timestamp": "2025-11-14T10:00:00+00:00",
             "operation": "extraction",
             "provider": "gemini",
-            "model": "gemini-1.5-flash",
+            "model": "gemini-2.5-flash",
             "input_tokens": 1000,
             "output_tokens": 500,
             "cost_usd": 0.005,
@@ -860,7 +860,7 @@ class TestUUIDDeduplication:
         usage = APIUsage(
             usage_id="test-uuid-12345",
             provider="gemini",
-            model="gemini-1.5-flash",
+            model="gemini-2.5-flash",
             operation="extraction",
             input_tokens=1000,
             output_tokens=500,
@@ -889,7 +889,7 @@ class TestUUIDDeduplication:
         usage1 = APIUsage(
             usage_id="uuid-1",
             provider="gemini",
-            model="gemini-1.5-flash",
+            model="gemini-2.5-flash",
             operation="extraction",
             input_tokens=1000,
             output_tokens=500,
@@ -901,7 +901,7 @@ class TestUUIDDeduplication:
         usage2 = APIUsage(
             usage_id="uuid-2",
             provider="gemini",
-            model="gemini-1.5-flash",
+            model="gemini-2.5-flash",
             operation="extraction",
             input_tokens=1000,  # Same tokens
             output_tokens=500,
@@ -921,7 +921,7 @@ class TestUUIDDeduplication:
         """Verify APIUsage automatically generates UUID."""
         usage = APIUsage(
             provider="gemini",
-            model="gemini-1.5-flash",
+            model="gemini-2.5-flash",
             operation="extraction",
             input_tokens=1000,
             output_tokens=500,
@@ -935,7 +935,7 @@ class TestUUIDDeduplication:
         """Verify multiple APIUsage instances generate different UUIDs."""
         usage1 = APIUsage(
             provider="gemini",
-            model="gemini-1.5-flash",
+            model="gemini-2.5-flash",
             operation="extraction",
             input_tokens=1000,
             output_tokens=500,
@@ -944,7 +944,7 @@ class TestUUIDDeduplication:
 
         usage2 = APIUsage(
             provider="gemini",
-            model="gemini-1.5-flash",
+            model="gemini-2.5-flash",
             operation="extraction",
             input_tokens=1000,
             output_tokens=500,

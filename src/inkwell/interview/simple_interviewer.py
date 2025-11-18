@@ -70,7 +70,7 @@ class SimpleInterviewer:
         self,
         api_key: str,
         model: str = "claude-sonnet-4-5",
-        cost_tracker: "CostTracker | None" = None,
+        cost_tracker: CostTracker | None = None,
     ):
         """Initialize the simple interviewer.
 
@@ -376,7 +376,7 @@ async def conduct_interview_from_output(
     podcast_name: str,
     api_key: str,
     max_questions: int = 5,
-    cost_tracker: "CostTracker | None" = None,
+    cost_tracker: CostTracker | None = None,
 ) -> SimpleInterviewResult:
     """Convenience function to conduct interview from episode output directory.
 

@@ -11,7 +11,8 @@ from typing import Any
 import yaml
 from pydantic import ValidationError
 
-from ..utils.errors import NotFoundError, ValidationError as InkwellValidationError
+from ..utils.errors import NotFoundError
+from ..utils.errors import ValidationError as InkwellValidationError
 from .models import ExtractionTemplate
 
 logger = logging.getLogger(__name__)

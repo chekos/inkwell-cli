@@ -13,6 +13,14 @@ from inkwell.transcription.models import Transcript, TranscriptSegment
 from inkwell.utils.errors import APIError
 from inkwell.utils.rate_limiter import get_rate_limiter
 
+# Allowed Gemini models for transcription
+ALLOWED_GEMINI_MODELS = {
+    "gemini-2.5-flash",
+    "gemini-2.5-pro",
+    "gemini-1.5-flash",
+    "gemini-1.5-pro",
+}
+
 
 class CostEstimate(BaseModel):
     """Cost estimate for Gemini transcription."""
@@ -32,7 +40,7 @@ class CostEstimate(BaseModel):
 class GeminiTranscriber:
     """Transcribe audio files using Google Gemini API.
 
-    Uses Gemini 1.5 Flash for cost-effective audio transcription.
+    Uses Gemini 2.5 Flash for cost-effective audio transcription.
     Supports automatic file upload for large files (>10MB).
     Implements cost estimation per ADR-012.
     """
@@ -40,24 +48,42 @@ class GeminiTranscriber:
     def __init__(
         self,
         api_key: str | None = None,
-        model_name: str = "gemini-1.5-flash",
+        model_name: str = "gemini-2.5-flash",
         cost_threshold_usd: float = 1.0,
         cost_confirmation_callback: Callable[[CostEstimate], bool] | None = None,
     ):
         """Initialize Gemini transcriber.
 
         Args:
-            api_key: Google AI API key (default: GOOGLE_AI_API_KEY env var)
-            model_name: Gemini model to use (default: gemini-1.5-flash)
+            api_key: Google AI API key (default: GOOGLE_API_KEY env var)
+            model_name: Gemini model to use (default: gemini-2.5-flash)
             cost_threshold_usd: Threshold for cost confirmation (default: $1.00)
             cost_confirmation_callback: Callback for cost confirmation (default: auto-approve)
         """
         # Get API key from parameter or environment
-        self.api_key = api_key or os.getenv("GOOGLE_AI_API_KEY")
+        # Try GOOGLE_API_KEY first (standard), then GOOGLE_AI_API_KEY (deprecated)
+        self.api_key = api_key or os.getenv("GOOGLE_API_KEY") or os.getenv("GOOGLE_AI_API_KEY")
+
+        # Warn if using deprecated env var
+        if os.getenv("GOOGLE_AI_API_KEY") and not os.getenv("GOOGLE_API_KEY"):
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(
+                "GOOGLE_AI_API_KEY is deprecated. Please use GOOGLE_API_KEY instead. "
+                "GOOGLE_AI_API_KEY will be removed in v2.0.0"
+            )
+
         if not self.api_key:
             raise ValueError(
                 "Google AI API key required. "
-                "Provide via api_key parameter or GOOGLE_AI_API_KEY environment variable."
+                "Provide via api_key parameter or GOOGLE_API_KEY environment variable."
+            )
+
+        # Validate model name
+        if model_name not in ALLOWED_GEMINI_MODELS:
+            raise ValueError(
+                f"Invalid model name '{model_name}'. "
+                f"Allowed models: {', '.join(sorted(ALLOWED_GEMINI_MODELS))}"
             )
 
         genai.configure(api_key=self.api_key)

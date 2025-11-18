@@ -1,9 +1,10 @@
 """Rate limiting for API calls using token bucket algorithm."""
 
-import time
 import threading
+import time
+from collections.abc import Callable
 from functools import wraps
-from typing import Callable, Literal, ParamSpec, TypeVar
+from typing import Literal, ParamSpec, TypeVar
 
 P = ParamSpec("P")
 T = TypeVar("T")

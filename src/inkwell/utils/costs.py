@@ -61,13 +61,13 @@ class ProviderPricing(BaseModel):
 PROVIDER_PRICING = {
     "gemini-flash": ProviderPricing(
         provider="gemini",
-        model="gemini-1.5-flash-latest",
+        model="gemini-2.5-flash",
         input_price_per_m=0.075,  # <128K tokens
         output_price_per_m=0.30,
     ),
     "gemini-flash-long": ProviderPricing(
         provider="gemini",
-        model="gemini-1.5-flash-latest",
+        model="gemini-2.5-flash",
         input_price_per_m=0.15,  # >128K tokens
         output_price_per_m=0.30,
     ),
@@ -95,7 +95,7 @@ class APIUsage(BaseModel):
     provider: Literal["gemini", "claude", "youtube"] = Field(
         ..., description="API provider"
     )
-    model: str = Field(..., description="Model used (e.g., gemini-1.5-flash)")
+    model: str = Field(..., description="Model used (e.g., gemini-2.5-flash)")
     operation: Literal["transcription", "extraction", "tag_generation", "interview"] = (
         Field(..., description="Type of operation")
     )
@@ -230,7 +230,7 @@ class CostTracker:
     def _load(self) -> None:
         """Load costs from disk with shared lock."""
         try:
-            with open(self.costs_file, "r") as f:
+            with open(self.costs_file) as f:
                 # Acquire shared lock for reading
                 self._acquire_lock(f, exclusive=False)
                 try:
@@ -273,7 +273,7 @@ class CostTracker:
         backup_file = self.costs_file.with_suffix(".json.bak")
         if backup_file.exists():
             try:
-                with open(backup_file, "r") as f:
+                with open(backup_file) as f:
                     data = json.load(f)
                     self.usage_history = [APIUsage.model_validate(item) for item in data]
                 logger.warning("Loaded costs from backup: %s", backup_file)

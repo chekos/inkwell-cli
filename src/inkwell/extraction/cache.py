@@ -208,8 +208,9 @@ class ExtractionCache(FileCache[str]):
         total_size_mb = total_size / (1024 * 1024)
 
         # Find oldest entry in parallel
-        import aiofiles
         import json
+
+        import aiofiles
 
         async def get_timestamp(cache_file: Path) -> float:
             """Get timestamp from cache file, returns current time if error."""

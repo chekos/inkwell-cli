@@ -6,9 +6,10 @@ Provides a reusable cache implementation that can be specialized for different d
 import asyncio
 import hashlib
 import json
+from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Callable, Generic, TypeVar
+from typing import Any, Generic, TypeVar
 
 import aiofiles
 
@@ -122,7 +123,7 @@ class FileCache(Generic[T]):
 
         try:
             # Read cache file asynchronously
-            async with aiofiles.open(cache_file, "r") as f:
+            async with aiofiles.open(cache_file) as f:
                 content = await f.read()
                 data = json.loads(content)
 
@@ -222,7 +223,7 @@ class FileCache(Generic[T]):
         async def check_and_delete(cache_file: Path) -> bool:
             """Check if file is expired and delete if so. Returns True if deleted."""
             try:
-                async with aiofiles.open(cache_file, "r") as f:
+                async with aiofiles.open(cache_file) as f:
                     content = await f.read()
                     data = json.loads(content)
 
@@ -270,7 +271,7 @@ class FileCache(Generic[T]):
                 file_size = stat.st_size
 
                 # Read content
-                async with aiofiles.open(cache_file, "r") as f:
+                async with aiofiles.open(cache_file) as f:
                     content = await f.read()
                     data = json.loads(content)
 

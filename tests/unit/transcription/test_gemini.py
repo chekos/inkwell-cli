@@ -94,7 +94,7 @@ class TestGeminiTranscriber:
         transcriber = GeminiTranscriber(api_key="test-key")
 
         assert transcriber.api_key == "test-key"
-        assert transcriber.model_name == "gemini-1.5-flash"
+        assert transcriber.model_name == "gemini-2.5-flash"
         assert transcriber.cost_threshold_usd == 1.0
 
         mock_genai.configure.assert_called_once_with(api_key="test-key")
@@ -103,12 +103,40 @@ class TestGeminiTranscriber:
         self, mock_genai: Mock, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Test initialization from environment variable."""
-        monkeypatch.setenv("GOOGLE_AI_API_KEY", "env-key")
+        monkeypatch.setenv("GOOGLE_API_KEY", "env-key")
 
         transcriber = GeminiTranscriber()
 
         assert transcriber.api_key == "env-key"
         mock_genai.configure.assert_called_once_with(api_key="env-key")
+
+    def test_initialization_from_deprecated_env(
+        self, mock_genai: Mock, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Test initialization from deprecated GOOGLE_AI_API_KEY environment variable."""
+        monkeypatch.setenv("GOOGLE_AI_API_KEY", "deprecated-key")
+        monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+
+        transcriber = GeminiTranscriber()
+
+        assert transcriber.api_key == "deprecated-key"
+        assert "GOOGLE_AI_API_KEY is deprecated" in caplog.text
+        assert "Please use GOOGLE_API_KEY instead" in caplog.text
+        mock_genai.configure.assert_called_once_with(api_key="deprecated-key")
+
+    def test_initialization_env_var_precedence(
+        self, mock_genai: Mock, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Test that GOOGLE_API_KEY takes precedence over GOOGLE_AI_API_KEY."""
+        monkeypatch.setenv("GOOGLE_API_KEY", "primary-key")
+        monkeypatch.setenv("GOOGLE_AI_API_KEY", "deprecated-key")
+
+        transcriber = GeminiTranscriber()
+
+        assert transcriber.api_key == "primary-key"
+        # Should not show deprecation warning when GOOGLE_API_KEY is set
+        assert "GOOGLE_AI_API_KEY is deprecated" not in caplog.text
+        mock_genai.configure.assert_called_once_with(api_key="primary-key")
 
     def test_initialization_no_api_key(self, mock_genai: Mock) -> None:
         """Test initialization fails without API key."""

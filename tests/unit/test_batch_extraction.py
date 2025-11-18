@@ -586,7 +586,7 @@ class TestCostTracking:
             mock_extract = AsyncMock(return_value=batch_response)
             engine.gemini_extractor.extract = mock_extract
             engine.gemini_extractor.estimate_cost = Mock(return_value=0.01)
-            engine.gemini_extractor.model = "gemini-1.5-flash-latest"
+            engine.gemini_extractor.model = "gemini-2.5-flash-latest"
 
             initial_cost = engine.get_total_cost()
 

@@ -13,7 +13,7 @@ class TestAPIUsageDatetimeHandling:
         """Test that default timestamp is timezone-aware."""
         usage = APIUsage(
             provider="gemini",
-            model="gemini-1.5-flash",
+            model="gemini-2.5-flash",
             operation="transcription",
         )
 
@@ -26,7 +26,7 @@ class TestAPIUsageDatetimeHandling:
 
         usage = APIUsage(
             provider="gemini",
-            model="gemini-1.5-flash",
+            model="gemini-2.5-flash",
             operation="transcription",
             timestamp=aware_dt,
         )
@@ -40,7 +40,7 @@ class TestAPIUsageDatetimeHandling:
 
         usage = APIUsage(
             provider="gemini",
-            model="gemini-1.5-flash",
+            model="gemini-2.5-flash",
             operation="transcription",
             timestamp=naive_dt,
         )
@@ -55,7 +55,7 @@ class TestAPIUsageDatetimeHandling:
 
         usage = APIUsage(
             provider="gemini",
-            model="gemini-1.5-flash",
+            model="gemini-2.5-flash",
             operation="transcription",
             timestamp=aware_dt,
         )
@@ -69,7 +69,7 @@ class TestAPIUsageDatetimeHandling:
         # This should work without errors
         usage = APIUsage(
             provider="gemini",
-            model="gemini-1.5-flash",
+            model="gemini-2.5-flash",
             operation="transcription",
         )
 
@@ -80,13 +80,13 @@ class TestAPIUsageDatetimeHandling:
         """Test that timestamps can be compared without TypeError."""
         usage1 = APIUsage(
             provider="gemini",
-            model="gemini-1.5-flash",
+            model="gemini-2.5-flash",
             operation="transcription",
         )
 
         usage2 = APIUsage(
             provider="gemini",
-            model="gemini-1.5-flash",
+            model="gemini-2.5-flash",
             operation="transcription",
         )
 
@@ -101,7 +101,7 @@ class TestAPIUsageDatetimeHandling:
         """Test that serialized timestamp includes timezone info."""
         usage = APIUsage(
             provider="gemini",
-            model="gemini-1.5-flash",
+            model="gemini-2.5-flash",
             operation="transcription",
         )
 
@@ -118,7 +118,7 @@ class TestAPIUsageDatetimeHandling:
         """Test that deserializing from JSON maintains timezone info."""
         usage1 = APIUsage(
             provider="gemini",
-            model="gemini-1.5-flash",
+            model="gemini-2.5-flash",
             operation="transcription",
         )
 
@@ -142,14 +142,14 @@ class TestAPIUsageDatetimeHandling:
             # Add some usage records
             usage1 = APIUsage(
                 provider="gemini",
-                model="gemini-1.5-flash",
+                model="gemini-2.5-flash",
                 operation="transcription",
                 cost_usd=0.10,
             )
 
             usage2 = APIUsage(
                 provider="gemini",
-                model="gemini-1.5-flash",
+                model="gemini-2.5-flash",
                 operation="extraction",
                 cost_usd=0.20,
             )

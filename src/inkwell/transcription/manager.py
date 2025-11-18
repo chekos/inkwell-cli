@@ -1,11 +1,13 @@
 """Transcription manager orchestrating multi-tier transcription."""
 
 import asyncio
+import warnings
 from collections.abc import Callable
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 from inkwell.audio import AudioDownloader
+from inkwell.config.precedence import resolve_config_value
 from inkwell.config.schema import TranscriptionConfig
 from inkwell.transcription.cache import TranscriptCache
 from inkwell.transcription.gemini import CostEstimate, GeminiTranscriber
@@ -58,20 +60,37 @@ class TranscriptionManager:
             Prefer passing `config` over individual parameters. Individual parameters
             are maintained for backward compatibility but will be deprecated in v2.0.
         """
+        # Warn if using deprecated individual parameters
+        if config is None and (gemini_api_key is not None or model_name is not None):
+            warnings.warn(
+                "Individual parameters (gemini_api_key, model_name) are deprecated. "
+                "Use TranscriptionConfig instead. "
+                "These parameters will be removed in v2.0.",
+                DeprecationWarning,
+                stacklevel=2
+            )
+
         self.cache = cache or TranscriptCache()
         self.youtube_transcriber = youtube_transcriber or YouTubeTranscriber()
         self.audio_downloader = audio_downloader or AudioDownloader()
         self.cost_tracker = cost_tracker
 
-        # Extract config values (prefer config object, fall back to individual params)
-        if config:
-            effective_api_key = config.api_key or gemini_api_key
-            effective_model = model_name or config.model_name
-            effective_cost_threshold = config.cost_threshold_usd
-        else:
-            effective_api_key = gemini_api_key
-            effective_model = model_name or "gemini-2.5-flash"
-            effective_cost_threshold = 1.0
+        # Extract config values with standardized precedence
+        effective_api_key = resolve_config_value(
+            config.api_key if config else None,
+            gemini_api_key,
+            None  # Will fall back to environment in GeminiTranscriber
+        )
+        effective_model = resolve_config_value(
+            config.model_name if config else None,
+            model_name,
+            "gemini-2.5-flash"
+        )
+        effective_cost_threshold = resolve_config_value(
+            config.cost_threshold_usd if config else None,
+            None,  # No individual param for this
+            1.0
+        )
 
         # Initialize Gemini transcriber if API key available
         self.gemini_transcriber: GeminiTranscriber | None

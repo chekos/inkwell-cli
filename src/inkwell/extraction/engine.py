@@ -4,11 +4,14 @@ Coordinates template selection, provider selection, caching, and result parsing.
 """
 
 import logging
+import re
 import time
+import warnings
 
 # Type-only import to avoid circular dependency
 from typing import TYPE_CHECKING, Any
 
+from ..config.precedence import resolve_config_value
 from ..config.schema import ExtractionConfig
 from ..utils.errors import ValidationError
 from ..utils.json_utils import JSONParsingError, safe_json_loads
@@ -27,6 +30,29 @@ if TYPE_CHECKING:
     from ..utils.costs import CostTracker
 
 logger = logging.getLogger(__name__)
+
+
+def _sanitize_error_message(message: str) -> str:
+    """Remove potential API keys from error messages.
+
+    Sanitizes error messages to prevent API key leakage in logs and exception traces.
+    Redacts both Gemini and Claude API keys using regex patterns.
+
+    Args:
+        message: Error message that may contain API keys
+
+    Returns:
+        Sanitized message with API keys redacted
+
+    Example:
+        >>> _sanitize_error_message("Error with key AIzaSyDabcdefg123")
+        'Error with key [REDACTED_GEMINI_KEY]'
+    """
+    # Redact Gemini keys (AIza...)
+    message = re.sub(r'AIza[A-Za-z0-9_-]+', '[REDACTED_GEMINI_KEY]', message)
+    # Redact Claude keys (sk-ant-...)
+    message = re.sub(r'sk-ant-[A-Za-z0-9_-]+', '[REDACTED_CLAUDE_KEY]', message)
+    return message
 
 
 class ExtractionEngine:
@@ -72,15 +98,40 @@ class ExtractionEngine:
             Prefer passing `config` over individual parameters. Individual parameters
             are maintained for backward compatibility but will be deprecated in v2.0.
         """
-        # Extract config values (prefer config object, fall back to individual params)
-        if config:
-            effective_claude_key = config.claude_api_key or claude_api_key
-            effective_gemini_key = config.gemini_api_key or gemini_api_key
-            effective_provider = config.default_provider
-        else:
-            effective_claude_key = claude_api_key
-            effective_gemini_key = gemini_api_key
-            effective_provider = default_provider
+        # Warn if using deprecated individual parameters
+        deprecated_params = []
+        if claude_api_key is not None:
+            deprecated_params.append("claude_api_key")
+        if gemini_api_key is not None:
+            deprecated_params.append("gemini_api_key")
+        if default_provider != "gemini":  # Non-default value
+            deprecated_params.append("default_provider")
+
+        if config is None and deprecated_params:
+            warnings.warn(
+                f"Individual parameters ({', '.join(deprecated_params)}) are deprecated. "
+                f"Use ExtractionConfig instead. "
+                f"These parameters will be removed in v2.0.",
+                DeprecationWarning,
+                stacklevel=2
+            )
+
+        # Extract config values with standardized precedence
+        effective_claude_key = resolve_config_value(
+            config.claude_api_key if config else None,
+            claude_api_key,
+            None
+        )
+        effective_gemini_key = resolve_config_value(
+            config.gemini_api_key if config else None,
+            gemini_api_key,
+            None
+        )
+        effective_provider = resolve_config_value(
+            config.default_provider if config else None,
+            default_provider,
+            "gemini"
+        )
 
         self.claude_extractor = ClaudeExtractor(api_key=effective_claude_key)
         self.gemini_extractor = GeminiExtractor(api_key=effective_gemini_key)
@@ -178,12 +229,14 @@ class ExtractionEngine:
 
         except Exception as e:
             # Return failed result instead of raising
+            # Sanitize error message to prevent API key leakage
+            error_msg = _sanitize_error_message(str(e))
             return ExtractionResult(
                 episode_url=episode_url,
                 template_name=template.name,
                 success=False,
                 extracted_content=None,
-                error=str(e),
+                error=error_msg,
                 cost_usd=0.0,
                 provider=provider_name,
             )
@@ -264,17 +317,20 @@ class ExtractionEngine:
 
             elif isinstance(result, Exception):
                 # Exception during extraction
+                # Sanitize error message to prevent API key leakage
+                sanitized_error_msg = _sanitize_error_message(str(result))
                 attempts.append(
                     ExtractionAttempt(
                         template_name=template.name,
                         status=ExtractionStatus.FAILED,
                         error=result,
-                        error_message=str(result),
+                        error_message=sanitized_error_msg,
                         duration_seconds=duration,
                     )
                 )
+                # Log with sanitized message to prevent key leakage in logs
                 logger.error(
-                    f"Extraction failed for template '{template.name}': {result}",
+                    f"Extraction failed for template '{template.name}': {sanitized_error_msg}",
                     exc_info=result,
                 )
 
@@ -498,7 +554,9 @@ class ExtractionEngine:
             logger.info(f"Batch extraction successful for {len(batch_results)} templates")
 
         except Exception as e:
-            logger.error(f"Batch extraction failed: {e}", exc_info=True)
+            # Sanitize error message to prevent API key leakage in logs
+            sanitized_error_msg = _sanitize_error_message(str(e))
+            logger.error(f"Batch extraction failed: {sanitized_error_msg}", exc_info=True)
             # Fallback to individual extraction
             batch_results = await self._extract_individually(
                 uncached_templates, transcript, metadata, episode_url

@@ -71,21 +71,21 @@ def validate_api_key(
     key = key.strip()
 
     # Basic length validation (most API keys are 20+ chars)
+    # Note: Error message is intentionally generic to avoid information disclosure
     if len(key) < 20:
         raise APIKeyError(
-            f"{provider.title()} API key appears invalid (too short).\n"
-            f"Expected at least 20 characters, got {len(key)}.\n"
-            f"Check your {key_name} environment variable."
+            f"{provider.title()} API key appears invalid.\n"
+            f"Check your {key_name} environment variable.\n"
+            f"Ensure it's properly formatted without quotes or whitespace."
         )
 
     # Provider-specific validation
+    # Note: Error messages are intentionally generic to avoid revealing key format details
     if provider == "gemini":
-        # Gemini keys typically start with "AI" and are alphanumeric + dash
+        # Gemini keys typically start with "AIza" and are alphanumeric + dash
         if not re.match(r"^AIza[A-Za-z0-9_-]+$", key):
             raise APIKeyError(
-                f"Gemini API key format appears invalid.\n"
-                f"Gemini keys typically start with 'AIza' and contain only "
-                f"alphanumeric characters, underscores, and dashes.\n"
+                f"{provider.title()} API key appears invalid.\n"
                 f"Check your {key_name} environment variable."
             )
 
@@ -93,9 +93,7 @@ def validate_api_key(
         # Claude keys start with "sk-ant-" and are alphanumeric
         if not re.match(r"^sk-ant-[A-Za-z0-9_-]+$", key):
             raise APIKeyError(
-                f"Claude API key format appears invalid.\n"
-                f"Claude keys typically start with 'sk-ant-' and contain only "
-                f"alphanumeric characters, underscores, and dashes.\n"
+                f"{provider.title()} API key appears invalid.\n"
                 f"Check your {key_name} environment variable."
             )
 

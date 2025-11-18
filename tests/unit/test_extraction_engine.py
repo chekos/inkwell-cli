@@ -1,5 +1,6 @@
 """Unit tests for extraction engine."""
 
+import warnings
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -9,6 +10,7 @@ from inkwell.extraction.cache import ExtractionCache
 from inkwell.extraction.engine import ExtractionEngine
 from inkwell.utils.errors import ValidationError
 from inkwell.extraction.models import ExtractionTemplate
+from inkwell.config.schema import ExtractionConfig
 
 
 @pytest.fixture
@@ -86,6 +88,174 @@ class TestExtractionEngineInit:
         ):
             engine = ExtractionEngine(cache=temp_cache)
             assert engine.cache == temp_cache
+
+
+class TestExtractionEngineConfigInjection:
+    """Test configuration dependency injection patterns.
+
+    These tests validate the parameter precedence logic for backward-compatible
+    dependency injection, ensuring config objects take precedence over individual params.
+    """
+
+    def test_config_object_only(self, mock_api_keys: None) -> None:
+        """Using only config object works correctly."""
+        config = ExtractionConfig(
+            default_provider="claude",
+            claude_api_key="test-claude-key-123456789012345678901234567890123456789012345678901234567890",
+            gemini_api_key="test-gemini-key-123456789012345678901234567890123456789012345678901234567890"
+        )
+
+        with patch("inkwell.extraction.engine.ClaudeExtractor") as mock_claude, patch(
+            "inkwell.extraction.engine.GeminiExtractor"
+        ) as mock_gemini:
+            engine = ExtractionEngine(config=config)
+
+            assert engine.default_provider == "claude"
+            # Verify extractors were initialized with config values
+            mock_claude.assert_called_once()
+            mock_gemini.assert_called_once()
+
+    def test_individual_params_only(self, mock_api_keys: None) -> None:
+        """Using only individual params works (backward compatibility)."""
+        with patch("inkwell.extraction.engine.ClaudeExtractor"), patch(
+            "inkwell.extraction.engine.GeminiExtractor"
+        ):
+            engine = ExtractionEngine(
+                claude_api_key="test-claude-1234567890123456789012345678901234567890123456789012345678901234567890",
+                gemini_api_key="test-gemini-1234567890123456789012345678901234567890123456789012345678901234567890",
+                default_provider="gemini"
+            )
+
+            assert engine.default_provider == "gemini"
+
+    def test_config_overrides_individual_params(self, mock_api_keys: None) -> None:
+        """Config object takes precedence over individual params.
+
+        This is the critical test that catches bug #046 - when both config
+        and individual params are provided, config should win.
+        """
+        config = ExtractionConfig(
+            default_provider="claude",
+            claude_api_key="config-claude-key-12345678901234567890123456789012345678901234567890123456789012345678901234567890"
+        )
+
+        with patch("inkwell.extraction.engine.ClaudeExtractor"), patch(
+            "inkwell.extraction.engine.GeminiExtractor"
+        ):
+            engine = ExtractionEngine(
+                config=config,
+                claude_api_key="deprecated-key-1234567890123456789012345678901234567890123456789012345678901234567890",
+                default_provider="gemini"  # Should be ignored
+            )
+
+            # Config values should win
+            assert engine.default_provider == "claude"
+            # NOT "gemini"
+
+    def test_config_none_values_fall_back_to_params(self, mock_api_keys: None) -> None:
+        """When config has None values, falls back to individual params."""
+        config = ExtractionConfig(
+            claude_api_key=None,  # Explicit None
+            default_provider="claude"
+        )
+
+        with patch("inkwell.extraction.engine.ClaudeExtractor"), patch(
+            "inkwell.extraction.engine.GeminiExtractor"
+        ):
+            engine = ExtractionEngine(
+                config=config,
+                claude_api_key="fallback-key-123456789012345678901234567890123456789012345678901234567890"
+            )
+
+            # Should use config default_provider
+            assert engine.default_provider == "claude"
+
+    def test_empty_config_uses_defaults(self, mock_api_keys: None) -> None:
+        """Empty config object uses default values."""
+        config = ExtractionConfig()  # All defaults
+
+        with patch("inkwell.extraction.engine.ClaudeExtractor"), patch(
+            "inkwell.extraction.engine.GeminiExtractor"
+        ):
+            engine = ExtractionEngine(config=config)
+
+            # Should use defaults from ExtractionConfig
+            assert engine.default_provider == "gemini"
+
+    def test_cost_tracker_injection_with_config(self, mock_api_keys: None, tmp_path: Path) -> None:
+        """Cost tracker can be injected with config object."""
+        from inkwell.utils.costs import CostTracker
+
+        tracker = CostTracker(costs_file=tmp_path / "costs.json")
+        config = ExtractionConfig()
+
+        with patch("inkwell.extraction.engine.ClaudeExtractor"), patch(
+            "inkwell.extraction.engine.GeminiExtractor"
+        ):
+            engine = ExtractionEngine(
+                config=config,
+                cost_tracker=tracker
+            )
+
+            assert engine.cost_tracker is tracker
+
+    def test_cost_tracker_injection_without_config(self, mock_api_keys: None, tmp_path: Path) -> None:
+        """Cost tracker works with individual params (backward compat)."""
+        from inkwell.utils.costs import CostTracker
+
+        tracker = CostTracker(costs_file=tmp_path / "costs.json")
+
+        with patch("inkwell.extraction.engine.ClaudeExtractor"), patch(
+            "inkwell.extraction.engine.GeminiExtractor"
+        ):
+            engine = ExtractionEngine(
+                claude_api_key="test-key-1234567890123456789012345678901234567890123456789012345678901234567890",
+                cost_tracker=tracker
+            )
+
+            assert engine.cost_tracker is tracker
+
+    def test_config_with_all_values_set(self, mock_api_keys: None) -> None:
+        """Config with all values explicitly set works correctly."""
+        config = ExtractionConfig(
+            default_provider="claude",
+            claude_api_key="claude-key-12345678901234567890123456789012345678901234567890123456789012345678901234567890",
+            gemini_api_key="gemini-key-12345678901234567890123456789012345678901234567890123456789012345678901234567890"
+        )
+
+        with patch("inkwell.extraction.engine.ClaudeExtractor"), patch(
+            "inkwell.extraction.engine.GeminiExtractor"
+        ):
+            engine = ExtractionEngine(config=config)
+
+            assert engine.default_provider == "claude"
+
+    def test_multiple_initialization_paths(self, mock_api_keys: None) -> None:
+        """Verify multiple initialization paths don't interfere."""
+        with patch("inkwell.extraction.engine.ClaudeExtractor"), patch(
+            "inkwell.extraction.engine.GeminiExtractor"
+        ):
+            # Path 1: Config only
+            config1 = ExtractionConfig(default_provider="claude")
+            engine1 = ExtractionEngine(config=config1)
+            assert engine1.default_provider == "claude"
+
+            # Path 2: Params only
+            engine2 = ExtractionEngine(default_provider="gemini")
+            assert engine2.default_provider == "gemini"
+
+            # Path 3: Both (config wins)
+            config3 = ExtractionConfig(default_provider="claude")
+            engine3 = ExtractionEngine(
+                config=config3,
+                default_provider="gemini"
+            )
+            assert engine3.default_provider == "claude"
+
+            # Verify engines are independent
+            assert engine1.default_provider == "claude"
+            assert engine2.default_provider == "gemini"
+            assert engine3.default_provider == "claude"
 
 
 class TestExtractionEngineExtract:
@@ -643,3 +813,188 @@ class TestExtractionEngineOutputParsing:
 
             assert content.template_name == "data"
             assert content.content == {"quotes": ["one", "two"]}
+
+
+class TestExtractionEngineDeprecationWarnings:
+    """Test deprecation warnings for individual parameters."""
+
+    def test_deprecated_api_keys_trigger_warning(self, mock_api_keys: None) -> None:
+        """Using deprecated individual API keys should trigger DeprecationWarning."""
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+
+            with patch("inkwell.extraction.engine.ClaudeExtractor"), patch(
+                "inkwell.extraction.engine.GeminiExtractor"
+            ):
+                engine = ExtractionEngine(
+                    claude_api_key="test-claude-key-1234567890123456789012345678901234567890",
+                    gemini_api_key="test-gemini-key-1234567890123456789012345678901234567890"
+                )
+
+            # Should have triggered exactly one warning
+            assert len(w) == 1
+            assert issubclass(w[0].category, DeprecationWarning)
+            assert "deprecated" in str(w[0].message).lower()
+            assert "ExtractionConfig" in str(w[0].message)
+            assert "v2.0" in str(w[0].message)
+            # Should mention both API keys
+            assert "claude_api_key" in str(w[0].message)
+            assert "gemini_api_key" in str(w[0].message)
+
+    def test_deprecated_default_provider_trigger_warning(self, mock_api_keys: None) -> None:
+        """Using deprecated default_provider should trigger DeprecationWarning."""
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+
+            with patch("inkwell.extraction.engine.ClaudeExtractor"), patch(
+                "inkwell.extraction.engine.GeminiExtractor"
+            ):
+                engine = ExtractionEngine(
+                    default_provider="claude"  # Non-default value
+                )
+
+            # Should have triggered warning
+            assert len(w) == 1
+            assert issubclass(w[0].category, DeprecationWarning)
+            assert "default_provider" in str(w[0].message)
+
+    def test_default_provider_gemini_no_warning(self, mock_api_keys: None) -> None:
+        """Using default value for default_provider should NOT trigger warning."""
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+
+            with patch("inkwell.extraction.engine.ClaudeExtractor"), patch(
+                "inkwell.extraction.engine.GeminiExtractor"
+            ):
+                engine = ExtractionEngine(
+                    default_provider="gemini"  # Default value
+                )
+
+            # Should have no warnings (default value)
+            assert len(w) == 0
+
+    def test_config_object_no_warning(self, mock_api_keys: None) -> None:
+        """Using config object should NOT trigger warning."""
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+
+            config = ExtractionConfig(
+                claude_api_key="test-key-1234567890123456789012345678901234567890"
+            )
+
+            with patch("inkwell.extraction.engine.ClaudeExtractor"), patch(
+                "inkwell.extraction.engine.GeminiExtractor"
+            ):
+                engine = ExtractionEngine(config=config)
+
+            # Should have no warnings
+            assert len(w) == 0
+
+    def test_only_claude_api_key_warns(self, mock_api_keys: None) -> None:
+        """Using only claude_api_key should trigger warning."""
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+
+            with patch("inkwell.extraction.engine.ClaudeExtractor"), patch(
+                "inkwell.extraction.engine.GeminiExtractor"
+            ):
+                engine = ExtractionEngine(
+                    claude_api_key="test-key-1234567890123456789012345678901234567890"
+                )
+
+            # Should have triggered warning
+            assert len(w) == 1
+            assert issubclass(w[0].category, DeprecationWarning)
+            assert "claude_api_key" in str(w[0].message)
+
+    def test_only_gemini_api_key_warns(self, mock_api_keys: None) -> None:
+        """Using only gemini_api_key should trigger warning."""
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+
+            with patch("inkwell.extraction.engine.ClaudeExtractor"), patch(
+                "inkwell.extraction.engine.GeminiExtractor"
+            ):
+                engine = ExtractionEngine(
+                    gemini_api_key="test-key-1234567890123456789012345678901234567890"
+                )
+
+            # Should have triggered warning
+            assert len(w) == 1
+            assert issubclass(w[0].category, DeprecationWarning)
+            assert "gemini_api_key" in str(w[0].message)
+
+    def test_config_with_individual_params_no_warning(self, mock_api_keys: None) -> None:
+        """When config is provided, no warning even if deprecated params present.
+
+        This is by design - if user provides config, they're using the new pattern.
+        Individual params might be there for legacy reasons but config takes precedence.
+        """
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+
+            config = ExtractionConfig(
+                claude_api_key="config-key-1234567890123456789012345678901234567890"
+            )
+
+            with patch("inkwell.extraction.engine.ClaudeExtractor"), patch(
+                "inkwell.extraction.engine.GeminiExtractor"
+            ):
+                engine = ExtractionEngine(
+                    config=config,
+                    claude_api_key="param-key-1234567890123456789012345678901234567890"
+                )
+
+            # Should have no warnings (config is provided)
+            assert len(w) == 0
+
+    def test_no_params_no_warning(self, mock_api_keys: None) -> None:
+        """Using no params should not trigger warning."""
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+
+            with patch("inkwell.extraction.engine.ClaudeExtractor"), patch(
+                "inkwell.extraction.engine.GeminiExtractor"
+            ):
+                engine = ExtractionEngine()
+
+            # Should have no warnings
+            assert len(w) == 0
+
+    def test_warning_message_includes_migration_info(self, mock_api_keys: None) -> None:
+        """Warning message should include what to use instead."""
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+
+            with patch("inkwell.extraction.engine.ClaudeExtractor"), patch(
+                "inkwell.extraction.engine.GeminiExtractor"
+            ):
+                engine = ExtractionEngine(
+                    gemini_api_key="test-key-1234567890123456789012345678901234567890"
+                )
+
+            # Verify warning message is helpful
+            warning_msg = str(w[0].message)
+            assert "ExtractionConfig" in warning_msg
+            assert "v2.0" in warning_msg
+            assert "deprecated" in warning_msg.lower()
+
+    def test_multiple_deprecated_params_listed(self, mock_api_keys: None) -> None:
+        """Warning should list all deprecated params being used."""
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+
+            with patch("inkwell.extraction.engine.ClaudeExtractor"), patch(
+                "inkwell.extraction.engine.GeminiExtractor"
+            ):
+                engine = ExtractionEngine(
+                    claude_api_key="test-claude-1234567890123456789012345678901234567890",
+                    gemini_api_key="test-gemini-1234567890123456789012345678901234567890",
+                    default_provider="claude"
+                )
+
+            # Should list all three deprecated params
+            warning_msg = str(w[0].message)
+            assert "claude_api_key" in warning_msg
+            assert "gemini_api_key" in warning_msg
+            assert "default_provider" in warning_msg

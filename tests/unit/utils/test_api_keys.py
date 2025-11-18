@@ -46,8 +46,8 @@ class TestValidateAPIKey:
         assert not result.endswith(" ")
 
     def test_too_short_key(self):
-        """Test that short key raises APIKeyError."""
-        with pytest.raises(APIKeyError, match="too short"):
+        """Test that short key raises APIKeyError with generic message."""
+        with pytest.raises(APIKeyError, match="invalid"):
             validate_api_key("short", "gemini", "GOOGLE_API_KEY")
 
     def test_key_with_newline(self):
@@ -75,23 +75,23 @@ class TestValidateAPIKey:
             validate_api_key(key, "gemini", "GOOGLE_API_KEY")
 
     def test_gemini_key_wrong_prefix(self):
-        """Test that Gemini key with wrong prefix raises APIKeyError."""
-        with pytest.raises(APIKeyError, match="format appears invalid"):
+        """Test that Gemini key with wrong prefix raises APIKeyError with generic message."""
+        with pytest.raises(APIKeyError, match="invalid"):
             validate_api_key("sk-ant-" + "X" * 32, "gemini", "GOOGLE_API_KEY")
 
     def test_claude_key_wrong_prefix(self):
-        """Test that Claude key with wrong prefix raises APIKeyError."""
-        with pytest.raises(APIKeyError, match="format appears invalid"):
+        """Test that Claude key with wrong prefix raises APIKeyError with generic message."""
+        with pytest.raises(APIKeyError, match="invalid"):
             validate_api_key("AIzaSyD" + "X" * 32, "claude", "ANTHROPIC_API_KEY")
 
     def test_gemini_key_with_invalid_characters(self):
-        """Test that Gemini key with invalid characters raises APIKeyError."""
-        with pytest.raises(APIKeyError, match="format appears invalid"):
+        """Test that Gemini key with invalid characters raises APIKeyError with generic message."""
+        with pytest.raises(APIKeyError, match="invalid"):
             validate_api_key("AIzaSyD" + "!" * 32, "gemini", "GOOGLE_API_KEY")
 
     def test_claude_key_with_invalid_characters(self):
-        """Test that Claude key with invalid characters raises APIKeyError."""
-        with pytest.raises(APIKeyError, match="format appears invalid"):
+        """Test that Claude key with invalid characters raises APIKeyError with generic message."""
+        with pytest.raises(APIKeyError, match="invalid"):
             validate_api_key("sk-ant-api03-" + "!" * 32, "claude", "ANTHROPIC_API_KEY")
 
     def test_double_quoted_key(self):
@@ -154,10 +154,10 @@ class TestGetValidatedAPIKey:
             get_validated_api_key("GOOGLE_API_KEY", "gemini")
 
     def test_invalid_key_from_environment(self, monkeypatch):
-        """Test that invalid key raises APIKeyError."""
+        """Test that invalid key raises APIKeyError with generic message."""
         monkeypatch.setenv("GOOGLE_API_KEY", "invalid")
 
-        with pytest.raises(APIKeyError, match="too short"):
+        with pytest.raises(APIKeyError, match="invalid"):
             get_validated_api_key("GOOGLE_API_KEY", "gemini")
 
     def test_key_with_whitespace_from_environment(self, monkeypatch):
@@ -191,24 +191,32 @@ class TestAPIKeyErrorMessages:
         assert "export" in error_msg
         assert "your-api-key-here" in error_msg
 
-    def test_short_key_error_shows_length(self):
-        """Test that short key error shows actual length."""
+    def test_short_key_error_is_generic(self):
+        """Test that short key error does not reveal length details (security fix)."""
         with pytest.raises(APIKeyError) as exc_info:
             validate_api_key("short", "gemini", "GOOGLE_API_KEY")
 
         error_msg = str(exc_info.value)
-        assert "too short" in error_msg
-        assert "5" in error_msg  # Actual length
-        assert "20" in error_msg  # Minimum length
+        assert "invalid" in error_msg.lower()
+        assert "GOOGLE_API_KEY" in error_msg
 
-    def test_invalid_format_error_explains_format(self):
-        """Test that invalid format error explains expected format."""
+        # SECURITY: Error should NOT reveal specific length details
+        assert "5" not in error_msg  # Actual length should not be exposed
+        assert "20" not in error_msg  # Minimum length should not be exposed
+        assert "too short" not in error_msg  # Specific validation reason should not be exposed
+
+    def test_invalid_format_error_is_generic(self):
+        """Test that invalid format error does not reveal prefix details (security fix)."""
         with pytest.raises(APIKeyError) as exc_info:
             validate_api_key("X" * 40, "gemini", "GOOGLE_API_KEY")
 
         error_msg = str(exc_info.value)
-        assert "format appears invalid" in error_msg
-        assert "AIza" in error_msg  # Expected prefix
+        assert "invalid" in error_msg.lower()
+        assert "GOOGLE_API_KEY" in error_msg
+
+        # SECURITY: Error should NOT reveal expected prefix or format
+        assert "AIza" not in error_msg  # Expected prefix should not be exposed
+        assert "start with" not in error_msg  # Format hint should not be exposed
 
     def test_quoted_key_error_shows_fix(self):
         """Test that quoted key error shows how to fix."""
@@ -264,3 +272,118 @@ class TestAPIKeyValidationIntegration:
 
         result = validate_api_key(key, "claude", "ANTHROPIC_API_KEY")
         assert result == key
+
+
+class TestErrorMessageSanitization:
+    """Tests for API key sanitization in error messages (TODO #054)."""
+
+    def test_sanitize_gemini_key_in_error_message(self):
+        """Test that Gemini API keys are redacted from error messages."""
+        from inkwell.extraction.engine import _sanitize_error_message
+
+        # Test Gemini key redaction
+        msg = "Error with key AIzaSyDabcdefghijklmnop1234567890"
+        sanitized = _sanitize_error_message(msg)
+
+        # Key should be redacted
+        assert "AIza" not in sanitized
+        assert "[REDACTED_GEMINI_KEY]" in sanitized
+        assert "Error with key" in sanitized
+
+    def test_sanitize_claude_key_in_error_message(self):
+        """Test that Claude API keys are redacted from error messages."""
+        from inkwell.extraction.engine import _sanitize_error_message
+
+        # Test Claude key redaction
+        msg = "Error with key sk-ant-api03-abcdefghijklmnopqrstuvwxyz"
+        sanitized = _sanitize_error_message(msg)
+
+        # Key should be redacted
+        assert "sk-ant" not in sanitized
+        assert "[REDACTED_CLAUDE_KEY]" in sanitized
+        assert "Error with key" in sanitized
+
+    def test_sanitize_multiple_keys_in_error_message(self):
+        """Test that multiple API keys are redacted from error messages."""
+        from inkwell.extraction.engine import _sanitize_error_message
+
+        # Test multiple keys
+        msg = "Failed: AIzaSyD123456 and sk-ant-api03-abcdef both invalid"
+        sanitized = _sanitize_error_message(msg)
+
+        # Both keys should be redacted
+        assert "AIza" not in sanitized
+        assert "sk-ant" not in sanitized
+        assert "[REDACTED_GEMINI_KEY]" in sanitized
+        assert "[REDACTED_CLAUDE_KEY]" in sanitized
+        assert "Failed:" in sanitized
+        assert "both invalid" in sanitized
+
+    def test_sanitize_preserves_non_key_content(self):
+        """Test that sanitization preserves non-key content."""
+        from inkwell.extraction.engine import _sanitize_error_message
+
+        msg = "Connection failed: timeout after 30 seconds"
+        sanitized = _sanitize_error_message(msg)
+
+        # Content should be unchanged
+        assert sanitized == msg
+
+    def test_sanitize_handles_partial_keys(self):
+        """Test that partial key patterns matching the regex are also redacted."""
+        from inkwell.extraction.engine import _sanitize_error_message
+
+        # Test with partial keys that match the pattern
+        msg = "Invalid key AIzaSy (too short)"
+        sanitized = _sanitize_error_message(msg)
+
+        # Partial keys that match the pattern ARE redacted (intentional)
+        # The regex AIza[A-Za-z0-9_-]+ will match "AIzaSy"
+        assert "[REDACTED_GEMINI_KEY]" in sanitized
+        assert "AIza" not in sanitized
+
+        # Test with a string that doesn't match the pattern
+        msg2 = "Invalid key AIz (incomplete prefix)"
+        sanitized2 = _sanitize_error_message(msg2)
+        # This should NOT be redacted (doesn't match AIza pattern)
+        assert sanitized2 == msg2
+
+    def test_error_messages_dont_leak_key_details(self):
+        """Integration test: verify invalid keys don't leak details."""
+        # Test with various invalid keys
+        test_cases = [
+            ("too_short", "gemini", "GEMINI_API_KEY"),
+            ("X" * 40, "gemini", "GEMINI_API_KEY"),
+            ("AIzaSyD" + "!" * 32, "gemini", "GEMINI_API_KEY"),
+            ("short", "claude", "ANTHROPIC_API_KEY"),
+            ("Y" * 40, "claude", "ANTHROPIC_API_KEY"),
+        ]
+
+        for key, provider, env_var in test_cases:
+            with pytest.raises(APIKeyError) as exc_info:
+                validate_api_key(key, provider, env_var)
+
+            error_msg = str(exc_info.value)
+
+            # Error should be helpful but generic
+            assert provider.title() in error_msg
+            assert env_var in error_msg
+
+            # SECURITY: Error should NOT reveal:
+            # 1. Actual key value
+            assert key not in error_msg or len(key) < 10  # Short test strings might appear in generic messages
+
+            # 2. Specific length requirements
+            assert "20" not in error_msg
+            assert len(key) not in [int(s) for s in error_msg.split() if s.isdigit()]
+
+            # 3. Specific format requirements (prefix patterns)
+            if provider == "gemini":
+                assert "AIza" not in error_msg
+            elif provider == "claude":
+                assert "sk-ant" not in error_msg
+
+            # 4. Character requirements
+            assert "alphanumeric" not in error_msg.lower()
+            assert "underscore" not in error_msg.lower()
+            assert "dash" not in error_msg.lower()

@@ -1,11 +1,14 @@
 """Transcription manager orchestrating multi-tier transcription."""
 
 import asyncio
+import warnings
 from collections.abc import Callable
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 from inkwell.audio import AudioDownloader
+from inkwell.config.precedence import resolve_config_value
+from inkwell.config.schema import TranscriptionConfig
 from inkwell.transcription.cache import TranscriptCache
 from inkwell.transcription.gemini import CostEstimate, GeminiTranscriber
 from inkwell.transcription.models import Transcript, TranscriptionResult
@@ -30,6 +33,7 @@ class TranscriptionManager:
 
     def __init__(
         self,
+        config: TranscriptionConfig | None = None,
         cache: TranscriptCache | None = None,
         youtube_transcriber: YouTubeTranscriber | None = None,
         audio_downloader: AudioDownloader | None = None,
@@ -42,35 +46,69 @@ class TranscriptionManager:
         """Initialize transcription manager.
 
         Args:
+            config: Transcription configuration (recommended, new approach)
             cache: Transcript cache (default: new instance)
             youtube_transcriber: YouTube transcriber (default: new instance)
             audio_downloader: Audio downloader (default: new instance)
             gemini_transcriber: Gemini transcriber (default: new instance)
-            gemini_api_key: Google AI API key for Gemini (default: from env)
-            model_name: Gemini model to use (default: gemini-2.5-flash)
+            gemini_api_key: Google AI API key for Gemini (default: from env) [deprecated, use config]
+            model_name: Gemini model to use (default: gemini-2.5-flash) [deprecated, use config]
             cost_confirmation_callback: Callback for Gemini cost confirmation
             cost_tracker: Cost tracker for recording API usage (optional, for DI)
+
+        Note:
+            Prefer passing `config` over individual parameters. Individual parameters
+            are maintained for backward compatibility but will be deprecated in v2.0.
         """
+        # Warn if using deprecated individual parameters
+        if config is None and (gemini_api_key is not None or model_name is not None):
+            warnings.warn(
+                "Individual parameters (gemini_api_key, model_name) are deprecated. "
+                "Use TranscriptionConfig instead. "
+                "These parameters will be removed in v2.0.",
+                DeprecationWarning,
+                stacklevel=2
+            )
+
         self.cache = cache or TranscriptCache()
         self.youtube_transcriber = youtube_transcriber or YouTubeTranscriber()
         self.audio_downloader = audio_downloader or AudioDownloader()
         self.cost_tracker = cost_tracker
 
+        # Extract config values with standardized precedence
+        effective_api_key = resolve_config_value(
+            config.api_key if config else None,
+            gemini_api_key,
+            None  # Will fall back to environment in GeminiTranscriber
+        )
+        effective_model = resolve_config_value(
+            config.model_name if config else None,
+            model_name,
+            "gemini-2.5-flash"
+        )
+        effective_cost_threshold = resolve_config_value(
+            config.cost_threshold_usd if config else None,
+            None,  # No individual param for this
+            1.0
+        )
+
         # Initialize Gemini transcriber if API key available
         self.gemini_transcriber: GeminiTranscriber | None
         if gemini_transcriber:
             self.gemini_transcriber = gemini_transcriber
-        elif gemini_api_key:
+        elif effective_api_key:
             self.gemini_transcriber = GeminiTranscriber(
-                api_key=gemini_api_key,
-                model_name=model_name or "gemini-2.5-flash",
+                api_key=effective_api_key,
+                model_name=effective_model,
+                cost_threshold_usd=effective_cost_threshold,
                 cost_confirmation_callback=cost_confirmation_callback,
             )
         else:
             # Try to create from environment
             try:
                 self.gemini_transcriber = GeminiTranscriber(
-                    model_name=model_name or "gemini-2.5-flash",
+                    model_name=effective_model,
+                    cost_threshold_usd=effective_cost_threshold,
                     cost_confirmation_callback=cost_confirmation_callback
                 )
             except ValueError:

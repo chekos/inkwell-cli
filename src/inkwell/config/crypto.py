@@ -6,7 +6,7 @@ from pathlib import Path
 
 from cryptography.fernet import Fernet
 
-from inkwell.utils.errors import ConfigError
+from inkwell.utils.errors import ConfigError, SecurityError
 from inkwell.utils.logging import get_logger
 
 logger = get_logger()
@@ -106,7 +106,7 @@ class CredentialEncryptor:
 
         # Check if file is readable by group or others
         if mode & (stat.S_IRGRP | stat.S_IROTH | stat.S_IWGRP | stat.S_IWOTH):
-            raise ConfigError(
+            raise SecurityError(
                 f"Key file {self.key_path} has insecure permissions ({oct(mode)}). "
                 f"Run: chmod 600 {self.key_path}"
             )
@@ -141,6 +141,8 @@ class CredentialEncryptor:
             cipher = self._get_cipher()
             encrypted_bytes = cipher.encrypt(plaintext.encode("utf-8"))
             return encrypted_bytes.decode("utf-8")
+        except SecurityError:
+            raise  # Re-raise security errors directly
         except Exception as e:
             raise ConfigError(f"Failed to encrypt data: {e}") from e
 
@@ -163,8 +165,11 @@ class CredentialEncryptor:
             cipher = self._get_cipher()
             decrypted_bytes = cipher.decrypt(ciphertext.encode("utf-8"))
             return decrypted_bytes.decode("utf-8")
+        except SecurityError:
+            raise  # Re-raise security errors directly
         except Exception as e:
-            raise ConfigError(f"Failed to decrypt data: {e}") from e
+            # Decryption failures are security issues (tampering/corruption)
+            raise SecurityError(f"Failed to decrypt data: {e}") from e
 
     def verify_backup_exists(self) -> bool:
         """Check if backup keyfile exists and matches primary.

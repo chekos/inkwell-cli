@@ -171,8 +171,8 @@ class GlobalConfig(BaseModel):
     interview_model: str | None = None
     youtube_check: bool | None = None
 
-    @model_validator(mode='after')
-    def expand_user_path(self) -> 'GlobalConfig':
+    @model_validator(mode="after")
+    def expand_user_path(self) -> "GlobalConfig":
         """Expand ~ in default_output_dir to user home directory."""
         self.default_output_dir = self.default_output_dir.expanduser()
         return self

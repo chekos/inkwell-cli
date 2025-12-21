@@ -36,7 +36,6 @@ def _track_cost_in_subprocess(i, costs_file_path):
         )
     except Exception as e:
         # Log error to file for debugging
-        import sys
 
         with open(costs_file_path.parent / f"error_{i}.txt", "w") as f:
             f.write(f"Process {i} failed: {e}\n")

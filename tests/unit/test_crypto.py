@@ -97,9 +97,7 @@ class TestCredentialEncryptor:
         with pytest.raises(SecurityError, match="Failed to decrypt"):
             encryptor.decrypt("not-valid-ciphertext")
 
-    def test_different_plaintexts_produce_different_ciphertexts(
-        self, tmp_path: Path
-    ) -> None:
+    def test_different_plaintexts_produce_different_ciphertexts(self, tmp_path: Path) -> None:
         """Test that different plaintexts produce different ciphertexts."""
         key_file = tmp_path / ".keyfile"
         encryptor = CredentialEncryptor(key_file)
@@ -236,9 +234,7 @@ class TestCredentialEncryptor:
         assert "ENCRYPTION KEY BACKUP" in content
         assert "permanently unrecoverable" in content
 
-    def test_verify_backup_exists_returns_true_when_matching(
-        self, tmp_path: Path
-    ) -> None:
+    def test_verify_backup_exists_returns_true_when_matching(self, tmp_path: Path) -> None:
         """Test verify_backup_exists returns True when backup matches."""
         key_file = tmp_path / ".keyfile"
         encryptor = CredentialEncryptor(key_file)
@@ -249,9 +245,7 @@ class TestCredentialEncryptor:
         # Verify backup exists and matches
         assert encryptor.verify_backup_exists()
 
-    def test_verify_backup_exists_returns_false_when_missing(
-        self, tmp_path: Path
-    ) -> None:
+    def test_verify_backup_exists_returns_false_when_missing(self, tmp_path: Path) -> None:
         """Test verify_backup_exists returns False when backup is missing."""
         key_file = tmp_path / ".keyfile"
         encryptor = CredentialEncryptor(key_file)
@@ -266,9 +260,7 @@ class TestCredentialEncryptor:
         # Verify detects missing backup
         assert not encryptor.verify_backup_exists()
 
-    def test_verify_backup_exists_returns_false_when_mismatched(
-        self, tmp_path: Path
-    ) -> None:
+    def test_verify_backup_exists_returns_false_when_mismatched(self, tmp_path: Path) -> None:
         """Test verify_backup_exists returns False when backup doesn't match."""
         key_file = tmp_path / ".keyfile"
         encryptor = CredentialEncryptor(key_file)
@@ -303,9 +295,7 @@ class TestCredentialEncryptor:
         decrypted = encryptor.decrypt(original_encrypted)
         assert decrypted == "test-data"
 
-    def test_restore_from_backup_returns_false_when_no_backup(
-        self, tmp_path: Path
-    ) -> None:
+    def test_restore_from_backup_returns_false_when_no_backup(self, tmp_path: Path) -> None:
         """Test restore_from_backup returns False when backup is missing."""
         key_file = tmp_path / ".keyfile"
         encryptor = CredentialEncryptor(key_file)
@@ -313,9 +303,7 @@ class TestCredentialEncryptor:
         # No backup exists
         assert not encryptor.restore_from_backup()
 
-    def test_restore_from_backup_sets_correct_permissions(
-        self, tmp_path: Path
-    ) -> None:
+    def test_restore_from_backup_sets_correct_permissions(self, tmp_path: Path) -> None:
         """Test that restored keyfile has correct permissions."""
         key_file = tmp_path / ".keyfile"
         encryptor = CredentialEncryptor(key_file)

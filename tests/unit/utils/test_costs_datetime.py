@@ -1,7 +1,6 @@
 """Tests for datetime handling in costs module."""
 
-import pytest
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 
 from inkwell.utils.costs import APIUsage
 
@@ -132,9 +131,10 @@ class TestAPIUsageDatetimeHandling:
 
     def test_cost_tracker_filter_by_date(self):
         """Test that CostTracker filtering by date works correctly."""
-        from inkwell.utils.costs import CostTracker
-        from pathlib import Path
         import tempfile
+        from pathlib import Path
+
+        from inkwell.utils.costs import CostTracker
 
         with tempfile.TemporaryDirectory() as tmpdir:
             tracker = CostTracker(costs_file=Path(tmpdir) / "costs.json")

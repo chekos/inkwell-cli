@@ -277,9 +277,7 @@ class TestConfigManager:
         assert loaded.youtube_check is False
         assert loaded.default_templates == ["summary", "quotes"]
 
-    def test_load_feeds_with_empty_decrypted_username(
-        self, tmp_path: Path, mocker
-    ) -> None:
+    def test_load_feeds_with_empty_decrypted_username(self, tmp_path: Path, mocker) -> None:
         """Test that empty decrypted username raises InvalidConfigError."""
         manager = ConfigManager(config_dir=tmp_path)
 
@@ -307,9 +305,7 @@ class TestConfigManager:
         assert "keyfile may be corrupted" in str(exc_info.value)
         assert "test-podcast" in str(exc_info.value)
 
-    def test_load_feeds_with_null_bytes_in_decrypted_password(
-        self, tmp_path: Path, mocker
-    ) -> None:
+    def test_load_feeds_with_null_bytes_in_decrypted_password(self, tmp_path: Path, mocker) -> None:
         """Test that null bytes in decrypted password raises InvalidConfigError."""
         manager = ConfigManager(config_dir=tmp_path)
 
@@ -412,9 +408,7 @@ class TestConfigManager:
         assert feeds.feeds["test-podcast"].auth.username == "validuser"
         assert feeds.feeds["test-podcast"].auth.password == "validpass123"
 
-    def test_load_feeds_validates_username_length_limit(
-        self, tmp_path: Path, mocker
-    ) -> None:
+    def test_load_feeds_validates_username_length_limit(self, tmp_path: Path, mocker) -> None:
         """Test that username length limit is enforced."""
         manager = ConfigManager(config_dir=tmp_path)
 
@@ -442,9 +436,7 @@ class TestConfigManager:
         assert "exceeds maximum length" in str(exc_info.value)
         assert "255" in str(exc_info.value)
 
-    def test_load_feeds_error_message_includes_recovery_steps(
-        self, tmp_path: Path
-    ) -> None:
+    def test_load_feeds_error_message_includes_recovery_steps(self, tmp_path: Path) -> None:
         """Test that error message provides helpful recovery steps."""
         manager = ConfigManager(config_dir=tmp_path)
 
@@ -633,7 +625,6 @@ class TestAuditLog:
 
     def test_audit_log_skips_malformed_lines(self, tmp_path: Path) -> None:
         """Verify audit log parsing skips malformed JSON lines."""
-        import json
 
         manager = ConfigManager(config_dir=tmp_path)
 

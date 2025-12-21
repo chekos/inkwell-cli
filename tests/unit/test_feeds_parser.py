@@ -89,9 +89,7 @@ class TestRSSParser:
     @respx.mock
     async def test_fetch_feed_authentication_failure(self) -> None:
         """Test authentication failure (401)."""
-        respx.get("https://example.com/feed.rss").mock(
-            return_value=Response(401)
-        )
+        respx.get("https://example.com/feed.rss").mock(return_value=Response(401))
 
         parser = RSSParser()
         with pytest.raises(SecurityError, match="Authentication failed"):
@@ -101,9 +99,7 @@ class TestRSSParser:
     @respx.mock
     async def test_fetch_feed_not_found(self) -> None:
         """Test feed not found (404)."""
-        respx.get("https://example.com/feed.rss").mock(
-            return_value=Response(404)
-        )
+        respx.get("https://example.com/feed.rss").mock(return_value=Response(404))
 
         parser = RSSParser()
         with pytest.raises(APIError, match="HTTP error"):

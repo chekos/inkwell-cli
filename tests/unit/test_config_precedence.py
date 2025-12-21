@@ -4,8 +4,6 @@ Tests the standardized parameter precedence logic used across all services
 to ensure config > param > default resolution is consistent and correct.
 """
 
-import pytest
-
 from inkwell.config.precedence import resolve_config_value
 
 
@@ -15,118 +13,72 @@ class TestConfigPrecedence:
     def test_config_value_takes_precedence(self):
         """Config value should win over param and default."""
         result = resolve_config_value(
-            config_value="config",
-            param_value="param",
-            default_value="default"
+            config_value="config", param_value="param", default_value="default"
         )
         assert result == "config"
 
     def test_param_value_when_config_none(self):
         """Param value should win when config is None."""
         result = resolve_config_value(
-            config_value=None,
-            param_value="param",
-            default_value="default"
+            config_value=None, param_value="param", default_value="default"
         )
         assert result == "param"
 
     def test_default_when_both_none(self):
         """Default should be used when both config and param are None."""
-        result = resolve_config_value(
-            config_value=None,
-            param_value=None,
-            default_value="default"
-        )
+        result = resolve_config_value(config_value=None, param_value=None, default_value="default")
         assert result == "default"
 
     def test_zero_is_valid_value(self):
         """Zero should not be treated as None."""
-        result = resolve_config_value(
-            config_value=0,
-            param_value=5,
-            default_value=10
-        )
+        result = resolve_config_value(config_value=0, param_value=5, default_value=10)
         assert result == 0  # Not 5 or 10
 
     def test_empty_string_is_valid(self):
         """Empty string should not be treated as None."""
-        result = resolve_config_value(
-            config_value="",
-            param_value="param",
-            default_value="default"
-        )
+        result = resolve_config_value(config_value="", param_value="param", default_value="default")
         assert result == ""  # Not "param" or "default"
 
     def test_false_is_valid_value(self):
         """False should not be treated as None."""
-        result = resolve_config_value(
-            config_value=False,
-            param_value=True,
-            default_value=True
-        )
+        result = resolve_config_value(config_value=False, param_value=True, default_value=True)
         assert result is False  # Not True
 
     def test_none_explicitly_as_default(self):
         """None can be used as a default value."""
-        result = resolve_config_value(
-            config_value=None,
-            param_value=None,
-            default_value=None
-        )
+        result = resolve_config_value(config_value=None, param_value=None, default_value=None)
         assert result is None
 
     def test_config_zero_overrides_param_nonzero(self):
         """Config value of 0 should override non-zero param."""
-        result = resolve_config_value(
-            config_value=0,
-            param_value=100,
-            default_value=50
-        )
+        result = resolve_config_value(config_value=0, param_value=100, default_value=50)
         assert result == 0
 
     def test_param_zero_overrides_default_nonzero(self):
         """Param value of 0 should override non-zero default."""
-        result = resolve_config_value(
-            config_value=None,
-            param_value=0,
-            default_value=100
-        )
+        result = resolve_config_value(config_value=None, param_value=0, default_value=100)
         assert result == 0
 
     def test_config_empty_string_overrides_param(self):
         """Config empty string should override non-empty param."""
         result = resolve_config_value(
-            config_value="",
-            param_value="non-empty",
-            default_value="default"
+            config_value="", param_value="non-empty", default_value="default"
         )
         assert result == ""
 
     def test_param_empty_string_overrides_default(self):
         """Param empty string should override non-empty default."""
-        result = resolve_config_value(
-            config_value=None,
-            param_value="",
-            default_value="default"
-        )
+        result = resolve_config_value(config_value=None, param_value="", default_value="default")
         assert result == ""
 
     def test_config_false_overrides_param_true(self):
         """Config False should override param True."""
-        result = resolve_config_value(
-            config_value=False,
-            param_value=True,
-            default_value=True
-        )
+        result = resolve_config_value(config_value=False, param_value=True, default_value=True)
         assert result is False
 
     def test_param_false_overrides_default_true(self):
         """Param False should override default True."""
-        result = resolve_config_value(
-            config_value=None,
-            param_value=False,
-            default_value=True
-        )
+        result = resolve_config_value(config_value=None, param_value=False, default_value=True)
         assert result is False
 
     def test_float_values(self):
@@ -167,6 +119,7 @@ class TestConfigPrecedence:
 
     def test_complex_types(self):
         """Test with complex object types."""
+
         class CustomObj:
             def __init__(self, value):
                 self.value = value

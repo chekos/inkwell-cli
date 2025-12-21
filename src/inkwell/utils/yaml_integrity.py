@@ -65,8 +65,8 @@ class YAMLWithIntegrity:
         yaml_content = yaml.dump(data, default_flow_style=False, sort_keys=False)
 
         # Ensure consistent trailing newline (yaml.dump may or may not include it)
-        if not yaml_content.endswith('\n'):
-            yaml_content += '\n'
+        if not yaml_content.endswith("\n"):
+            yaml_content += "\n"
 
         # Calculate checksum (SHA-256 of content)
         checksum = hashlib.sha256(yaml_content.encode("utf-8")).hexdigest()

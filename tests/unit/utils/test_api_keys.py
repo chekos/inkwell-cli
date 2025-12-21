@@ -1,7 +1,5 @@
 """Tests for API key validation."""
 
-import os
-
 import pytest
 
 from inkwell.utils.api_keys import APIKeyError, get_validated_api_key, validate_api_key
@@ -371,7 +369,9 @@ class TestErrorMessageSanitization:
 
             # SECURITY: Error should NOT reveal:
             # 1. Actual key value
-            assert key not in error_msg or len(key) < 10  # Short test strings might appear in generic messages
+            assert (
+                key not in error_msg or len(key) < 10
+            )  # Short test strings might appear in generic messages
 
             # 2. Specific length requirements
             assert "20" not in error_msg

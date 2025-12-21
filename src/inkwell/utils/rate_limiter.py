@@ -162,7 +162,7 @@ def get_rate_limiter(
 
 
 def rate_limited(
-    provider: Literal["gemini", "claude", "youtube"]
+    provider: Literal["gemini", "claude", "youtube"],
 ) -> Callable[[Callable[P, T]], Callable[P, T]]:
     """Decorator to rate limit function calls.
 

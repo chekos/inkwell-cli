@@ -9,6 +9,7 @@ import httpx
 from inkwell.config.schema import AuthConfig
 from inkwell.feeds.models import Episode
 from inkwell.utils.errors import APIError, SecurityError, ValidationError
+from inkwell.utils.retry import AuthenticationError
 
 
 class RSSParser:
@@ -42,16 +43,11 @@ class RSSParser:
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 headers = self._build_auth_headers(auth)
-                response = await client.get(
-                    url, headers=headers, follow_redirects=True
-                )
+                response = await client.get(url, headers=headers, follow_redirects=True)
 
                 # Check for auth errors
                 if response.status_code == 401:
-                    raise SecurityError(
-                        f"Authentication failed for {url}. "
-                        "Check your credentials."
-                    )
+                    raise SecurityError(f"Authentication failed for {url}. Check your credentials.")
 
                 response.raise_for_status()
 
@@ -62,12 +58,8 @@ class RSSParser:
                 if feed.bozo:  # feedparser error flag
                     # Log warning but continue if we got entries
                     if not feed.entries:
-                        error_msg = getattr(
-                            feed, "bozo_exception", "Unknown parsing error"
-                        )
-                        raise ValidationError(
-                            f"Failed to parse feed from {url}: {error_msg}"
-                        )
+                        error_msg = getattr(feed, "bozo_exception", "Unknown parsing error")
+                        raise ValidationError(f"Failed to parse feed from {url}: {error_msg}")
 
                 if not feed.entries:
                     raise ValidationError(f"No episodes found in feed: {url}")
@@ -78,16 +70,12 @@ class RSSParser:
             raise APIError(f"Timeout fetching feed from {url}") from e
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 401:
-                raise AuthenticationError(
-                    f"Authentication required for {url}"
-                ) from e
+                raise AuthenticationError(f"Authentication required for {url}") from e
             raise APIError(f"HTTP error fetching {url}: {e}") from e
         except httpx.RequestError as e:
             raise APIError(f"Network error fetching {url}: {e}") from e
 
-    def _build_auth_headers(
-        self, auth: AuthConfig | None = None
-    ) -> dict[str, str]:
+    def _build_auth_headers(self, auth: AuthConfig | None = None) -> dict[str, str]:
         """Build HTTP headers for authentication.
 
         Args:
@@ -115,9 +103,7 @@ class RSSParser:
 
         return headers
 
-    def get_latest_episode(
-        self, feed: feedparser.FeedParserDict, podcast_name: str
-    ) -> Episode:
+    def get_latest_episode(self, feed: feedparser.FeedParserDict, podcast_name: str) -> Episode:
         """Extract the latest episode from a feed.
 
         Args:
@@ -163,13 +149,9 @@ class RSSParser:
             if title_keyword_lower in entry_title:
                 return self.extract_episode_metadata(entry, podcast_name)
 
-        raise ValidationError(
-            f"No episode found matching '{title_keyword}' in feed"
-        )
+        raise ValidationError(f"No episode found matching '{title_keyword}' in feed")
 
-    def extract_episode_metadata(
-        self, entry: dict, podcast_name: str
-    ) -> Episode:
+    def extract_episode_metadata(self, entry: dict, podcast_name: str) -> Episode:
         """Extract Episode model from feedparser entry.
 
         Args:
@@ -276,6 +258,7 @@ class RSSParser:
 
         # Fallback to now
         from inkwell.utils.datetime import now_utc
+
         return now_utc()
 
     def _extract_description(self, entry: dict) -> str:
@@ -318,11 +301,7 @@ class RSSParser:
                 if ":" in str(duration):
                     parts = str(duration).split(":")
                     if len(parts) == 3:  # HH:MM:SS
-                        return (
-                            int(parts[0]) * 3600
-                            + int(parts[1]) * 60
-                            + int(parts[2])
-                        )
+                        return int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
                     elif len(parts) == 2:  # MM:SS
                         return int(parts[0]) * 60 + int(parts[1])
                 else:

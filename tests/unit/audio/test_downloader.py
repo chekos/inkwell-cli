@@ -78,9 +78,16 @@ class TestAudioDownloader:
         return download_dir
 
     @pytest.fixture
-    def downloader(self, temp_dir: Path) -> AudioDownloader:
+    def cache_dir(self, tmp_path: Path) -> Path:
+        """Create temporary cache directory."""
+        cache = tmp_path / "cache"
+        cache.mkdir()
+        return cache
+
+    @pytest.fixture
+    def downloader(self, temp_dir: Path, cache_dir: Path) -> AudioDownloader:
         """Create AudioDownloader instance."""
-        return AudioDownloader(output_dir=temp_dir)
+        return AudioDownloader(output_dir=temp_dir, cache_dir=cache_dir)
 
     @pytest.fixture
     def mock_ydl_instance(self) -> Mock:
@@ -130,36 +137,46 @@ class TestAudioDownloader:
         downloader: AudioDownloader,
         mock_ydl_class: Mock,
         mock_ydl_instance: Mock,
-        temp_dir: Path,
     ) -> None:
         """Test successful download."""
-        # Create expected output file
-        output_file = temp_dir / "Test Video-test123.m4a"
-        output_file.touch()
+        url = "https://youtube.com/watch?v=test123"
+        output_file = downloader._get_cache_path(url)
+
+        # Mock yt-dlp to create the file (simulating actual download)
+        def mock_download(download_url: str, download: bool) -> dict:
+            output_file.touch()
+            return {"title": "Test Video", "id": "test123", "duration": 300}
+
+        mock_ydl_instance.extract_info.side_effect = mock_download
 
         with patch("inkwell.audio.downloader.YoutubeDL", mock_ydl_class):
-            result = await downloader.download("https://youtube.com/watch?v=test123")
+            result = await downloader.download(url)
 
         assert result == output_file
         assert result.exists()
 
         # Verify yt-dlp was called with correct options
-        mock_ydl_instance.extract_info.assert_called_once_with(
-            "https://youtube.com/watch?v=test123", download=True
-        )
+        mock_ydl_instance.extract_info.assert_called_once_with(url, download=True)
 
     @pytest.mark.asyncio
     async def test_download_with_custom_filename(
-        self, downloader: AudioDownloader, mock_ydl_class: Mock, temp_dir: Path
+        self, downloader: AudioDownloader, mock_ydl_class: Mock, mock_ydl_instance: Mock
     ) -> None:
-        """Test download with custom filename."""
-        output_file = temp_dir / "custom-name.m4a"
-        output_file.touch()
+        """Test download with custom filename (still uses cache path)."""
+        url = "https://youtube.com/watch?v=test123custom"
+        output_file = downloader._get_cache_path(url)
+
+        # Mock yt-dlp to create the file
+        def mock_download(download_url: str, download: bool) -> dict:
+            output_file.touch()
+            return {"title": "Test Video", "id": "test123", "duration": 300}
+
+        mock_ydl_instance.extract_info.side_effect = mock_download
 
         with patch("inkwell.audio.downloader.YoutubeDL", mock_ydl_class):
             result = await downloader.download(
-                "https://youtube.com/watch?v=test123",
-                output_filename="custom-name",
+                url,
+                output_filename="custom-name",  # Note: ignored now, uses cache path
             )
 
         assert result == output_file
@@ -167,15 +184,22 @@ class TestAudioDownloader:
 
     @pytest.mark.asyncio
     async def test_download_with_authentication(
-        self, downloader: AudioDownloader, mock_ydl_class: Mock, temp_dir: Path
+        self, downloader: AudioDownloader, mock_ydl_class: Mock, mock_ydl_instance: Mock
     ) -> None:
         """Test download with username and password."""
-        output_file = temp_dir / "Test Video-test123.m4a"
-        output_file.touch()
+        url = "https://example.com/private"
+        output_file = downloader._get_cache_path(url)
+
+        # Mock yt-dlp to create the file
+        def mock_download(download_url: str, download: bool) -> dict:
+            output_file.touch()
+            return {"title": "Test Video", "id": "test123", "duration": 300}
+
+        mock_ydl_instance.extract_info.side_effect = mock_download
 
         with patch("inkwell.audio.downloader.YoutubeDL", mock_ydl_class):
             await downloader.download(
-                "https://example.com/private",
+                url,
                 username="testuser",
                 password="testpass",
             )
@@ -188,14 +212,21 @@ class TestAudioDownloader:
 
     @pytest.mark.asyncio
     async def test_download_format_configuration(
-        self, downloader: AudioDownloader, mock_ydl_class: Mock, temp_dir: Path
+        self, downloader: AudioDownloader, mock_ydl_class: Mock, mock_ydl_instance: Mock
     ) -> None:
         """Test that download uses correct format per ADR-011."""
-        output_file = temp_dir / "Test Video-test123.m4a"
-        output_file.touch()
+        url = "https://youtube.com/watch?v=test123format"
+        output_file = downloader._get_cache_path(url)
+
+        # Mock yt-dlp to create the file
+        def mock_download(download_url: str, download: bool) -> dict:
+            output_file.touch()
+            return {"title": "Test Video", "id": "test123", "duration": 300}
+
+        mock_ydl_instance.extract_info.side_effect = mock_download
 
         with patch("inkwell.audio.downloader.YoutubeDL", mock_ydl_class):
-            await downloader.download("https://youtube.com/watch?v=test123")
+            await downloader.download(url)
 
         # Verify format configuration (M4A/AAC 128kbps per ADR-011)
         call_args = mock_ydl_class.call_args
@@ -209,7 +240,7 @@ class TestAudioDownloader:
 
     @pytest.mark.asyncio
     async def test_progress_callback(
-        self, temp_dir: Path, mock_ydl_instance: Mock
+        self, temp_dir: Path, cache_dir: Path, mock_ydl_instance: Mock
     ) -> None:
         """Test progress callback is invoked."""
         progress_updates: list[DownloadProgress] = []
@@ -217,27 +248,35 @@ class TestAudioDownloader:
         def callback(progress: DownloadProgress) -> None:
             progress_updates.append(progress)
 
-        downloader = AudioDownloader(output_dir=temp_dir, progress_callback=callback)
+        downloader = AudioDownloader(
+            output_dir=temp_dir, cache_dir=cache_dir, progress_callback=callback
+        )
 
-        output_file = temp_dir / "Test Video-test123.m4a"
-        output_file.touch()
+        url = "https://youtube.com/watch?v=test123progress"
+        output_file = downloader._get_cache_path(url)
 
         # Simulate progress hooks being called
-        def mock_extract_info(url: str, download: bool) -> dict:
+        def mock_extract_info(download_url: str, download: bool) -> dict:
             # Trigger progress hook
             if downloader.progress_callback:
-                downloader._progress_hook({
-                    "status": "downloading",
-                    "downloaded_bytes": 1024,
-                    "total_bytes": 2048,
-                    "speed": 512.0,
-                    "eta": 2,
-                })
-                downloader._progress_hook({
-                    "status": "finished",
-                    "downloaded_bytes": 2048,
-                    "total_bytes": 2048,
-                })
+                downloader._progress_hook(
+                    {
+                        "status": "downloading",
+                        "downloaded_bytes": 1024,
+                        "total_bytes": 2048,
+                        "speed": 512.0,
+                        "eta": 2,
+                    }
+                )
+                downloader._progress_hook(
+                    {
+                        "status": "finished",
+                        "downloaded_bytes": 2048,
+                        "total_bytes": 2048,
+                    }
+                )
+            # Create the output file
+            output_file.touch()
             return {
                 "title": "Test Video",
                 "id": "test123",
@@ -252,7 +291,7 @@ class TestAudioDownloader:
         mock_ydl_class.return_value.__exit__.return_value = None
 
         with patch("inkwell.audio.downloader.YoutubeDL", mock_ydl_class):
-            await downloader.download("https://youtube.com/watch?v=test123")
+            await downloader.download(url)
 
         # Verify callbacks were invoked
         assert len(progress_updates) == 2
@@ -262,9 +301,7 @@ class TestAudioDownloader:
         assert progress_updates[1].downloaded_bytes == 2048
 
     @pytest.mark.asyncio
-    async def test_download_error_handling(
-        self, downloader: AudioDownloader
-    ) -> None:
+    async def test_download_error_handling(self, downloader: AudioDownloader) -> None:
         """Test handling of download errors."""
         mock_ydl_instance = MagicMock()
         mock_ydl_instance.extract_info.side_effect = DownloadError("Network error")
@@ -281,9 +318,7 @@ class TestAudioDownloader:
         assert "network issues" in str(exc_info.value).lower()
 
     @pytest.mark.asyncio
-    async def test_extractor_error_handling(
-        self, downloader: AudioDownloader
-    ) -> None:
+    async def test_extractor_error_handling(self, downloader: AudioDownloader) -> None:
         """Test handling of extractor errors."""
         mock_ydl_instance = MagicMock()
         mock_ydl_instance.extract_info.side_effect = ExtractorError("Invalid URL")
@@ -300,9 +335,7 @@ class TestAudioDownloader:
         assert "invalid" in str(exc_info.value).lower()
 
     @pytest.mark.asyncio
-    async def test_generic_error_handling(
-        self, downloader: AudioDownloader
-    ) -> None:
+    async def test_generic_error_handling(self, downloader: AudioDownloader) -> None:
         """Test handling of unexpected errors."""
         mock_ydl = MagicMock()
         mock_ydl.extract_info.side_effect = RuntimeError("Unexpected error")
@@ -389,14 +422,50 @@ class TestAudioDownloader:
 
         downloader = AudioDownloader(output_dir=temp_dir, progress_callback=callback)
 
-        downloader._progress_hook({
-            "status": "downloading",
-            "downloaded_bytes": 1000,
-            "total_bytes_estimate": 5000,
-            "speed": 100.0,
-            "eta": 40,
-        })
+        downloader._progress_hook(
+            {
+                "status": "downloading",
+                "downloaded_bytes": 1000,
+                "total_bytes_estimate": 5000,
+                "speed": 100.0,
+                "eta": 40,
+            }
+        )
 
         assert len(progress_updates) == 1
         assert progress_updates[0].total_bytes == 5000
         assert progress_updates[0].percentage == 20.0
+
+    @pytest.mark.asyncio
+    async def test_download_uses_cache(
+        self, downloader: AudioDownloader, mock_ydl_class: Mock
+    ) -> None:
+        """Test that cached audio is returned without re-downloading."""
+        url = "https://youtube.com/watch?v=cached123"
+        cache_path = downloader._get_cache_path(url)
+        cache_path.touch()  # Pre-create the cached file
+
+        with patch("inkwell.audio.downloader.YoutubeDL", mock_ydl_class):
+            result = await downloader.download(url)
+
+        # Should return cached file
+        assert result == cache_path
+
+        # yt-dlp should NOT have been called
+        mock_ydl_class.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_download_bypass_cache(
+        self, downloader: AudioDownloader, mock_ydl_class: Mock
+    ) -> None:
+        """Test that cache can be bypassed."""
+        url = "https://youtube.com/watch?v=bypass123"
+        cache_path = downloader._get_cache_path(url)
+        cache_path.touch()  # Pre-create the cached file
+
+        with patch("inkwell.audio.downloader.YoutubeDL", mock_ydl_class):
+            result = await downloader.download(url, use_cache=False)
+
+        # Should have downloaded fresh (even though cache existed)
+        # yt-dlp SHOULD have been called
+        mock_ydl_class.assert_called_once()

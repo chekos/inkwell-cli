@@ -373,7 +373,7 @@ class ConfigManager:
             if name in feeds.feeds:
                 raise InkwellValidationError(
                     f"Feed '{name}' already exists. Use update to modify it.",
-                    suggestion="Use 'inkwell remove' first, or choose a different name"
+                    suggestion="Use 'inkwell remove' first, or choose a different name",
                 )
 
             feeds.feeds[name] = feed_config
@@ -406,7 +406,9 @@ class ConfigManager:
             feeds = self.load_feeds()
 
             if name not in feeds.feeds:
-                raise NotFoundError("Feed", name, suggestion="Run 'inkwell list' to see available feeds")
+                raise NotFoundError(
+                    "Feed", name, suggestion="Run 'inkwell list' to see available feeds"
+                )
 
             # Capture old config for diff
             old_config = feeds.feeds[name]
@@ -452,7 +454,9 @@ class ConfigManager:
             feeds = self.load_feeds()
 
             if name not in feeds.feeds:
-                raise NotFoundError("Feed", name, suggestion="Run 'inkwell list' to see available feeds")
+                raise NotFoundError(
+                    "Feed", name, suggestion="Run 'inkwell list' to see available feeds"
+                )
 
             # Capture feed details before deletion
             removed_feed = feeds.feeds[name]
@@ -486,7 +490,9 @@ class ConfigManager:
         feeds = self.load_feeds()
 
         if name not in feeds.feeds:
-            raise NotFoundError("Feed", name, suggestion="Run 'inkwell list' to see available feeds")
+            raise NotFoundError(
+                "Feed", name, suggestion="Run 'inkwell list' to see available feeds"
+            )
 
         return feeds.feeds[name]
 

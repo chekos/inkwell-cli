@@ -152,15 +152,11 @@ class TestSimpleInterviewer:
         mock_anthropic_class.return_value = mock_client
         mock_cost_tracker = MagicMock()
 
-        mock_client.messages.create.return_value = mock_anthropic_response(
-            "What did you think?"
-        )
+        mock_client.messages.create.return_value = mock_anthropic_response("What did you think?")
         mock_prompt.return_value = "quit"
 
         # Conduct interview with cost tracker
-        interviewer = SimpleInterviewer(
-            api_key="test-key", cost_tracker=mock_cost_tracker
-        )
+        interviewer = SimpleInterviewer(api_key="test-key", cost_tracker=mock_cost_tracker)
         result = await interviewer.conduct_interview(
             episode_title="Test Episode",
             podcast_name="Test Podcast",
@@ -204,18 +200,14 @@ class TestConductInterviewFromOutput:
     """Tests for conduct_interview_from_output convenience function."""
 
     @patch("inkwell.interview.simple_interviewer.SimpleInterviewer.conduct_interview")
-    async def test_conduct_interview_from_output(
-        self, mock_conduct, tmp_path: Path
-    ):
+    async def test_conduct_interview_from_output(self, mock_conduct, tmp_path: Path):
         """Test loading content from output directory."""
         # Create mock output files
         output_dir = tmp_path / "episode-output"
         output_dir.mkdir()
 
         (output_dir / "summary.md").write_text("This is the episode summary")
-        (output_dir / "quotes.md").write_text(
-            "## Quotes\n\n> Quote 1\n> Quote 2\n"
-        )
+        (output_dir / "quotes.md").write_text("## Quotes\n\n> Quote 1\n> Quote 2\n")
         (output_dir / "key-concepts.md").write_text(
             "# Key Concepts\n\n## Concept 1\n## Concept 2\n"
         )
@@ -250,9 +242,7 @@ class TestConductInterviewFromOutput:
         assert "Concept 2" in call_kwargs["key_concepts"]
 
     @patch("inkwell.interview.simple_interviewer.SimpleInterviewer.conduct_interview")
-    async def test_conduct_interview_from_output_missing_files(
-        self, mock_conduct, tmp_path: Path
-    ):
+    async def test_conduct_interview_from_output_missing_files(self, mock_conduct, tmp_path: Path):
         """Test handling missing output files gracefully."""
         # Create directory without files
         output_dir = tmp_path / "episode-output"

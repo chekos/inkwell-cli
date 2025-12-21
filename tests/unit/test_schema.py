@@ -157,7 +157,7 @@ class TestGlobalConfig:
         """
         config = GlobalConfig(
             transcription_model="gemini-1.5-flash",  # Old/deprecated
-            transcription=TranscriptionConfig(model_name="gemini-2.5-flash")  # Explicit new
+            transcription=TranscriptionConfig(model_name="gemini-2.5-flash"),  # Explicit new
         )
 
         # User's explicit choice should win
@@ -167,7 +167,7 @@ class TestGlobalConfig:
         """When user explicitly sets interview.model, don't override with deprecated."""
         config = GlobalConfig(
             interview_model="claude-opus-4",  # Old/deprecated
-            interview=InterviewConfig(model="claude-sonnet-4-5")  # Explicit new
+            interview=InterviewConfig(model="claude-sonnet-4-5"),  # Explicit new
         )
 
         # User's explicit choice should win
@@ -177,7 +177,7 @@ class TestGlobalConfig:
         """When user explicitly sets youtube_check in new config, respect it."""
         config = GlobalConfig(
             youtube_check=False,  # Deprecated
-            transcription=TranscriptionConfig(youtube_check=True)  # Explicit new
+            transcription=TranscriptionConfig(youtube_check=True),  # Explicit new
         )
 
         # User's explicit choice should win
@@ -221,7 +221,7 @@ class TestGlobalConfig:
         """
         config = GlobalConfig(
             transcription_model="gemini-1.5-flash",
-            transcription=TranscriptionConfig()  # Explicit, even if default values
+            transcription=TranscriptionConfig(),  # Explicit, even if default values
         )
 
         # Should NOT migrate because user explicitly provided transcription config
@@ -234,9 +234,7 @@ class TestGlobalConfig:
         This test validates the preferred approach where users only use
         the new nested config structure without any deprecated fields.
         """
-        config = GlobalConfig(
-            transcription=TranscriptionConfig(model_name="gemini-2.5-flash")
-        )
+        config = GlobalConfig(transcription=TranscriptionConfig(model_name="gemini-2.5-flash"))
 
         assert config.transcription.model_name == "gemini-2.5-flash"
         # Deprecated field should not be set

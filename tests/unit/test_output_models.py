@@ -6,13 +6,12 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from inkwell.utils.datetime import now_utc
-
 from inkwell.output.models import (
     EpisodeMetadata,
     EpisodeOutput,
     OutputFile,
 )
+from inkwell.utils.datetime import now_utc
 
 
 class TestEpisodeMetadata:

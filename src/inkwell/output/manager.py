@@ -79,7 +79,7 @@ class OutputManager:
 
         # Track backup directory if overwriting existing episode
         if overwrite and episode_dir.exists():
-            backup_dir = episode_dir.with_suffix('.backup')
+            backup_dir = episode_dir.with_suffix(".backup")
 
         try:
             # Create episode directory (handles backup internally)
@@ -150,27 +150,39 @@ class OutputManager:
         This is a helper to calculate the directory path before creating it,
         useful for backup tracking in write_episode().
 
+        Structure: output_dir/podcast-slug/YYYY-MM-DD-episode-slug/
+
         Args:
             episode_metadata: Episode metadata
 
         Returns:
             Path to episode directory (may not exist yet)
         """
-        # Get directory name from metadata
-        dir_name = episode_metadata.directory_name
+        # Sanitize each path component separately
+        podcast_slug = self._sanitize_path_component(episode_metadata.podcast_slug)
+        episode_slug = self._sanitize_path_component(episode_metadata.episode_slug)
 
-        # Sanitize directory name (same as _create_episode_directory)
-        dir_name = dir_name.replace("..", "").replace("/", "-").replace("\\", "-")
-        dir_name = dir_name.replace("\0", "")
+        if not podcast_slug.strip() or not episode_slug.strip():
+            raise ValueError("Episode directory path is empty after sanitization")
 
-        if not dir_name.strip():
-            raise ValueError("Episode directory name is empty after sanitization")
+        return self.output_dir / podcast_slug / episode_slug
 
-        return self.output_dir / dir_name
+    def _sanitize_path_component(self, component: str) -> str:
+        """Sanitize a single path component (no slashes allowed).
 
-    def _create_episode_directory(
-        self, episode_metadata: EpisodeMetadata, overwrite: bool
-    ) -> Path:
+        Args:
+            component: Path component to sanitize
+
+        Returns:
+            Sanitized path component
+        """
+        # Remove path traversal sequences and path separators
+        sanitized = component.replace("..", "").replace("/", "-").replace("\\", "-")
+        # Remove null bytes (path injection)
+        sanitized = sanitized.replace("\0", "")
+        return sanitized
+
+    def _create_episode_directory(self, episode_metadata: EpisodeMetadata, overwrite: bool) -> Path:
         """Create episode directory with comprehensive security checks.
 
         This method implements defense-in-depth path traversal protection:
@@ -179,6 +191,8 @@ class OutputManager:
         3. Prevents symlink attacks
         4. Validates overwrite targets are episode directories
         5. Creates backups before overwrite with rollback support
+
+        Structure: output_dir/podcast-slug/YYYY-MM-DD-episode-slug/
 
         Args:
             episode_metadata: Episode metadata
@@ -192,41 +206,37 @@ class OutputManager:
             SecurityError: If path traversal or symlink attack detected
             ValueError: If directory name is invalid or empty after sanitization
         """
-        # Get directory name from metadata
-        dir_name = episode_metadata.directory_name
+        # Step 1: Sanitize each path component
+        podcast_slug = self._sanitize_path_component(episode_metadata.podcast_slug)
+        episode_slug = self._sanitize_path_component(episode_metadata.episode_slug)
 
-        # Step 1: Sanitize directory name
-        # Remove path traversal sequences and path separators
-        dir_name = dir_name.replace("..", "").replace("/", "-").replace("\\", "-")
+        # Step 2: Ensure not empty after sanitization
+        if not podcast_slug.strip() or not episode_slug.strip():
+            raise ValueError("Episode directory path is empty after sanitization")
 
-        # Step 2: Remove null bytes (path injection)
-        dir_name = dir_name.replace("\0", "")
+        # Build the nested path: output_dir/podcast-slug/episode-slug
+        podcast_dir = self.output_dir / podcast_slug
+        episode_dir = podcast_dir / episode_slug
 
-        # Step 3: Ensure it's not empty after sanitization
-        if not dir_name.strip():
-            raise ValueError("Episode directory name is empty after sanitization")
-
-        episode_dir = self.output_dir / dir_name
-
-        # Step 4: Verify resolved path is within output_dir
+        # Step 3: Verify resolved path is within output_dir
         try:
             resolved_episode = episode_dir.resolve()
             resolved_output = self.output_dir.resolve()
             resolved_episode.relative_to(resolved_output)
         except ValueError:
             raise SecurityError(
-                f"Invalid directory path: {dir_name}. "
+                f"Invalid directory path: {podcast_slug}/{episode_slug}. "
                 f"Resolved path {resolved_episode} is outside output directory."
-            )
+            ) from None
 
-        # Step 5: Check it's not a symlink (symlink attack)
+        # Step 4: Check it's not a symlink (symlink attack)
         if episode_dir.exists() and episode_dir.is_symlink():
             raise SecurityError(
                 f"Episode directory {episode_dir} is a symlink. "
                 f"Refusing to use for security reasons."
             )
 
-        # Step 6: Handle overwrite with validation
+        # Step 5: Handle overwrite with validation
         if episode_dir.exists():
             if not overwrite:
                 raise FileExistsError(
@@ -242,15 +252,15 @@ class OutputManager:
                 )
 
             # Create backup before deletion
-            backup_dir = episode_dir.with_suffix('.backup')
+            backup_dir = episode_dir.with_suffix(".backup")
             if backup_dir.exists():
                 shutil.rmtree(backup_dir)
             episode_dir.rename(backup_dir)
 
-            # Create new directory
-            # Note: Backup restoration is now handled by write_episode() wrapper
+            # Create new directory (parents=True ensures podcast dir exists)
             episode_dir.mkdir(parents=True)
         else:
+            # Create both podcast and episode directories if needed
             episode_dir.mkdir(parents=True, exist_ok=True)
 
         return episode_dir
@@ -277,9 +287,7 @@ class OutputManager:
             OSError: If write or sync fails
         """
         # Write to temporary file in same directory (ensures same filesystem)
-        temp_fd, temp_path = tempfile.mkstemp(
-            dir=file_path.parent, prefix=".tmp_", suffix=".md"
-        )
+        temp_fd, temp_path = tempfile.mkstemp(dir=file_path.parent, prefix=".tmp_", suffix=".md")
 
         try:
             # Write content to temp file
@@ -337,14 +345,23 @@ class OutputManager:
     def list_episodes(self) -> list[Path]:
         """List all episode directories.
 
+        Looks for episode directories in the nested structure:
+        output_dir/podcast-slug/episode-slug/.metadata.yaml
+
         Returns:
             List of episode directory paths
         """
-        # Find directories with .metadata.yaml
         episodes = []
-        for item in self.output_dir.iterdir():
-            if item.is_dir() and (item / ".metadata.yaml").exists():
-                episodes.append(item)
+
+        # Iterate through podcast directories
+        for podcast_dir in self.output_dir.iterdir():
+            if not podcast_dir.is_dir():
+                continue
+
+            # Look for episode directories inside each podcast directory
+            for episode_dir in podcast_dir.iterdir():
+                if episode_dir.is_dir() and (episode_dir / ".metadata.yaml").exists():
+                    episodes.append(episode_dir)
 
         return sorted(episodes)
 
@@ -432,9 +449,7 @@ class OutputManager:
             Dict with statistics
         """
         episodes = self.list_episodes()
-        total_files = sum(
-            len(list(ep.glob("*.md"))) for ep in episodes
-        )
+        total_files = sum(len(list(ep.glob("*.md"))) for ep in episodes)
         total_size = self.get_total_size()
 
         return {

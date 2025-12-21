@@ -80,7 +80,17 @@ echo 'export GOOGLE_API_KEY="your-google-ai-api-key-here"' >> ~/.zshrc
 source ~/.zshrc
 ```
 
-### 2.3 Verify Configuration
+### 2.3 Set Output Directory (Optional)
+
+By default, Inkwell saves processed episodes to `~/podcasts`. To change this:
+
+```bash
+uv run inkwell config set default_output_dir ~/my-notes/podcasts
+```
+
+You can also specify a different directory per-command using the `--output` flag.
+
+### 2.4 Verify Configuration
 
 ```bash
 uv run inkwell config show

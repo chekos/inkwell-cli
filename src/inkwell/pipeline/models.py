@@ -30,6 +30,9 @@ class PipelineOptions:
     # Audio download authentication (for private feeds)
     auth_username: str | None = None
     auth_password: str | None = None
+    # Episode metadata (from RSS feed)
+    episode_title: str | None = None
+    podcast_name: str | None = None
 
 
 @dataclass

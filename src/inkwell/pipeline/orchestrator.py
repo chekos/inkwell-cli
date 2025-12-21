@@ -32,6 +32,7 @@ if TYPE_CHECKING:
         ExtractionSummary,
         ExtractionTemplate,
     )
+    from inkwell.interview.simple_interviewer import SimpleInterviewResult
     from inkwell.output.models import EpisodeOutput
     from inkwell.transcription.models import TranscriptionResult
 
@@ -98,19 +99,28 @@ class PipelineOrchestrator:
         if progress_callback:
             progress_callback("transcription_start", {})
 
+        # Create sub-progress callback for transcription steps
+        def transcription_progress(step: str, data: dict) -> None:
+            if progress_callback:
+                progress_callback("transcription_step", {"step": step, **data})
+
         transcript_result = await self._transcribe(
             options.url,
             auth_username=options.auth_username,
             auth_password=options.auth_password,
+            progress_callback=transcription_progress,
         )
 
         if progress_callback:
-            progress_callback("transcription_complete", {
-                "source": transcript_result.transcript.source,
-                "duration_seconds": transcript_result.duration_seconds,
-                "word_count": len(transcript_result.transcript.full_text.split()),
-                "from_cache": transcript_result.from_cache,
-            })
+            progress_callback(
+                "transcription_complete",
+                {
+                    "source": transcript_result.transcript.source,
+                    "duration_seconds": transcript_result.duration_seconds,
+                    "word_count": len(transcript_result.transcript.full_text.split()),
+                    "from_cache": transcript_result.from_cache,
+                },
+            )
 
         # Step 2: Template selection
         if progress_callback:
@@ -122,19 +132,22 @@ class PipelineOrchestrator:
             episode_url=options.url,
         )
 
-        # Create episode metadata
+        # Create episode metadata (use values from options if available)
         episode_metadata = EpisodeMetadata(
-            podcast_name="Unknown Podcast",  # Would come from RSS in real implementation
-            episode_title=f"Episode from {options.url}",
+            podcast_name=options.podcast_name or "Unknown Podcast",
+            episode_title=options.episode_title or f"Episode from {options.url}",
             episode_url=options.url,
             transcription_source=transcript_result.transcript.source,
         )
 
         if progress_callback:
-            progress_callback("template_selection_complete", {
-                "template_count": len(selected_templates),
-                "templates": [t.name for t in selected_templates],
-            })
+            progress_callback(
+                "template_selection_complete",
+                {
+                    "template_count": len(selected_templates),
+                    "templates": [t.name for t in selected_templates],
+                },
+            )
 
         # Step 3: Extraction
         if progress_callback:
@@ -150,17 +163,21 @@ class PipelineOrchestrator:
         )
 
         if progress_callback:
-            progress_callback("extraction_complete", {
-                "successful": extraction_summary.successful,
-                "failed": extraction_summary.failed,
-                "cached": extraction_summary.cached,
-                "cost_usd": extraction_cost,
-            })
+            progress_callback(
+                "extraction_complete",
+                {
+                    "successful": extraction_summary.successful,
+                    "failed": extraction_summary.failed,
+                    "cached": extraction_summary.cached,
+                    "cost_usd": extraction_cost,
+                },
+            )
 
         # Early exit for dry run
         if options.dry_run:
             # Create a minimal result for dry run
             from inkwell.output.models import EpisodeOutput
+
             dry_run_output = EpisodeOutput(
                 directory=output_path / "dry-run",
                 output_files=[],
@@ -187,10 +204,13 @@ class PipelineOrchestrator:
         )
 
         if progress_callback:
-            progress_callback("output_complete", {
-                "file_count": len(episode_output.output_files),
-                "directory": str(episode_output.directory),
-            })
+            progress_callback(
+                "output_complete",
+                {
+                    "file_count": len(episode_output.output_files),
+                    "directory": str(episode_output.directory),
+                },
+            )
 
         # Step 5: Interview (optional)
         interview_result = None
@@ -211,13 +231,9 @@ class PipelineOrchestrator:
                 if interview_result:
                     # Update metadata with interview info
                     template_name = (
-                        options.interview_template
-                        or self.config.interview.default_template
+                        options.interview_template or self.config.interview.default_template
                     )
-                    format_style = (
-                        options.interview_format
-                        or self.config.interview.format_style
-                    )
+                    format_style = options.interview_format or self.config.interview.format_style
                     self._update_metadata_with_interview(
                         episode_output=episode_output,
                         interview_result=interview_result,
@@ -227,15 +243,14 @@ class PipelineOrchestrator:
                     )
 
                 if progress_callback:
-                    question_count = (
-                        len(interview_result.exchanges)
-                        if interview_result
-                        else 0
+                    question_count = len(interview_result.exchanges) if interview_result else 0
+                    progress_callback(
+                        "interview_complete",
+                        {
+                            "question_count": question_count,
+                            "cost_usd": interview_cost,
+                        },
                     )
-                    progress_callback("interview_complete", {
-                        "question_count": question_count,
-                        "cost_usd": interview_cost,
-                    })
 
             except KeyboardInterrupt:
                 logger.info("Interview cancelled by user")
@@ -265,6 +280,7 @@ class PipelineOrchestrator:
         url: str,
         auth_username: str | None = None,
         auth_password: str | None = None,
+        progress_callback: Callable[[str, dict], None] | None = None,
     ) -> "TranscriptionResult":
         """Transcribe episode from URL.
 
@@ -272,6 +288,7 @@ class PipelineOrchestrator:
             url: Episode URL
             auth_username: Username for authenticated audio downloads (private feeds)
             auth_password: Password for authenticated audio downloads (private feeds)
+            progress_callback: Optional callback for transcription sub-step progress
 
         Returns:
             TranscriptionResult
@@ -280,8 +297,7 @@ class PipelineOrchestrator:
             InkwellError: If transcription fails
         """
         manager = TranscriptionManager(
-            config=self.config.transcription,
-            cost_tracker=self.cost_tracker
+            config=self.config.transcription, cost_tracker=self.cost_tracker
         )
         result = await manager.transcribe(
             url,
@@ -289,6 +305,7 @@ class PipelineOrchestrator:
             skip_youtube=False,
             auth_username=auth_username,
             auth_password=auth_password,
+            progress_callback=progress_callback,
         )
 
         if not result.success:
@@ -314,7 +331,7 @@ class PipelineOrchestrator:
             List of selected templates
         """
         loader = TemplateLoader()
-        selector = TemplateSelector(loader=loader)
+        selector = TemplateSelector(loader)
 
         # Parse custom templates if provided
         custom_template_list = None
@@ -362,8 +379,15 @@ class PipelineOrchestrator:
         Returns:
             Tuple of (extraction_results, extraction_summary, total_cost)
         """
+        # Share Google API key between transcription and extraction
+        # Extraction uses transcription.api_key as fallback if not explicitly set
+        shared_gemini_key = (
+            self.config.extraction.gemini_api_key or self.config.transcription.api_key
+        )
+
         engine = ExtractionEngine(
             config=self.config.extraction,
+            gemini_api_key=shared_gemini_key,
             cost_tracker=self.cost_tracker,
         )
 
@@ -376,6 +400,7 @@ class PipelineOrchestrator:
         # If dry run, return early with estimated cost
         if dry_run:
             from inkwell.extraction.models import ExtractionSummary
+
             summary = ExtractionSummary(
                 total=len(templates),
                 successful=0,

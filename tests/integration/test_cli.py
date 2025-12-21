@@ -2,10 +2,12 @@
 
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from inkwell.cli import app
 from inkwell.config.manager import ConfigManager
+from inkwell.utils.errors import NotFoundError, ValidationError
 
 runner = CliRunner()
 
@@ -47,10 +49,7 @@ class TestCLIAdd:
         """Test that adding duplicate feed fails."""
         manager = ConfigManager(config_dir=tmp_path)
 
-        import pytest
-
         from inkwell.config.schema import AuthConfig, FeedConfig
-        from inkwell.utils.errors import ValidationError as DuplicateFeedError
 
         feed_config = FeedConfig(
             url="https://example.com/feed.rss",  # type: ignore
@@ -143,10 +142,6 @@ class TestCLIRemove:
     def test_remove_nonexistent_feed_fails(self, tmp_path: Path) -> None:
         """Test that removing nonexistent feed fails."""
         manager = ConfigManager(config_dir=tmp_path)
-
-        import pytest
-
-        from inkwell.utils.errors import NotFoundError as FeedNotFoundError
 
         with pytest.raises(NotFoundError):
             manager.remove_feed("nonexistent")
@@ -326,20 +321,27 @@ class TestCLICache:
 class TestCLIConfigEditSecurity:
     """Security tests for config edit command - CRITICAL vulnerability tests."""
 
-    def test_editor_whitelist_allows_valid_editors(
-        self, tmp_path: Path, monkeypatch
-    ) -> None:
+    def test_editor_whitelist_allows_valid_editors(self, tmp_path: Path, monkeypatch) -> None:
         """Test that whitelisted editors are allowed."""
         manager = ConfigManager(config_dir=tmp_path)
 
         valid_editors = [
-            "nano", "vim", "vi", "emacs", "code", "nvim",
-            "subl", "gedit", "kate", "atom", "micro", "helix"
+            "nano",
+            "vim",
+            "vi",
+            "emacs",
+            "code",
+            "nvim",
+            "subl",
+            "gedit",
+            "kate",
+            "atom",
+            "micro",
+            "helix",
         ]
 
         for editor in valid_editors:
             # Mock the subprocess.run to prevent actual editor launch
-            import subprocess
             from unittest.mock import MagicMock, patch
 
             mock_run = MagicMock()
@@ -352,21 +354,11 @@ class TestCLIConfigEditSecurity:
                 # Subprocess should have been called with the editor
                 assert mock_run.called
 
-    def test_editor_whitelist_blocks_invalid_editors(
-        self, tmp_path: Path, monkeypatch
-    ) -> None:
+    def test_editor_whitelist_blocks_invalid_editors(self, tmp_path: Path, monkeypatch) -> None:
         """Test that non-whitelisted editors are blocked."""
         manager = ConfigManager(config_dir=tmp_path)
 
-        invalid_editors = [
-            "bash",
-            "sh",
-            "python",
-            "perl",
-            "ruby",
-            "node",
-            "custom-editor-2023"
-        ]
+        invalid_editors = ["bash", "sh", "python", "perl", "ruby", "node", "custom-editor-2023"]
 
         for editor in invalid_editors:
             monkeypatch.setenv("EDITOR", editor)
@@ -376,9 +368,7 @@ class TestCLIConfigEditSecurity:
             assert "Unsupported editor" in result.stdout
             assert result.exit_code == 1
 
-    def test_editor_command_injection_blocked(
-        self, tmp_path: Path, monkeypatch
-    ) -> None:
+    def test_editor_command_injection_blocked(self, tmp_path: Path, monkeypatch) -> None:
         """Test that command injection attempts are blocked - CRITICAL SECURITY TEST."""
         manager = ConfigManager(config_dir=tmp_path)
 
@@ -415,7 +405,6 @@ class TestCLIConfigEditSecurity:
         manager = ConfigManager(config_dir=tmp_path)
 
         # Valid editor with path should work
-        import subprocess
         from unittest.mock import MagicMock, patch
 
         mock_run = MagicMock()
@@ -427,9 +416,7 @@ class TestCLIConfigEditSecurity:
             assert "Unsupported editor" not in result.stdout
             assert mock_run.called
 
-    def test_editor_path_injection_blocked(
-        self, tmp_path: Path, monkeypatch
-    ) -> None:
+    def test_editor_path_injection_blocked(self, tmp_path: Path, monkeypatch) -> None:
         """Test that path-based injection attempts are blocked."""
         manager = ConfigManager(config_dir=tmp_path)
 
@@ -439,7 +426,7 @@ class TestCLIConfigEditSecurity:
             "/bin/bash",
             "/usr/bin/curl",
             "../../bin/sh",
-            "/tmp/malicious-script"
+            "/tmp/malicious-script",
         ]
 
         for path in malicious_paths:
@@ -454,7 +441,6 @@ class TestCLIConfigEditSecurity:
         """Test that default editor (nano) is used when EDITOR not set."""
         manager = ConfigManager(config_dir=tmp_path)
 
-        import subprocess
         from unittest.mock import MagicMock, patch
 
         # Unset EDITOR

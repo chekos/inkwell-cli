@@ -176,22 +176,14 @@ class ExtractedContent(BaseModel):
     content: str | dict[str, Any] = Field(
         ..., description="Extracted content (format depends on template)"
     )
-    metadata: dict[str, Any] = Field(
-        default_factory=dict, description="Additional metadata"
-    )
+    metadata: dict[str, Any] = Field(default_factory=dict, description="Additional metadata")
 
     # Quality metrics
-    confidence: float | None = Field(
-        None, description="Confidence score (0-1)", ge=0, le=1
-    )
-    warnings: list[str] = Field(
-        default_factory=list, description="Validation warnings"
-    )
+    confidence: float | None = Field(None, description="Confidence score (0-1)", ge=0, le=1)
+    warnings: list[str] = Field(default_factory=list, description="Validation warnings")
 
     # Timestamps
-    extracted_at: datetime = Field(
-        default_factory=now_utc, description="When extraction occurred"
-    )
+    extracted_at: datetime = Field(default_factory=now_utc, description="When extraction occurred")
 
     @property
     def is_valid(self) -> bool:
@@ -200,9 +192,7 @@ class ExtractedContent(BaseModel):
         Returns:
             True if no warnings and confidence >= 0.7
         """
-        return len(self.warnings) == 0 and (
-            self.confidence is None or self.confidence >= 0.7
-        )
+        return len(self.warnings) == 0 and (self.confidence is None or self.confidence >= 0.7)
 
     @property
     def has_warnings(self) -> bool:
@@ -247,9 +237,7 @@ class ExtractionResult(BaseModel):
     cache_key: str | None = Field(None, description="Cache key if cached")
 
     # Timestamp
-    completed_at: datetime = Field(
-        default_factory=now_utc, description="When extraction completed"
-    )
+    completed_at: datetime = Field(default_factory=now_utc, description="When extraction completed")
 
     @property
     def is_successful(self) -> bool:

@@ -155,10 +155,6 @@ class ExtractionCache(FileCache[str]):
             transcript: Transcript text
             result: Extraction result to cache
         """
-        # Store template metadata for compatibility
-        cache_key = self._make_key(template_name, template_version, transcript)
-        cache_file = self.cache_dir / f"{cache_key}.json"
-
         # Override serializer temporarily to include template metadata
         original_serializer = self.serializer
 

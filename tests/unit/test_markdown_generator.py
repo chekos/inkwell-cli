@@ -1,6 +1,5 @@
 """Unit tests for markdown generator."""
 
-
 import pytest
 
 from inkwell.extraction.models import ExtractedContent, ExtractionResult
@@ -345,9 +344,7 @@ class TestMarkdownGeneratorGeneric:
 
     def test_format_text_content(self, generator: MarkdownGenerator) -> None:
         """Test text content formatting."""
-        content = ExtractedContent(
-            template_name="summary", content="Plain text content"
-        )
+        content = ExtractedContent(template_name="summary", content="Plain text content")
 
         markdown = generator._format_text_content(content)
 
@@ -365,9 +362,7 @@ class TestMarkdownGeneratorFullGeneration:
             episode_url="https://example.com/ep1",
             template_name="summary",
             success=True,
-            extracted_content=ExtractedContent(
-                template_name="summary", content="Episode summary"
-            ),
+            extracted_content=ExtractedContent(template_name="summary", content="Episode summary"),
             cost_usd=0.01,
             provider="gemini",
         )
@@ -393,9 +388,7 @@ class TestMarkdownGeneratorFullGeneration:
             episode_url="https://example.com/ep1",
             template_name="summary",
             success=True,
-            extracted_content=ExtractedContent(
-                template_name="summary", content="Episode summary"
-            ),
+            extracted_content=ExtractedContent(template_name="summary", content="Episode summary"),
             cost_usd=0.0,
             provider="cache",
         )
@@ -420,9 +413,7 @@ class TestMarkdownGeneratorFullGeneration:
             extracted_content=ExtractedContent(
                 template_name="quotes",
                 content={
-                    "quotes": [
-                        {"text": "Test quote", "speaker": "Speaker", "timestamp": "10:00"}
-                    ]
+                    "quotes": [{"text": "Test quote", "speaker": "Speaker", "timestamp": "10:00"}]
                 },
             ),
             cost_usd=0.01,
@@ -440,7 +431,9 @@ class TestMarkdownGeneratorFullGeneration:
         self, generator: MarkdownGenerator, episode_metadata: dict
     ) -> None:
         """Test generation with markdown summary."""
-        summary_text = "# Summary\n\nThis episode discusses testing.\n\n## Key Points\n\n- Point 1\n- Point 2"
+        summary_text = (
+            "# Summary\n\nThis episode discusses testing.\n\n## Key Points\n\n- Point 1\n- Point 2"
+        )
 
         result = ExtractionResult(
             episode_url="https://example.com/ep1",
@@ -501,7 +494,7 @@ class TestMarkdownGeneratorEdgeCases:
         data = {
             "quotes": [
                 {
-                    "text": 'Quote with "quotes" and \'apostrophes\'',
+                    "text": "Quote with \"quotes\" and 'apostrophes'",
                     "speaker": "Test",
                 }
             ]
@@ -509,7 +502,7 @@ class TestMarkdownGeneratorEdgeCases:
 
         markdown = generator._format_quotes(data)
 
-        assert 'Quote with "quotes" and \'apostrophes\'' in markdown
+        assert "Quote with \"quotes\" and 'apostrophes'" in markdown
 
     def test_handle_unicode_content(self, generator: MarkdownGenerator) -> None:
         """Test handling of unicode characters."""

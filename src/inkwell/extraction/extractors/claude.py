@@ -60,6 +60,8 @@ class ClaudeExtractor(BaseExtractor):
         template: ExtractionTemplate,
         transcript: str,
         metadata: dict[str, Any],
+        force_json: bool = False,
+        max_tokens_override: int | None = None,
     ) -> str:
         """Extract content using Claude.
 
@@ -67,6 +69,8 @@ class ClaudeExtractor(BaseExtractor):
             template: Extraction template configuration
             transcript: Full transcript text
             metadata: Episode metadata
+            force_json: Force JSON response mode (for batch extraction)
+            max_tokens_override: Override template's max_tokens (for batch extraction)
 
         Returns:
             Raw LLM response string
@@ -195,5 +199,6 @@ class ClaudeExtractor(BaseExtractor):
             for field in schema["required"]:
                 if field not in data:
                     raise ValidationError(
-                        f"Missing required field '{field}' in Claude output", schema=schema
+                        f"Missing required field '{field}' in Claude output",
+                        details={"schema": schema},
                     )

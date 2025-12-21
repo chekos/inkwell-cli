@@ -104,8 +104,8 @@ class TemplateLoader:
         # Find template file
         template_path = self._find_template(name)
         if not template_path:
-            raise NotFoundError("Template",
-                f"Template '{name}' not found in any template directory"
+            raise NotFoundError(
+                "Template", f"Template '{name}' not found in any template directory"
             )
 
         # Load and validate template
@@ -180,7 +180,9 @@ class TemplateLoader:
             raise InkwellValidationError(f"Invalid YAML syntax in {path}: {e}") from e
 
         if not isinstance(data, dict):
-            raise InkwellValidationError(f"Template file must contain a YAML object, got {type(data)}")
+            raise InkwellValidationError(
+                f"Template file must contain a YAML object, got {type(data)}"
+            )
 
         try:
             template = ExtractionTemplate(**data)

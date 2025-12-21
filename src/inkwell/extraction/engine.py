@@ -49,9 +49,9 @@ def _sanitize_error_message(message: str) -> str:
         'Error with key [REDACTED_GEMINI_KEY]'
     """
     # Redact Gemini keys (AIza...)
-    message = re.sub(r'AIza[A-Za-z0-9_-]+', '[REDACTED_GEMINI_KEY]', message)
+    message = re.sub(r"AIza[A-Za-z0-9_-]+", "[REDACTED_GEMINI_KEY]", message)
     # Redact Claude keys (sk-ant-...)
-    message = re.sub(r'sk-ant-[A-Za-z0-9_-]+', '[REDACTED_CLAUDE_KEY]', message)
+    message = re.sub(r"sk-ant-[A-Za-z0-9_-]+", "[REDACTED_CLAUDE_KEY]", message)
     return message
 
 
@@ -91,7 +91,7 @@ class ExtractionEngine:
             claude_api_key: Anthropic API key (defaults to env var) [deprecated, use config]
             gemini_api_key: Google AI API key (defaults to env var) [deprecated, use config]
             cache: Cache instance (defaults to new ExtractionCache)
-            default_provider: Default provider to use ("claude" or "gemini") [deprecated, use config]
+            default_provider: Default provider ("claude" or "gemini") [deprecated]
             cost_tracker: Cost tracker for recording API usage (optional, for DI)
 
         Note:
@@ -113,31 +113,43 @@ class ExtractionEngine:
                 f"Use ExtractionConfig instead. "
                 f"These parameters will be removed in v2.0.",
                 DeprecationWarning,
-                stacklevel=2
+                stacklevel=2,
             )
 
         # Extract config values with standardized precedence
         effective_claude_key = resolve_config_value(
-            config.claude_api_key if config else None,
-            claude_api_key,
-            None
+            config.claude_api_key if config else None, claude_api_key, None
         )
         effective_gemini_key = resolve_config_value(
-            config.gemini_api_key if config else None,
-            gemini_api_key,
-            None
+            config.gemini_api_key if config else None, gemini_api_key, None
         )
         effective_provider = resolve_config_value(
-            config.default_provider if config else None,
-            default_provider,
-            "gemini"
+            config.default_provider if config else None, default_provider, "gemini"
         )
 
-        self.claude_extractor = ClaudeExtractor(api_key=effective_claude_key)
-        self.gemini_extractor = GeminiExtractor(api_key=effective_gemini_key)
+        # Store API keys for lazy initialization
+        self._claude_api_key = effective_claude_key
+        self._gemini_api_key = effective_gemini_key
+        self._claude_extractor: ClaudeExtractor | None = None
+        self._gemini_extractor: GeminiExtractor | None = None
+
         self.cache = cache or ExtractionCache()
         self.default_provider = effective_provider
         self.cost_tracker = cost_tracker
+
+    @property
+    def claude_extractor(self) -> ClaudeExtractor:
+        """Lazily initialize Claude extractor."""
+        if self._claude_extractor is None:
+            self._claude_extractor = ClaudeExtractor(api_key=self._claude_api_key)
+        return self._claude_extractor
+
+    @property
+    def gemini_extractor(self) -> GeminiExtractor:
+        """Lazily initialize Gemini extractor."""
+        if self._gemini_extractor is None:
+            self._gemini_extractor = GeminiExtractor(api_key=self._gemini_api_key)
+        return self._gemini_extractor
 
     async def extract(
         self,
@@ -181,11 +193,7 @@ class ExtractionEngine:
 
         # Select provider
         extractor = self._select_extractor(template)
-        provider_name = (
-            "claude"
-            if extractor.__class__.__name__ == "ClaudeExtractor"
-            else "gemini"
-        )
+        provider_name = "claude" if extractor.__class__.__name__ == "ClaudeExtractor" else "gemini"
 
         # Estimate cost
         estimated_cost = extractor.estimate_cost(template, len(transcript))
@@ -210,7 +218,7 @@ class ExtractionEngine:
 
                 self.cost_tracker.add_cost(
                     provider=provider_name,
-                    model=extractor.model if hasattr(extractor, 'model') else "unknown",
+                    model=extractor.model if hasattr(extractor, "model") else "unknown",
                     operation="extraction",
                     input_tokens=input_tokens,
                     output_tokens=output_tokens,
@@ -287,9 +295,7 @@ class ExtractionEngine:
                 if result.success:
                     # Determine if from cache
                     status = (
-                        ExtractionStatus.CACHED
-                        if result.from_cache
-                        else ExtractionStatus.SUCCESS
+                        ExtractionStatus.CACHED if result.from_cache else ExtractionStatus.SUCCESS
                     )
 
                     attempts.append(
@@ -496,25 +502,27 @@ class ExtractionEngine:
 
         # Select provider (use first template's preference or default)
         extractor = self._select_extractor(uncached_templates[0])
-        provider_name = (
-            "claude"
-            if extractor.__class__.__name__ == "ClaudeExtractor"
-            else "gemini"
-        )
+        provider_name = "claude" if extractor.__class__.__name__ == "ClaudeExtractor" else "gemini"
 
         # Estimate cost (slightly higher than sum of individual calls due to larger prompt)
-        estimated_cost = sum(
-            extractor.estimate_cost(t, len(transcript)) for t in uncached_templates
-        ) * 1.1  # 10% overhead for batch prompt
+        estimated_cost = (
+            sum(extractor.estimate_cost(t, len(transcript)) for t in uncached_templates) * 1.1
+        )  # 10% overhead for batch prompt
 
         # Single API call for all templates
         batch_results = {}
         try:
+            # Calculate total max_tokens for all templates
+            total_max_tokens = sum(t.max_tokens for t in uncached_templates)
+
             # Call LLM with batched prompt
+            # Force JSON mode since batch responses must be JSON
             response = await extractor.extract(
                 uncached_templates[0],  # Use first template for LLM config
                 batched_prompt,
                 metadata,
+                force_json=True,
+                max_tokens_override=total_max_tokens,
             )
 
             # Parse batch response
@@ -543,7 +551,7 @@ class ExtractionEngine:
                 for template in uncached_templates:
                     self.cost_tracker.add_cost(
                         provider=provider_name,
-                        model=extractor.model if hasattr(extractor, 'model') else "unknown",
+                        model=extractor.model if hasattr(extractor, "model") else "unknown",
                         operation="extraction",
                         input_tokens=input_tokens // len(uncached_templates),
                         output_tokens=output_tokens // len(uncached_templates),
@@ -667,29 +675,44 @@ class ExtractionEngine:
         Returns:
             Extractor instance (Claude or Gemini)
         """
-        # Explicit preference
-        if template.model_preference == "claude":
-            return self.claude_extractor
-        elif template.model_preference == "gemini":
-            return self.gemini_extractor
+        # Check which extractors are available (have API keys)
+        claude_available = self._claude_api_key is not None
+        gemini_available = self._gemini_api_key is not None
 
-        # Heuristics for auto-selection
+        # Explicit preference (only if available, fallback otherwise)
+        if template.model_preference == "claude":
+            if claude_available:
+                return self.claude_extractor
+            # Fall through to use gemini if claude not available
+        elif template.model_preference == "gemini":
+            if gemini_available:
+                return self.gemini_extractor
+            # Fall through to use claude if gemini not available
+
+        # Heuristics for auto-selection (only if extractor is available)
         # Use Claude for:
         # - Quote extraction (precision critical)
         # - Complex structured data (many required fields)
-        if "quote" in template.name.lower():
-            return self.claude_extractor
-
-        if template.expected_format == "json" and template.output_schema:
-            required_fields = template.output_schema.get("required", [])
-            if len(required_fields) > 5:  # Complex schema
+        if claude_available:
+            if "quote" in template.name.lower():
                 return self.claude_extractor
 
-        # Default provider
-        if self.default_provider == "claude":
+            if template.expected_format == "json" and template.output_schema:
+                required_fields = template.output_schema.get("required", [])
+                if len(required_fields) > 5:  # Complex schema
+                    return self.claude_extractor
+
+        # Default provider (if available)
+        if self.default_provider == "claude" and claude_available:
+            return self.claude_extractor
+        elif gemini_available:
+            return self.gemini_extractor
+        elif claude_available:
             return self.claude_extractor
         else:
-            return self.gemini_extractor
+            raise ValueError(
+                "No extraction provider available. Set GOOGLE_API_KEY or ANTHROPIC_API_KEY."
+            )
 
     def _parse_output(self, raw_output: str, template: ExtractionTemplate) -> ExtractedContent:
         """Parse raw LLM output into ExtractedContent.
@@ -827,9 +850,9 @@ class ExtractionEngine:
 Analyze this podcast transcript and provide multiple extractions.
 
 PODCAST INFORMATION:
-- Title: {metadata.get('episode_title', 'Unknown')}
-- Podcast: {metadata.get('podcast_name', 'Unknown')}
-- URL: {metadata.get('episode_url', 'Unknown')}
+- Title: {metadata.get("episode_title", "Unknown")}
+- Podcast: {metadata.get("podcast_name", "Unknown")}
+- URL: {metadata.get("episode_url", "Unknown")}
 
 EXTRACTION TASKS:
 {chr(10).join(instructions)}

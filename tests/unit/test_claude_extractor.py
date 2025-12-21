@@ -5,10 +5,10 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 from anthropic.types import ContentBlock, Message
 
-from inkwell.utils.errors import APIError, ValidationError
 from inkwell.extraction.extractors.claude import ClaudeExtractor
 from inkwell.extraction.models import ExtractionTemplate
 from inkwell.utils.api_keys import APIKeyError
+from inkwell.utils.errors import APIError, ValidationError
 
 
 @pytest.fixture

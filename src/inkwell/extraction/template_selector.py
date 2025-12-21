@@ -118,8 +118,7 @@ class TemplateSelector:
         selected.sort(key=lambda t: t.priority)
 
         logger.info(
-            f"Selected {len(selected)} templates for extraction: "
-            f"{[t.name for t in selected]}"
+            f"Selected {len(selected)} templates for extraction: {[t.name for t in selected]}"
         )
         return selected
 
@@ -181,9 +180,7 @@ class TemplateSelector:
         min_threshold = 3
 
         if tech_score >= min_threshold and tech_score > interview_score:
-            logger.debug(
-                f"Detected 'tech' category (score: {tech_score} vs {interview_score})"
-            )
+            logger.debug(f"Detected 'tech' category (score: {tech_score} vs {interview_score})")
             return "tech"
         elif interview_score >= min_threshold and interview_score > tech_score:
             logger.debug(

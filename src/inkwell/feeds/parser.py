@@ -1,5 +1,6 @@
 """RSS feed parser using feedparser."""
 
+import re
 from datetime import datetime
 from email.utils import parsedate_to_datetime
 
@@ -8,12 +9,21 @@ import httpx
 
 from inkwell.config.schema import AuthConfig
 from inkwell.feeds.models import Episode
-from inkwell.utils.errors import APIError, SecurityError, ValidationError
+from inkwell.utils.errors import APIError, NotFoundError, SecurityError, ValidationError
 from inkwell.utils.retry import AuthenticationError
+
+# Maximum number of episodes that can be selected in a single request
+# Prevents resource exhaustion from large ranges like "1-1000000000"
+MAX_EPISODES_PER_SELECTION = 100
 
 
 class RSSParser:
     """Parses RSS feeds and extracts episode information."""
+
+    # Pre-compiled regex patterns for episode selection
+    _SINGLE_POSITION_PATTERN = re.compile(r"^\d+$")
+    _RANGE_PATTERN = re.compile(r"^(\d+)-(\d+)$")
+    _LIST_PATTERN = re.compile(r"^\d+(,\s*\d+)+$")
 
     def __init__(self, timeout: int = 30) -> None:
         """Initialize the RSS parser.
@@ -150,6 +160,83 @@ class RSSParser:
                 return self.extract_episode_metadata(entry, podcast_name)
 
         raise ValidationError(f"No episode found matching '{title_keyword}' in feed")
+
+    # TODO(v0.3): Extract to EpisodeSelector class when adding "all", "last-N", date ranges
+    # See architectural review PR#22 for rationale
+    def parse_and_fetch_episodes(
+        self,
+        feed: feedparser.FeedParserDict,
+        selector: str,
+        podcast_name: str,
+    ) -> list[Episode]:
+        """Parse selector and return matching episodes.
+
+        Supports multiple selector formats:
+        - Position: "3" → episode at position 3
+        - Range: "1-5" → episodes 1 through 5 (reversed ranges auto-corrected)
+        - List: "1,3,7" → episodes at those positions
+        - Keyword: "AI security" → search by title (fallback)
+
+        Args:
+            feed: Parsed RSS feed
+            selector: Position, range, list, or keyword
+            podcast_name: Name of the podcast
+
+        Returns:
+            List of matching episodes
+
+        Raises:
+            ValidationError: If keyword search finds no matches
+            NotFoundError: If numeric positions are valid but out of bounds
+                for the feed (e.g., position 50 in a 10-episode feed)
+        """
+        selector = selector.strip()
+        feed_size = len(feed.entries)
+
+        # Single position: "3"
+        if self._SINGLE_POSITION_PATTERN.match(selector):
+            positions = [int(selector)]
+
+        # Range: "1-5" (auto-correct reversed ranges)
+        elif range_match := self._RANGE_PATTERN.match(selector):
+            start, end = int(range_match.group(1)), int(range_match.group(2))
+            range_size = abs(end - start) + 1
+            if range_size > MAX_EPISODES_PER_SELECTION:
+                raise ValidationError(
+                    f"Range '{selector}' contains {range_size} episodes, maximum is {MAX_EPISODES_PER_SELECTION}",
+                    suggestion="Select fewer episodes or use multiple smaller requests"
+                )
+            positions = list(range(min(start, end), max(start, end) + 1))
+
+        # List: "1,3,7"
+        elif self._LIST_PATTERN.match(selector):
+            positions = [int(x.strip()) for x in selector.split(",")]
+            if len(positions) > MAX_EPISODES_PER_SELECTION:
+                raise ValidationError(
+                    f"List contains {len(positions)} episodes, maximum is {MAX_EPISODES_PER_SELECTION}",
+                    suggestion="Select fewer episodes or use multiple smaller requests"
+                )
+
+        # Keyword search (existing behavior)
+        else:
+            return [self.get_episode_by_title(feed, selector, podcast_name)]
+
+        # Validate positions
+        invalid = [p for p in positions if p < 1 or p > feed_size]
+        if invalid:
+            raise NotFoundError(
+                resource_type="Episode position",
+                resource_id=str(invalid),
+                details={"feed_size": feed_size, "requested": positions},
+                suggestion=f"Valid positions are 1-{feed_size}. "
+                f"Run 'inkwell episodes {podcast_name}' to see available episodes.",
+            )
+
+        # Fetch episodes (1-indexed to 0-indexed)
+        return [
+            self.extract_episode_metadata(feed.entries[pos - 1], podcast_name)
+            for pos in positions
+        ]
 
     def extract_episode_metadata(self, entry: dict, podcast_name: str) -> Episode:
         """Extract Episode model from feedparser entry.

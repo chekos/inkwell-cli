@@ -6,8 +6,26 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
 authors = [
-    {name = "Inkwell Contributors"}
+    {name = "Sergio Sanchez", email = "chekos@users.noreply.github.com"}
 ]
+keywords = [
+    "podcast",
+    "transcription",
+    "markdown",
+    "notes",
+    "obsidian",
+    "cli",
+    "ai",
+    "llm",
+]
+
+[project.urls]
+Homepage = "https://github.com/chekos/inkwell-cli"
+Documentation = "https://github.com/chekos/inkwell-cli#readme"
+Repository = "https://github.com/chekos/inkwell-cli.git"
+Issues = "https://github.com/chekos/inkwell-cli/issues"
+Changelog = "https://github.com/chekos/inkwell-cli/releases"
+
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",

@@ -839,33 +839,40 @@ def fetch_command(
 
                     # Get the episode(s)
                     if latest:
-                        episodes_to_process = [parser.get_latest_episode(feed, url_or_feed)]
+                        selected_episodes = [parser.get_latest_episode(feed, url_or_feed)]
                         console.print(
-                            f"[green]✓[/green] Latest episode: {episodes_to_process[0].title}"
+                            f"[green]✓[/green] Latest episode: {selected_episodes[0].title}"
                         )
                     else:
-                        episodes_to_process = parser.parse_and_fetch_episodes(
+                        selected_episodes = parser.parse_and_fetch_episodes(
                             feed, episode, url_or_feed
                         )
-                        if len(episodes_to_process) == 1:
+                        if len(selected_episodes) == 1:
                             console.print(
-                                f"[green]✓[/green] Found episode: {episodes_to_process[0].title}"
+                                f"[green]✓[/green] Found episode: {selected_episodes[0].title}"
                             )
                         else:
                             console.print(
-                                f"[green]✓[/green] Found {len(episodes_to_process)} episodes"
+                                f"[green]✓[/green] Found {len(selected_episodes)} episodes"
+                            )
+                            console.print(
+                                f"[yellow]⚠[/yellow] Batch processing not yet supported. "
+                                f"Found {len(selected_episodes)} episodes, processing first one only."
+                            )
+                            console.print(
+                                "[dim]  Tip: Use a single position or unique keyword to select one episode.[/dim]"
                             )
 
                     # For single episode, show details
-                    if len(episodes_to_process) == 1:
-                        ep = episodes_to_process[0]
+                    if len(selected_episodes) == 1:
+                        ep = selected_episodes[0]
                         console.print(f"  Published: {ep.published.strftime('%Y-%m-%d')}")
                         if ep.duration_seconds:
                             console.print(f"  Duration: {ep.duration_formatted}")
                         console.print()
 
                     # Use the first episode for initial setup (batch will iterate)
-                    ep = episodes_to_process[0]
+                    ep = selected_episodes[0]
 
                     # Use the episode's audio URL
                     url = str(ep.url)

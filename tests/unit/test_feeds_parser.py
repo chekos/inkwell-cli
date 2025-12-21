@@ -451,3 +451,55 @@ class TestParseAndFetchEpisodes:
 
         with pytest.raises(ValidationError, match="No episode found matching"):
             parser.parse_and_fetch_episodes(feed, "nonexistent keyword", "Tech Talks")
+
+
+class TestParseAndFetchEpisodesAdversarial:
+    """Adversarial and edge case tests for parse_and_fetch_episodes."""
+
+    def test_empty_string_selector(self, valid_rss_feed: str) -> None:
+        """Test that empty string is handled gracefully."""
+        feed = feedparser.parse(valid_rss_feed)
+        parser = RSSParser()
+        # Empty string treated as keyword search - matches first episode
+        # (empty string is substring of all titles)
+        episodes = parser.parse_and_fetch_episodes(feed, "", "Tech Talks")
+        assert len(episodes) == 1
+        assert episodes[0].title == "Episode 100: The Future of AI"
+
+    def test_large_range_rejected(self, valid_rss_feed: str) -> None:
+        """Test that excessively large ranges are rejected."""
+        feed = feedparser.parse(valid_rss_feed)
+        parser = RSSParser()
+        with pytest.raises(ValidationError, match="maximum is 100"):
+            parser.parse_and_fetch_episodes(feed, "1-1000", "Tech Talks")
+
+    def test_large_list_rejected(self, valid_rss_feed: str) -> None:
+        """Test that excessively large lists are rejected."""
+        feed = feedparser.parse(valid_rss_feed)
+        parser = RSSParser()
+        large_list = ",".join(str(i) for i in range(1, 102))  # 101 items
+        with pytest.raises(ValidationError, match="maximum is 100"):
+            parser.parse_and_fetch_episodes(feed, large_list, "Tech Talks")
+
+    def test_negative_number_treated_as_keyword(self, valid_rss_feed: str) -> None:
+        """Test that negative numbers fall through to keyword search."""
+        feed = feedparser.parse(valid_rss_feed)
+        parser = RSSParser()
+        # "-5" doesn't match position/range/list patterns, so keyword search
+        with pytest.raises(ValidationError, match="No episode found"):
+            parser.parse_and_fetch_episodes(feed, "-5", "Tech Talks")
+
+    def test_range_start_equals_end(self, valid_rss_feed: str) -> None:
+        """Test range where start == end returns single episode."""
+        feed = feedparser.parse(valid_rss_feed)
+        parser = RSSParser()
+        episodes = parser.parse_and_fetch_episodes(feed, "2-2", "Tech Talks")
+        assert len(episodes) == 1
+
+    def test_duplicates_in_list_processed(self, valid_rss_feed: str) -> None:
+        """Test that duplicate positions are processed as-is."""
+        feed = feedparser.parse(valid_rss_feed)
+        parser = RSSParser()
+        episodes = parser.parse_and_fetch_episodes(feed, "1,1,2", "Tech Talks")
+        # Current behavior: duplicates processed as-is (3 episodes returned)
+        assert len(episodes) == 3

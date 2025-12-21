@@ -31,7 +31,7 @@ dependencies = [
     "platformdirs>=4.0.0",
     "youtube-transcript-api>=1.2.3",
     "yt-dlp>=2025.10.22",
-    "google-generativeai>=0.8.5",
+    "google-genai>=1.0.0",
     "anthropic>=0.72.0",
     "tenacity>=9.1.2",
     "regex>=2023.12.25",
@@ -82,8 +82,24 @@ select = [
 ignore = []
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**/*.py" = ["S101"]  # Allow assert in tests
+"tests/**/*.py" = [
+    "S101",  # Allow assert in tests
+    "F841",  # Unused variables (often for side effects in tests)
+    "PT011", # Allow broad pytest.raises (exception type matching is often sufficient)
+    "A002",  # Allow shadowing builtins in test fixtures (e.g., 'id' parameter)
+    "A004",  # Allow importing names that shadow builtins (ConnectionError, TimeoutError)
+    "B017",  # Allow asserting on Exception for error handling tests
+    "E501",  # Allow long lines in tests (test descriptions, assertions)
+    "E741",  # Allow ambiguous variable names in lambdas (e.g., `l` for length)
+    "B007",  # Allow unused loop control variables in tests
+]
 "src/inkwell/cli.py" = ["B008"]  # Allow typer.Option in function defaults (Typer pattern)
+"src/inkwell/utils/retry.py" = ["A001"]  # Intentional custom exception classes (TimeoutError, ConnectionError)
+"benchmarks/**/*.py" = [
+    "E501",  # Long lines in benchmarks are acceptable
+    "E402",  # Module imports not at top (needed for path manipulation)
+    "F401",  # Unused imports (may be for timing setup)
+]
 
 [tool.mypy]
 python_version = "3.10"
@@ -102,9 +118,15 @@ python_files = "test_*.py"
 python_classes = "Test*"
 python_functions = "test_*"
 addopts = [
-    "-v",
+    "--tb=line",       # One-line tracebacks (shortest)
+    "--no-header",     # No pytest header
+    "-q",              # Quiet mode
 ]
 asyncio_mode = "auto"
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::PendingDeprecationWarning",
+]
 
 [tool.coverage.run]
 source = ["src/inkwell"]

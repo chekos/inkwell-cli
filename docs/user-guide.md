@@ -87,7 +87,7 @@ export ANTHROPIC_API_KEY="your-anthropic-api-key"
 ```
 
 **Get API Keys**:
-- Google AI: https://ai.google.dev/
+- Google AI: https://aistudio.google.com/api-keys
 - Anthropic: https://console.anthropic.com/
 
 ## Quick Start

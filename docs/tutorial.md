@@ -52,43 +52,55 @@ uv run inkwell version
 
 ### 2.1 Get Google AI API Key
 
-1. Go to https://ai.google.dev/
-2. Click "Get API Key"
-3. Create a new project (or use existing)
+1. Go to https://aistudio.google.com/api-keys
+2. Click "Create API Key"
+3. Select a project (or create new)
 4. Copy your API key
 
-### 2.2 Set Environment Variables
+### 2.2 Configure API Key (Recommended)
 
-**Temporary (current session)**:
+Use the Inkwell CLI to store your API key in the config file:
+
 ```bash
+uv run inkwell config set transcription.api_key "your-google-ai-api-key-here"
+```
+
+This stores the key in Inkwell's config file, scoped to this tool only.
+
+**Alternative: Environment Variables**
+
+If you prefer environment variables (useful if you use the same key across multiple tools):
+
+```bash
+# Temporary (current session)
 export GOOGLE_API_KEY="your-google-ai-api-key-here"
+
+# Permanent (add to ~/.zshrc or ~/.bashrc)
+echo 'export GOOGLE_API_KEY="your-google-ai-api-key-here"' >> ~/.zshrc
+source ~/.zshrc
 ```
 
-**Permanent (add to ~/.bashrc or ~/.zshrc)**:
-```bash
-echo 'export GOOGLE_API_KEY="your-google-ai-api-key-here"' >> ~/.bashrc
-source ~/.bashrc
-```
-
-### 2.3 Verify API Keys
+### 2.3 Verify Configuration
 
 ```bash
-# Should not error
-uv run inkwell config --show
+uv run inkwell config show
 ```
 
 ## Step 3: Add Your First Podcast (1 minute)
 
-Let's add Syntax FM (a popular web development podcast):
+Let's add Lenny's Podcast (a popular product and growth podcast):
 
 ```bash
-uv run inkwell add "https://feeds.simplecast.com/54nAGcIl" --name syntax --category tech
+uv run inkwell add \
+  "https://api.substack.com/feed/podcast/10845.rss" \
+  --name lennys \
+  --category tech
 ```
 
 **Output**:
 ```
-✓ Feed added: syntax
-  URL: https://feeds.simplecast.com/54nAGcIl
+✓ Feed added: lennys
+  URL: https://api.substack.com/feed/podcast/10845.rss
   Category: tech
 ```
 
@@ -99,36 +111,35 @@ uv run inkwell list
 ```
 
 **Output**:
-```
-Feed: syntax (23 episodes)
-  Latest: Modern CSS Features (2025-11-10)
-```
+
+![inkwell list output](inkwell-list.svg)
 
 ## Step 4: Process Your First Episode (3 minutes)
 
 ### 4.1 Fetch Latest Episode
 
 ```bash
-uv run inkwell fetch syntax --latest
+uv run inkwell fetch lennys --latest
 ```
 
-**What Happens**:
-1. ✓ Downloads episode metadata
-2. ✓ Checks for YouTube transcript (free!)
-3. ✓ Extracts content using Gemini
-4. ✓ Generates markdown with wikilinks and tags
-5. ✓ Tracks costs
+**What Happens**
+
+1. Downloads episode metadata
+2. Checks for YouTube transcript (free!)
+3. Extracts content using Gemini
+4. Generates markdown with wikilinks and tags
+5. Tracks costs
 
 **Output**:
 ```
-Processing: Modern CSS Features
+Processing: Building a Growth Team
 
 Transcription: YouTube API (free) ✓
 Extraction:    Gemini Flash      ✓
 
 Templates:     4 (summary, quotes, key-concepts, tools-mentioned)
 Cost:          $0.0055
-Output:        ./output/syntax-2025-11-10-modern-css-features/
+Output:        ./output/lennys-2025-11-10-building-a-growth-team/
 
 ✓ Complete!
 ```
@@ -136,7 +147,7 @@ Output:        ./output/syntax-2025-11-10-modern-css-features/
 ### 4.2 Explore the Output
 
 ```bash
-cd output/syntax-2025-11-10-modern-css-features
+cd output/lennys-2025-11-10-building-a-growth-team
 ls -lh
 ```
 
@@ -159,38 +170,38 @@ cat summary.md
 ```markdown
 ---
 title: Summary
-podcast: Syntax FM
-episode: Modern CSS Features
+podcast: Lenny's Podcast
+episode: Building a Growth Team
 episode_date: 2025-11-10
-duration_minutes: 15
+duration_minutes: 45
 rating: 4
 status: inbox
-tags: [podcast, css, web-development, frontend]
+tags: [podcast, growth, product-management, startups]
 has_wikilinks: true
 cost_usd: 0.0055
 ---
 
-# Modern CSS Features
+# Building a Growth Team
 
 ## Overview
 
-In this episode, Wes and Scott discuss modern CSS features that are changing how we build websites. They cover [[CSS Grid]], [[Flexbox]], [[CSS Custom Properties]], and new layout techniques.
+In this episode, Lenny discusses how to build and structure a growth team with a seasoned growth leader. They cover [[Growth Loops]], [[A/B Testing]], [[Product-Led Growth]], and team composition strategies.
 
 ## Key Takeaways
 
-- **[[CSS Grid]]** is now supported in 97% of browsers
-- **[[Container Queries]]** enable truly responsive components
-- **[[CSS Cascade Layers]]** give better control over specificity
-- Modern CSS reduces need for [[JavaScript]] in many cases
+- **[[Growth Teams]]** should be cross-functional with engineering, design, and data
+- **[[Experimentation Velocity]]** is more important than individual experiment wins
+- **[[North Star Metrics]]** help align the team on what matters
+- Start with [[Activation]] before focusing on [[Retention]]
 
 ## Practical Applications
 
-The hosts demonstrate how [[Tailwind CSS]] implements these features and share real-world examples from their projects.
+The guest shares how they structured growth at their company and common pitfalls to avoid when scaling.
 
 ## Related Topics
 
-- #css #web-development #frontend
-- [[Flexbox]] [[Grid Layout]] [[Responsive Design]]
+- #growth #product-management #startups
+- [[Product-Led Growth]] [[Experimentation]] [[User Activation]]
 ```
 
 ## Step 5: Open in Obsidian (1 minute)
@@ -202,19 +213,19 @@ The hosts demonstrate how [[Tailwind CSS]] implements these features and share r
 3. Copy episode folder to vault:
 
 ```bash
-cp -r output/syntax-2025-11-10-modern-css-features ~/ObsidianVault/podcasts/
+cp -r output/lennys-2025-11-10-building-a-growth-team ~/ObsidianVault/podcasts/
 ```
 
 ### 5.2 Navigate to Notes
 
 In Obsidian:
 1. Open Files pane (Ctrl/Cmd + O)
-2. Navigate to `podcasts/syntax-2025-11-10-modern-css-features/`
+2. Navigate to `podcasts/lennys-2025-11-10-building-a-growth-team/`
 3. Open `summary.md`
 
 ### 5.3 Try Wikilinks
 
-Click on any `[[CSS Grid]]` link - Obsidian will:
+Click on any `[[Growth Teams]]` link - Obsidian will:
 - Create a backlink
 - Allow you to create a new note for that topic
 - Show related notes
@@ -239,7 +250,7 @@ LIMIT 10
 ```dataview
 TABLE episode, podcast
 FROM "podcasts"
-WHERE contains(topics, "css")
+WHERE contains(topics, "growth")
 SORT episode_date DESC
 ```
 ```
@@ -274,7 +285,7 @@ uv run inkwell costs
 Try interactive interview mode to capture your insights:
 
 ```bash
-uv run inkwell fetch syntax --latest --interview
+uv run inkwell fetch lennys --latest --interview
 ```
 
 **Interactive Session**:
@@ -282,16 +293,16 @@ uv run inkwell fetch syntax --latest --interview
 Episode processed! Starting interview...
 
 Q: What was your main takeaway from this episode?
-A: CSS Grid is more powerful than I thought. I should use it more.
+A: Growth teams need to be cross-functional from day one.
 
 Q: How does this relate to your current work?
-A: We're redesigning our dashboard. Grid could simplify the layout.
+A: We're building our first growth team. Need to involve engineering earlier.
 
 Q: What will you do differently based on this?
-A: Plan to refactor our flex-based layout to Grid this week.
+A: Set up a weekly experimentation review with the whole team.
 
 Q: Any resources to follow up on?
-A: Check out CSS Tricks Grid guide, practice with Grid Garden game.
+A: Read Lenny's newsletter on growth loops, check out Reforge courses.
 
 ✓ Interview complete! Saved to my-notes.md
 ```
@@ -312,20 +323,20 @@ A: Check out CSS Tricks Grid guide, practice with Grid Garden game.
 
 ```bash
 # Process last 5 episodes
-uv run inkwell fetch syntax --count 5
+uv run inkwell fetch lennys --count 5
 
 # Process specific episode
-uv run inkwell fetch syntax --episode 789
+uv run inkwell fetch lennys --episode 789
 ```
 
 ### Try Different Podcasts
 
 ```bash
 # Add more podcasts
-uv run inkwell add "https://feeds.megaphone.fm/hubermanlab" --name huberman
+uv run inkwell add "https://feeds.simplecast.com/54nAGcIl" --name syntax
 
 # Process
-uv run inkwell fetch huberman --latest
+uv run inkwell fetch syntax --latest
 ```
 
 ### Customize Configuration
@@ -401,8 +412,8 @@ If using Gemini transcription frequently, consider:
 **Typical Workflow**:
 ```bash
 # Daily routine (2 minutes)
+uv run inkwell fetch lennys --latest
 uv run inkwell fetch syntax --latest
-uv run inkwell fetch huberman --latest
 uv run inkwell costs
 
 # Weekly review (5 minutes)

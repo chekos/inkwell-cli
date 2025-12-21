@@ -38,6 +38,9 @@ theme:
 
 nav:
   - Home: README.md
+  - Getting Started:
+      - Tutorial: tutorial.md
+      - End-to-End Testing: end-to-end-testing.md
   - Product:
       - Product Requirements: PRD_v0.md
       - User Guide: USER_GUIDE.md

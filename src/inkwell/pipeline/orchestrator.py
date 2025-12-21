@@ -98,7 +98,11 @@ class PipelineOrchestrator:
         if progress_callback:
             progress_callback("transcription_start", {})
 
-        transcript_result = await self._transcribe(options.url)
+        transcript_result = await self._transcribe(
+            options.url,
+            auth_username=options.auth_username,
+            auth_password=options.auth_password,
+        )
 
         if progress_callback:
             progress_callback("transcription_complete", {
@@ -256,11 +260,18 @@ class PipelineOrchestrator:
             interview_cost_usd=interview_cost,
         )
 
-    async def _transcribe(self, url: str) -> "TranscriptionResult":
+    async def _transcribe(
+        self,
+        url: str,
+        auth_username: str | None = None,
+        auth_password: str | None = None,
+    ) -> "TranscriptionResult":
         """Transcribe episode from URL.
 
         Args:
             url: Episode URL
+            auth_username: Username for authenticated audio downloads (private feeds)
+            auth_password: Password for authenticated audio downloads (private feeds)
 
         Returns:
             TranscriptionResult
@@ -272,7 +283,13 @@ class PipelineOrchestrator:
             config=self.config.transcription,
             cost_tracker=self.cost_tracker
         )
-        result = await manager.transcribe(url, use_cache=True, skip_youtube=False)
+        result = await manager.transcribe(
+            url,
+            use_cache=True,
+            skip_youtube=False,
+            auth_username=auth_username,
+            auth_password=auth_password,
+        )
 
         if not result.success:
             raise InkwellError(f"Transcription failed: {result.error}")

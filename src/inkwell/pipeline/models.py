@@ -27,6 +27,9 @@ class PipelineOptions:
     interview_template: str | None = None
     interview_format: str | None = None
     max_questions: int | None = None
+    # Audio download authentication (for private feeds)
+    auth_username: str | None = None
+    auth_password: str | None = None
 
 
 @dataclass

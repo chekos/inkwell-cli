@@ -685,6 +685,9 @@ def fetch_command(
             # Resolve feed name to episode URL if needed
             url = url_or_feed
             resolved_category = category
+            # Auth credentials for private feeds (passed to audio downloader)
+            auth_username: str | None = None
+            auth_password: str | None = None
 
             # Check if url_or_feed is a configured feed name (not a URL)
             is_url = url_or_feed.startswith(("http://", "https://", "www."))
@@ -747,6 +750,11 @@ def fetch_command(
                     if not resolved_category and feed_config.category:
                         resolved_category = feed_config.category
 
+                    # Extract auth credentials for audio download (basic auth only)
+                    if feed_config.auth and feed_config.auth.type == "basic":
+                        auth_username = feed_config.auth.username
+                        auth_password = feed_config.auth.password
+
             # Determine total steps for progress display
             will_interview = interview or config.interview.auto_start
             total_steps = 5 if will_interview else 4
@@ -769,6 +777,8 @@ def fetch_command(
                 interview_template=interview_template,
                 interview_format=interview_format,
                 max_questions=max_questions,
+                auth_username=auth_username,
+                auth_password=auth_password,
             )
 
             # Create orchestrator and progress callback

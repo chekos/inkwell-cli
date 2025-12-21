@@ -14,6 +14,7 @@ from rich.table import Table
 from inkwell.config.logging import setup_logging
 from inkwell.config.manager import ConfigManager
 from inkwell.config.schema import AuthConfig, FeedConfig
+from inkwell.feeds.parser import RSSParser
 from inkwell.pipeline import PipelineOptions, PipelineOrchestrator
 from inkwell.transcription import CostEstimate, TranscriptionManager
 from inkwell.utils.datetime import now_utc
@@ -224,6 +225,79 @@ def remove_feed(
     except InkwellError as e:
         console.print(f"[red]✗[/red] Error: {e}")
         sys.exit(1)
+
+
+@app.command("episodes")
+def episodes_command(
+    name: str = typer.Argument(..., help="Feed name to list episodes from"),
+    limit: int = typer.Option(
+        10, "--limit", "-n", help="Number of episodes to show"
+    ),
+) -> None:
+    """List episodes from a configured feed.
+
+    Examples:
+        inkwell episodes my-podcast
+
+        inkwell episodes my-podcast --limit 20
+    """
+
+    async def run_episodes() -> None:
+        try:
+            manager = ConfigManager()
+
+            # Get feed config
+            try:
+                feed_config = manager.get_feed(name)
+            except NotFoundError:
+                console.print(f"[red]✗[/red] Feed '{name}' not found.")
+                console.print("  Use [cyan]inkwell list[/cyan] to see configured feeds.")
+                sys.exit(1)
+
+            # Fetch and parse the RSS feed
+            console.print(f"[bold]Fetching episodes from:[/bold] {name}\n")
+            parser = RSSParser()
+
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                console=console,
+            ) as progress:
+                progress.add_task("Parsing RSS feed...", total=None)
+                feed = await parser.fetch_feed(str(feed_config.url), feed_config.auth)
+
+            # Display episodes in a table
+            table = Table(title=f"Episodes from {name}", show_lines=True)
+            table.add_column("#", style="dim", width=4)
+            table.add_column("Title", style="cyan", max_width=60)
+            table.add_column("Date", style="green", width=12)
+            table.add_column("Duration", style="yellow", width=10)
+
+            for i, entry in enumerate(feed.entries[:limit], 1):
+                try:
+                    ep = parser.extract_episode_metadata(entry, name)
+                    # Truncate title if too long
+                    title = ep.title[:57] + "..." if len(ep.title) > 60 else ep.title
+                    date = ep.published.strftime("%Y-%m-%d")
+                    duration = ep.duration_formatted if ep.duration_seconds else "—"
+                    table.add_row(str(i), title, date, duration)
+                except Exception:
+                    # Skip entries that fail to parse
+                    pass
+
+            console.print(table)
+            shown = min(limit, len(feed.entries))
+            total = len(feed.entries)
+            console.print(f"\n[dim]Showing {shown} of {total} episodes[/dim]")
+            console.print("\n[bold]To fetch an episode:[/bold]")
+            console.print(f"  inkwell fetch {name} --latest")
+            console.print(f"  inkwell fetch {name} --episode \"keyword\"")
+
+        except InkwellError as e:
+            console.print(f"[red]✗[/red] Error: {e}")
+            sys.exit(1)
+
+    asyncio.run(run_episodes())
 
 
 @app.command("config")
@@ -533,9 +607,15 @@ def cache_command(
 
 @app.command("fetch")
 def fetch_command(
-    url: str = typer.Argument(..., help="Episode URL to process"),
+    url_or_feed: str = typer.Argument(..., help="Episode URL or configured feed name"),
     output_dir: Path | None = typer.Option(
         None, "--output", "-o", help="Output directory (default: ~/inkwell-notes)"
+    ),
+    latest: bool = typer.Option(
+        False, "--latest", "-l", help="Fetch the latest episode from feed"
+    ),
+    episode: str | None = typer.Option(
+        None, "--episode", "-e", help="Find episode by title keyword"
     ),
     templates: str | None = typer.Option(
         None, "--templates", "-t", help="Comma-separated template names (default: auto)"
@@ -579,6 +659,10 @@ def fetch_command(
     Complete pipeline: transcribe → extract → generate markdown → write files → [optional interview]
 
     Examples:
+        inkwell fetch my-podcast --latest
+
+        inkwell fetch my-podcast --episode "AI security"
+
         inkwell fetch https://youtube.com/watch?v=xyz
 
         inkwell fetch https://example.com/ep1.mp3 --templates summary,quotes
@@ -595,7 +679,81 @@ def fetch_command(
     async def run_fetch() -> None:
         try:
             # Load configuration
-            config = ConfigManager().load_config()
+            manager = ConfigManager()
+            config = manager.load_config()
+
+            # Resolve feed name to episode URL if needed
+            url = url_or_feed
+            resolved_category = category
+            # Auth credentials for private feeds (passed to audio downloader)
+            auth_username: str | None = None
+            auth_password: str | None = None
+
+            # Check if url_or_feed is a configured feed name (not a URL)
+            is_url = url_or_feed.startswith(("http://", "https://", "www."))
+
+            if not is_url:
+                # Treat as feed name - look up in configured feeds
+                try:
+                    feed_config = manager.get_feed(url_or_feed)
+                except NotFoundError:
+                    # Not a configured feed, maybe it's still a URL without scheme
+                    if "." in url_or_feed and "/" in url_or_feed:
+                        # Looks like a URL, assume https
+                        url = f"https://{url_or_feed}"
+                    else:
+                        console.print(f"[red]✗[/red] Feed '{url_or_feed}' not found.")
+                        console.print("  Use [cyan]inkwell list[/cyan] to see configured feeds.")
+                        console.print("  Or provide a direct episode URL.")
+                        sys.exit(1)
+                else:
+                    # Found the feed - need --latest or --episode flag
+                    if not latest and not episode:
+                        console.print(
+                            f"[red]✗[/red] Feed '{url_or_feed}' requires "
+                            "--latest or --episode flag."
+                        )
+                        console.print("\nUsage:")
+                        console.print(f"  inkwell fetch {url_or_feed} --latest")
+                        console.print(f"  inkwell fetch {url_or_feed} --episode \"keyword\"")
+                        sys.exit(1)
+
+                    # Fetch and parse the RSS feed
+                    console.print(f"[bold]Fetching feed:[/bold] {url_or_feed}")
+                    parser = RSSParser()
+
+                    with Progress(
+                        SpinnerColumn(),
+                        TextColumn("[progress.description]{task.description}"),
+                        console=console,
+                    ) as progress:
+                        progress.add_task("Parsing RSS feed...", total=None)
+                        feed = await parser.fetch_feed(str(feed_config.url), feed_config.auth)
+
+                    # Get the episode
+                    if latest:
+                        ep = parser.get_latest_episode(feed, url_or_feed)
+                        console.print(f"[green]✓[/green] Latest episode: {ep.title}")
+                    else:
+                        ep = parser.get_episode_by_title(feed, episode, url_or_feed)
+                        console.print(f"[green]✓[/green] Found episode: {ep.title}")
+
+                    console.print(f"  Published: {ep.published.strftime('%Y-%m-%d')}")
+                    if ep.duration_seconds:
+                        console.print(f"  Duration: {ep.duration_formatted}")
+                    console.print()
+
+                    # Use the episode's audio URL
+                    url = str(ep.url)
+
+                    # Use feed's category if not overridden
+                    if not resolved_category and feed_config.category:
+                        resolved_category = feed_config.category
+
+                    # Extract auth credentials for audio download (basic auth only)
+                    if feed_config.auth and feed_config.auth.type == "basic":
+                        auth_username = feed_config.auth.username
+                        auth_password = feed_config.auth.password
 
             # Determine total steps for progress display
             will_interview = interview or config.interview.auto_start
@@ -606,7 +764,7 @@ def fetch_command(
             # Create pipeline options from CLI arguments
             options = PipelineOptions(
                 url=url,
-                category=category,
+                category=resolved_category,
                 templates=[t.strip() for t in templates.split(",")] if templates else None,
                 provider=provider,
                 interview=interview,
@@ -619,6 +777,8 @@ def fetch_command(
                 interview_template=interview_template,
                 interview_format=interview_format,
                 max_questions=max_questions,
+                auth_username=auth_username,
+                auth_password=auth_password,
             )
 
             # Create orchestrator and progress callback

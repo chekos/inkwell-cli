@@ -120,6 +120,8 @@ class TranscriptionManager:
         episode_url: str,
         use_cache: bool = True,
         skip_youtube: bool = False,
+        auth_username: str | None = None,
+        auth_password: str | None = None,
     ) -> TranscriptionResult:
         """Transcribe episode using multi-tier strategy.
 
@@ -133,6 +135,8 @@ class TranscriptionManager:
             episode_url: Episode URL to transcribe
             use_cache: Whether to use cache (default: True)
             skip_youtube: Skip YouTube tier, go straight to Gemini (default: False)
+            auth_username: Username for authenticated audio downloads (private feeds)
+            auth_password: Password for authenticated audio downloads (private feeds)
 
         Returns:
             TranscriptionResult with transcript and metadata
@@ -195,8 +199,12 @@ class TranscriptionManager:
 
         attempts.append("gemini")
         try:
-            # Download audio
-            audio_path = await self.audio_downloader.download(episode_url)
+            # Download audio (with auth credentials for private feeds)
+            audio_path = await self.audio_downloader.download(
+                episode_url,
+                username=auth_username,
+                password=auth_password,
+            )
 
             # Transcribe with Gemini
             transcript = await self.gemini_transcriber.transcribe(audio_path, episode_url)

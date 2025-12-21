@@ -722,7 +722,10 @@ def fetch_command(
     ),
     latest: bool = typer.Option(False, "--latest", "-l", help="Fetch the latest episode from feed"),
     episode: str | None = typer.Option(
-        None, "--episode", "-e", help="Find episode by title keyword"
+        None,
+        "--episode",
+        "-e",
+        help="Position (3), range (1-5), list (1,3,7), or title keyword",
     ),
     templates: str | None = typer.Option(
         None, "--templates", "-t", help="Comma-separated template names (default: auto)"
@@ -834,18 +837,35 @@ def fetch_command(
                     with console.status("[bold]Parsing RSS feed...[/bold]"):
                         feed = await parser.fetch_feed(str(feed_config.url), feed_config.auth)
 
-                    # Get the episode
+                    # Get the episode(s)
                     if latest:
-                        ep = parser.get_latest_episode(feed, url_or_feed)
-                        console.print(f"[green]✓[/green] Latest episode: {ep.title}")
+                        episodes_to_process = [parser.get_latest_episode(feed, url_or_feed)]
+                        console.print(
+                            f"[green]✓[/green] Latest episode: {episodes_to_process[0].title}"
+                        )
                     else:
-                        ep = parser.get_episode_by_title(feed, episode, url_or_feed)
-                        console.print(f"[green]✓[/green] Found episode: {ep.title}")
+                        episodes_to_process = parser.parse_and_fetch_episodes(
+                            feed, episode, url_or_feed
+                        )
+                        if len(episodes_to_process) == 1:
+                            console.print(
+                                f"[green]✓[/green] Found episode: {episodes_to_process[0].title}"
+                            )
+                        else:
+                            console.print(
+                                f"[green]✓[/green] Found {len(episodes_to_process)} episodes"
+                            )
 
-                    console.print(f"  Published: {ep.published.strftime('%Y-%m-%d')}")
-                    if ep.duration_seconds:
-                        console.print(f"  Duration: {ep.duration_formatted}")
-                    console.print()
+                    # For single episode, show details
+                    if len(episodes_to_process) == 1:
+                        ep = episodes_to_process[0]
+                        console.print(f"  Published: {ep.published.strftime('%Y-%m-%d')}")
+                        if ep.duration_seconds:
+                            console.print(f"  Duration: {ep.duration_formatted}")
+                        console.print()
+
+                    # Use the first episode for initial setup (batch will iterate)
+                    ep = episodes_to_process[0]
 
                     # Use the episode's audio URL
                     url = str(ep.url)

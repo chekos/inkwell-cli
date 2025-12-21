@@ -1,12 +1,12 @@
-"""Gemini-based audio transcription."""
+"""Gemini-based audio transcription using modern google-genai SDK."""
 
 import asyncio
 import os
 from collections.abc import Callable
 from pathlib import Path
 
-import google.generativeai as genai
-from google.generativeai.types import GenerateContentResponse
+from google import genai
+from google.genai import types
 from pydantic import BaseModel, Field
 
 from inkwell.transcription.models import Transcript, TranscriptSegment
@@ -67,6 +67,7 @@ class GeminiTranscriber:
         # Warn if using deprecated env var
         if os.getenv("GOOGLE_AI_API_KEY") and not os.getenv("GOOGLE_API_KEY"):
             import logging
+
             logger = logging.getLogger(__name__)
             logger.warning(
                 "GOOGLE_AI_API_KEY is deprecated. Please use GOOGLE_API_KEY instead. "
@@ -86,14 +87,12 @@ class GeminiTranscriber:
                 f"Allowed models: {', '.join(sorted(ALLOWED_GEMINI_MODELS))}"
             )
 
-        genai.configure(api_key=self.api_key)
+        # Initialize client with new SDK
+        self.client = genai.Client(api_key=self.api_key)
 
         self.model_name = model_name
         self.cost_threshold_usd = cost_threshold_usd
         self.cost_confirmation_callback = cost_confirmation_callback
-
-        # Initialize model
-        self.model = genai.GenerativeModel(model_name)
 
     async def can_transcribe(self, audio_path: Path) -> bool:
         """Check if this transcriber can handle the audio file.
@@ -151,16 +150,12 @@ class GeminiTranscriber:
         if self.cost_confirmation_callback:
             # Run callback in executor to avoid blocking
             loop = asyncio.get_event_loop()
-            return await loop.run_in_executor(
-                None, self.cost_confirmation_callback, estimate
-            )
+            return await loop.run_in_executor(None, self.cost_confirmation_callback, estimate)
 
         # Default: auto-approve
         return True
 
-    async def transcribe(
-        self, audio_path: Path, episode_url: str | None = None
-    ) -> Transcript:
+    async def transcribe(self, audio_path: Path, episode_url: str | None = None) -> Transcript:
         """Transcribe audio file using Gemini.
 
         Args:
@@ -196,10 +191,7 @@ class GeminiTranscriber:
 
         try:
             # Upload file and generate transcript
-            loop = asyncio.get_event_loop()
-            response = await loop.run_in_executor(
-                None, self._transcribe_sync, audio_path
-            )
+            response = await asyncio.to_thread(self._transcribe_sync, audio_path)
 
             # Parse response to transcript
             transcript = self._parse_response(response, audio_path, episode_url)
@@ -216,7 +208,7 @@ class GeminiTranscriber:
                 f"Error: {e}"
             ) from e
 
-    def _transcribe_sync(self, audio_path: Path) -> GenerateContentResponse:
+    def _transcribe_sync(self, audio_path: Path) -> types.GenerateContentResponse:
         """Synchronous transcription for thread pool execution.
 
         Args:
@@ -229,8 +221,8 @@ class GeminiTranscriber:
         limiter = get_rate_limiter("gemini")
         limiter.acquire()
 
-        # Upload audio file
-        audio_file = genai.upload_file(path=str(audio_path))
+        # Upload audio file using new SDK
+        audio_file = self.client.files.upload(file=audio_path)
 
         # Generate transcript with structured prompt
         prompt = (
@@ -242,12 +234,15 @@ class GeminiTranscriber:
             "Be as accurate as possible with timestamps."
         )
 
-        response = self.model.generate_content([audio_file, prompt])
+        response = self.client.models.generate_content(
+            model=self.model_name,
+            contents=[audio_file, prompt],
+        )
 
         return response
 
     def _parse_response(
-        self, response: GenerateContentResponse, audio_path: Path, episode_url: str | None
+        self, response: types.GenerateContentResponse, audio_path: Path, episode_url: str | None
     ) -> Transcript:
         """Parse Gemini response into Transcript object.
 
@@ -289,7 +284,7 @@ class GeminiTranscriberWithSegments(GeminiTranscriber):
     """
 
     def _parse_response(
-        self, response: GenerateContentResponse, audio_path: Path, episode_url: str | None
+        self, response: types.GenerateContentResponse, audio_path: Path, episode_url: str | None
     ) -> Transcript:
         """Parse Gemini response with timestamp extraction.
 

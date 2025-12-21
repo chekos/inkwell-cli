@@ -123,9 +123,7 @@ class YouTubeTranscriber:
 
         return None
 
-    async def transcribe(
-        self, url: str, audio_path: str | None = None
-    ) -> Transcript:
+    async def transcribe(self, url: str, audio_path: str | None = None) -> Transcript:
         """Fetch transcript from YouTube.
 
         Args:
@@ -191,9 +189,7 @@ class YouTubeTranscriber:
                 for entry in transcript_data
             ]
 
-            logger.info(
-                f"Successfully fetched YouTube transcript: {len(segments)} segments"
-            )
+            logger.info(f"Successfully fetched YouTube transcript: {len(segments)} segments")
 
             return Transcript(
                 segments=segments,
@@ -226,9 +222,7 @@ class YouTubeTranscriber:
 
         except Exception as e:
             logger.error(f"Unexpected error fetching YouTube transcript: {e}")
-            raise APIError(
-                f"Unexpected error while fetching transcript: {e}"
-            ) from e
+            raise APIError(f"Unexpected error while fetching transcript: {e}") from e
 
     def estimate_cost(self, duration_seconds: float) -> float:
         """Estimate transcription cost.

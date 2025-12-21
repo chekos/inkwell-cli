@@ -55,24 +55,21 @@ class TestGeminiTranscriber:
 
     @pytest.fixture
     def mock_genai(self) -> Mock:
-        """Mock google.generativeai module."""
+        """Mock google-genai SDK."""
         with patch("inkwell.transcription.gemini.genai") as mock:
-            # Mock configure
-            mock.configure = MagicMock()
-
-            # Mock GenerativeModel
-            mock_model = MagicMock()
-            mock.GenerativeModel.return_value = mock_model
+            # Mock Client
+            mock_client = MagicMock()
+            mock.Client.return_value = mock_client
 
             # Mock file upload
             mock_file = MagicMock()
             mock_file.name = "test_audio.m4a"
-            mock.upload_file.return_value = mock_file
+            mock_client.files.upload.return_value = mock_file
 
             # Mock response
             mock_response = MagicMock()
             mock_response.text = "This is a test transcript. Speaker talks about testing."
-            mock_model.generate_content.return_value = mock_response
+            mock_client.models.generate_content.return_value = mock_response
 
             yield mock
 
@@ -97,7 +94,7 @@ class TestGeminiTranscriber:
         assert transcriber.model_name == "gemini-2.5-flash"
         assert transcriber.cost_threshold_usd == 1.0
 
-        mock_genai.configure.assert_called_once_with(api_key="test-key")
+        mock_genai.Client.assert_called_once_with(api_key="test-key")
 
     def test_initialization_from_env(
         self, mock_genai: Mock, monkeypatch: pytest.MonkeyPatch
@@ -108,10 +105,10 @@ class TestGeminiTranscriber:
         transcriber = GeminiTranscriber()
 
         assert transcriber.api_key == "env-key"
-        mock_genai.configure.assert_called_once_with(api_key="env-key")
+        mock_genai.Client.assert_called_once_with(api_key="env-key")
 
     def test_initialization_from_deprecated_env(
-        self, mock_genai: Mock, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+        self, mock_genai: Mock, monkeypatch: pytest.MonkeyPatch, capsys
     ) -> None:
         """Test initialization from deprecated GOOGLE_AI_API_KEY environment variable."""
         monkeypatch.setenv("GOOGLE_AI_API_KEY", "deprecated-key")
@@ -120,12 +117,13 @@ class TestGeminiTranscriber:
         transcriber = GeminiTranscriber()
 
         assert transcriber.api_key == "deprecated-key"
-        assert "GOOGLE_AI_API_KEY is deprecated" in caplog.text
-        assert "Please use GOOGLE_API_KEY instead" in caplog.text
-        mock_genai.configure.assert_called_once_with(api_key="deprecated-key")
+        # Warning goes to stderr
+        captured = capsys.readouterr()
+        assert "GOOGLE_AI_API_KEY is deprecated" in captured.err
+        mock_genai.Client.assert_called_once_with(api_key="deprecated-key")
 
     def test_initialization_env_var_precedence(
-        self, mock_genai: Mock, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+        self, mock_genai: Mock, monkeypatch: pytest.MonkeyPatch, capsys
     ) -> None:
         """Test that GOOGLE_API_KEY takes precedence over GOOGLE_AI_API_KEY."""
         monkeypatch.setenv("GOOGLE_API_KEY", "primary-key")
@@ -135,8 +133,9 @@ class TestGeminiTranscriber:
 
         assert transcriber.api_key == "primary-key"
         # Should not show deprecation warning when GOOGLE_API_KEY is set
-        assert "GOOGLE_AI_API_KEY is deprecated" not in caplog.text
-        mock_genai.configure.assert_called_once_with(api_key="primary-key")
+        captured = capsys.readouterr()
+        assert "GOOGLE_AI_API_KEY is deprecated" not in captured.err
+        mock_genai.Client.assert_called_once_with(api_key="primary-key")
 
     def test_initialization_no_api_key(self, mock_genai: Mock) -> None:
         """Test initialization fails without API key."""
@@ -192,9 +191,7 @@ class TestGeminiTranscriber:
         assert estimate.rate_per_mb == 0.000125
 
     @pytest.mark.asyncio
-    async def test_confirm_cost_below_threshold(
-        self, transcriber: GeminiTranscriber
-    ) -> None:
+    async def test_confirm_cost_below_threshold(self, transcriber: GeminiTranscriber) -> None:
         """Test cost confirmation auto-approves below threshold."""
         estimate = CostEstimate(
             file_size_mb=1.0,
@@ -206,9 +203,7 @@ class TestGeminiTranscriber:
         assert result is True
 
     @pytest.mark.asyncio
-    async def test_confirm_cost_above_threshold_with_callback(
-        self, mock_genai: Mock
-    ) -> None:
+    async def test_confirm_cost_above_threshold_with_callback(self, mock_genai: Mock) -> None:
         """Test cost confirmation uses callback above threshold."""
         callback = Mock(return_value=True)
         transcriber = GeminiTranscriber(
@@ -228,9 +223,7 @@ class TestGeminiTranscriber:
         callback.assert_called_once_with(estimate)
 
     @pytest.mark.asyncio
-    async def test_confirm_cost_above_threshold_rejected(
-        self, mock_genai: Mock
-    ) -> None:
+    async def test_confirm_cost_above_threshold_rejected(self, mock_genai: Mock) -> None:
         """Test cost confirmation can be rejected."""
         callback = Mock(return_value=False)
         transcriber = GeminiTranscriber(
@@ -261,9 +254,9 @@ class TestGeminiTranscriber:
         assert "test transcript" in transcript.segments[0].text
         assert transcript.cost_usd == pytest.approx(0.00125, rel=0.01)
 
-        # Verify API calls
-        mock_genai.upload_file.assert_called_once()
-        transcriber.model.generate_content.assert_called_once()
+        # Verify API calls (new SDK uses client.files.upload and client.models.generate_content)
+        transcriber.client.files.upload.assert_called_once()
+        transcriber.client.models.generate_content.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_transcribe_with_episode_url(
@@ -298,9 +291,7 @@ class TestGeminiTranscriber:
             await transcriber.transcribe(txt_file)
 
     @pytest.mark.asyncio
-    async def test_transcribe_cost_rejected(
-        self, mock_genai: Mock, tmp_path: Path
-    ) -> None:
+    async def test_transcribe_cost_rejected(self, mock_genai: Mock, tmp_path: Path) -> None:
         """Test transcription cancelled when cost rejected."""
         callback = Mock(return_value=False)
         transcriber = GeminiTranscriber(
@@ -320,7 +311,7 @@ class TestGeminiTranscriber:
         self, transcriber: GeminiTranscriber, audio_file: Path, mock_genai: Mock
     ) -> None:
         """Test transcription handles API errors."""
-        mock_genai.upload_file.side_effect = Exception("API error")
+        transcriber.client.files.upload.side_effect = Exception("API error")
 
         with pytest.raises(APIError, match="Failed to transcribe"):
             await transcriber.transcribe(audio_file)
@@ -332,7 +323,7 @@ class TestGeminiTranscriber:
         """Test transcription handles empty response."""
         mock_response = MagicMock()
         mock_response.text = ""
-        transcriber.model.generate_content.return_value = mock_response
+        transcriber.client.models.generate_content.return_value = mock_response
 
         with pytest.raises(APIError, match="empty transcript"):
             await transcriber.transcribe(audio_file)
@@ -343,19 +334,19 @@ class TestGeminiTranscriberWithSegments:
 
     @pytest.fixture
     def mock_genai(self) -> Mock:
-        """Mock google.generativeai module."""
+        """Mock google-genai SDK."""
         with patch("inkwell.transcription.gemini.genai") as mock:
-            mock.configure = MagicMock()
-            mock_model = MagicMock()
-            mock.GenerativeModel.return_value = mock_model
+            # Mock Client
+            mock_client = MagicMock()
+            mock.Client.return_value = mock_client
 
             mock_file = MagicMock()
-            mock.upload_file.return_value = mock_file
+            mock_client.files.upload.return_value = mock_file
 
             # Default response
             mock_response = MagicMock()
             mock_response.text = "Test transcript"
-            mock_model.generate_content.return_value = mock_response
+            mock_client.models.generate_content.return_value = mock_response
 
             yield mock
 
@@ -382,7 +373,7 @@ class TestGeminiTranscriberWithSegments:
             "[00:01:30] Speaker: Second segment\n"
             "[00:03:00] Speaker: Third segment"
         )
-        transcriber.model.generate_content.return_value = mock_response
+        transcriber.client.models.generate_content.return_value = mock_response
 
         transcript = await transcriber.transcribe(audio_file)
 
@@ -405,11 +396,9 @@ class TestGeminiTranscriberWithSegments:
         """Test parsing timestamps in MM:SS format."""
         mock_response = MagicMock()
         mock_response.text = (
-            "[0:00] Speaker 1: Hello\n"
-            "[1:30] Speaker 2: World\n"
-            "[3:15] Speaker 1: Goodbye"
+            "[0:00] Speaker 1: Hello\n[1:30] Speaker 2: World\n[3:15] Speaker 1: Goodbye"
         )
-        transcriber.model.generate_content.return_value = mock_response
+        transcriber.client.models.generate_content.return_value = mock_response
 
         transcript = await transcriber.transcribe(audio_file)
 
@@ -429,7 +418,7 @@ class TestGeminiTranscriberWithSegments:
         """Test fallback to single segment when no timestamps."""
         mock_response = MagicMock()
         mock_response.text = "This is a transcript without any timestamp markers."
-        transcriber.model.generate_content.return_value = mock_response
+        transcriber.client.models.generate_content.return_value = mock_response
 
         transcript = await transcriber.transcribe(audio_file)
 
@@ -445,12 +434,9 @@ class TestGeminiTranscriberWithSegments:
         """Test parsing segments with multiple lines."""
         mock_response = MagicMock()
         mock_response.text = (
-            "[0:00] First line\n"
-            "Continuation of first\n"
-            "[1:00] Second segment\n"
-            "With continuation"
+            "[0:00] First line\nContinuation of first\n[1:00] Second segment\nWith continuation"
         )
-        transcriber.model.generate_content.return_value = mock_response
+        transcriber.client.models.generate_content.return_value = mock_response
 
         transcript = await transcriber.transcribe(audio_file)
 

@@ -84,6 +84,9 @@ local_scheme = "no-local-version"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+inkwell = ["templates/**/*.yaml"]
+
 [tool.ruff]
 line-length = 100
 target-version = "py310"

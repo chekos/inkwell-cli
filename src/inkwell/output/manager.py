@@ -60,6 +60,7 @@ class OutputManager:
         episode_metadata: EpisodeMetadata,
         extraction_results: list[ExtractionResult],
         overwrite: bool = False,
+        transcript: str | None = None,
     ) -> EpisodeOutput:
         """Write extraction results for an episode to disk.
 
@@ -67,6 +68,7 @@ class OutputManager:
             episode_metadata: Episode metadata
             extraction_results: List of extraction results
             overwrite: Whether to overwrite existing directory
+            transcript: Optional transcript text to include as _transcript.md
 
         Returns:
             EpisodeOutput with directory and file information
@@ -114,6 +116,22 @@ class OutputManager:
                 )
 
                 total_cost += result.cost_usd
+
+            # Write transcript file if provided
+            if transcript:
+                transcript_filename = "_transcript.md"
+                transcript_path = episode_dir / transcript_filename
+                transcript_content = f"# Transcript\n\n{transcript}"
+                self._write_file_atomic(transcript_path, transcript_content)
+                output_files.insert(
+                    0,  # Insert at beginning so it's first in list
+                    OutputFile(
+                        template_name="_transcript",
+                        filename=transcript_filename,
+                        content=transcript_content,
+                        size_bytes=len(transcript_content.encode("utf-8")),
+                    ),
+                )
 
             # Update metadata with cost
             episode_metadata.total_cost_usd = total_cost

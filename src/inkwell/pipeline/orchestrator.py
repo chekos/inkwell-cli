@@ -201,6 +201,7 @@ class PipelineOrchestrator:
             episode_metadata=episode_metadata,
             extraction_results=extraction_results,
             overwrite=options.overwrite,
+            transcript=transcript_result.transcript.full_text,
         )
 
         if progress_callback:
@@ -427,6 +428,7 @@ class PipelineOrchestrator:
         episode_metadata: EpisodeMetadata,
         extraction_results: list["ExtractionResult"],
         overwrite: bool,
+        transcript: str | None = None,
     ) -> "EpisodeOutput":
         """Write output files to disk.
 
@@ -435,6 +437,7 @@ class PipelineOrchestrator:
             episode_metadata: Episode metadata
             extraction_results: List of extraction results
             overwrite: Whether to overwrite existing directory
+            transcript: Optional transcript text to include
 
         Returns:
             EpisodeOutput with directory and file list
@@ -448,6 +451,7 @@ class PipelineOrchestrator:
             episode_metadata=episode_metadata,
             extraction_results=extraction_results,
             overwrite=overwrite,
+            transcript=transcript,
         )
 
         return episode_output

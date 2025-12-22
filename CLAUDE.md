@@ -144,3 +144,19 @@ When implementing features:
 6. **Update:** Keep this CLAUDE.md updated as the architecture evolves
 
 **Before committing:** Verify pre-commit hooks are installed once (`pre-commit install`). See [ADR-007](./docs/adr/007-enforce-pre-commit-hooks.md).
+
+## Releasing
+
+Versions are managed via git tags (see `dynamic = ["version"]` in pyproject.toml).
+
+**To release a new version:**
+
+```bash
+# Minor version (new features): v0.9.1 → v0.10.0
+gh release create v0.10.0 --generate-notes --title "v0.10.0 - Feature Name"
+
+# Patch version (bug fixes): v0.10.0 → v0.10.1
+gh release create v0.10.1 --generate-notes --title "v0.10.1 - Bug Fixes"
+```
+
+The `--generate-notes` flag auto-generates release notes from merged PRs and commits since the last release.

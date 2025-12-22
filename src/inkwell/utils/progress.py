@@ -1,6 +1,11 @@
 """Pipeline progress display for CLI.
 
-Provides a Docker-style multi-stage progress display with auto-updating elapsed time.
+Provides a Docker-style multi-stage progress display.
+
+Note: We intentionally do NOT show elapsed time. UX research shows elapsed time
+counting up is "psychological torture" - it accentuates each passing second.
+We show stage status and substeps instead. Time is only shown on completion.
+See: docs/research/cli-progress-indicators-ux.md
 """
 
 from dataclasses import dataclass
@@ -13,7 +18,6 @@ from rich.progress import (
     SpinnerColumn,
     TaskID,
     TextColumn,
-    TimeElapsedColumn,
 )
 
 
@@ -38,16 +42,19 @@ class PipelineStage:
 
 
 class PipelineProgress:
-    """Multi-stage progress display with auto-updating elapsed time.
+    """Multi-stage progress display (Docker-style).
 
-    Shows all pipeline stages upfront (Docker-style) with:
+    Shows all pipeline stages upfront with:
     - Stage number and name
-    - Spinner for indeterminate progress
-    - Auto-updating elapsed time (via Rich's TimeElapsedColumn)
+    - Spinner for in-progress stages
     - Sub-step descriptions
+    - Completion summary (time shown only after stage completes)
+
+    Note: We don't show elapsed time during operation - UX research shows
+    this increases perceived wait time. See docs/research/cli-progress-indicators-ux.md
 
     Example output:
-        [1/4] Transcribing   ◐ Downloading audio...        2m 15s
+        [1/4] Transcribing   ◐ Downloading audio...
         [2/4] Selecting      ○ pending
         [3/4] Extracting     ○ pending
         [4/4] Writing        ○ pending
@@ -56,7 +63,7 @@ class PipelineProgress:
         with PipelineProgress(console) as pp:
             pp.start_stage("transcribe")
             pp.update_substep("transcribe", "Downloading audio...")
-            pp.complete_stage("transcribe")
+            pp.complete_stage("transcribe", "via YouTube  0:02:15")
     """
 
     # Default pipeline stages for inkwell fetch
@@ -103,7 +110,6 @@ class PipelineProgress:
             SpinnerColumn(),
             TextColumn("{task.description}"),
             TextColumn("{task.fields[substep]}", style="dim"),
-            TimeElapsedColumn(),
             console=self.console,
             refresh_per_second=10,
         )

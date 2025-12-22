@@ -31,10 +31,10 @@ class TranscriptionConfig(BaseModel):
     """Transcription service configuration."""
 
     model_name: str = Field(
-        default="gemini-2.5-flash",
+        default="gemini-3-flash-preview",
         min_length=1,
         max_length=100,
-        description="Gemini model name (e.g., gemini-2.5-flash)",
+        description="Gemini model name (e.g., gemini-3-flash-preview)",
     )
     api_key: str | None = Field(
         default=None,

@@ -15,6 +15,8 @@ from inkwell.utils.rate_limiter import get_rate_limiter
 
 # Allowed Gemini models for transcription
 ALLOWED_GEMINI_MODELS = {
+    "gemini-3-flash-preview",
+    "gemini-3-pro",
     "gemini-2.5-flash",
     "gemini-2.5-pro",
     "gemini-1.5-flash",
@@ -40,7 +42,7 @@ class CostEstimate(BaseModel):
 class GeminiTranscriber:
     """Transcribe audio files using Google Gemini API.
 
-    Uses Gemini 2.5 Flash for cost-effective audio transcription.
+    Uses Gemini 3 Flash for cost-effective audio transcription.
     Supports automatic file upload for large files (>10MB).
     Implements cost estimation per ADR-012.
     """
@@ -48,7 +50,7 @@ class GeminiTranscriber:
     def __init__(
         self,
         api_key: str | None = None,
-        model_name: str = "gemini-2.5-flash",
+        model_name: str = "gemini-3-flash-preview",
         cost_threshold_usd: float = 1.0,
         cost_confirmation_callback: Callable[[CostEstimate], bool] | None = None,
     ):

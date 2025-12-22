@@ -855,27 +855,6 @@ def fetch_command(
                             console.print(
                                 f"[green]✓[/green] Found {len(selected_episodes)} episodes"
                             )
-                            console.print(
-                                f"[yellow]⚠[/yellow] Batch processing not yet supported. "
-                                f"Found {len(selected_episodes)} episodes, processing first one only."
-                            )
-                            console.print(
-                                "[dim]  Tip: Use a single position or unique keyword to select one episode.[/dim]"
-                            )
-
-                    # For single episode, show details
-                    if len(selected_episodes) == 1:
-                        ep = selected_episodes[0]
-                        console.print(f"  Published: {ep.published.strftime('%Y-%m-%d')}")
-                        if ep.duration_seconds:
-                            console.print(f"  Duration: {ep.duration_formatted}")
-                        console.print()
-
-                    # Use the first episode for initial setup (batch will iterate)
-                    ep = selected_episodes[0]
-
-                    # Use the episode's audio URL
-                    url = str(ep.url)
 
                     # Use feed's category if not overridden
                     if not resolved_category and feed_config.category:
@@ -886,200 +865,212 @@ def fetch_command(
                         auth_username = feed_config.auth.username
                         auth_password = feed_config.auth.password
 
-            # Determine if interview will be included for progress display
-            will_interview = interview or config.interview.auto_start
-
-            # Extract episode metadata if available from feed parsing
-            episode_title: str | None = None
-            podcast_name: str | None = None
-            if ep is not None:
-                episode_title = ep.title
-                podcast_name = ep.podcast_name or url_or_feed
-
-            # Compute effective output directory
-            effective_output_dir = output_dir or config.default_output_dir
-
-            # Early check: if we have episode metadata, check if directory already exists
-            if episode_title and podcast_name and ep is not None and not overwrite:
-                expected_dir = _compute_episode_dir_path(
-                    output_dir=effective_output_dir,
-                    podcast_name=podcast_name,
-                    episode_title=episode_title,
-                    published_date=ep.published.strftime("%Y-%m-%d"),
-                )
-                if expected_dir.exists():
-                    console.print(
-                        f"\n[yellow]⚠[/yellow]  Episode already processed: "
-                        f"[cyan]{expected_dir.name}[/cyan]"
-                    )
-                    console.print(f"   [dim]{expected_dir}[/dim]\n")
-                    console.print("   Options:")
-                    console.print("   • Use [cyan]--overwrite[/cyan] to re-process")
-                    console.print(
-                        f"   • View existing notes: [cyan]ls {expected_dir}[/cyan]"
-                    )
-                    sys.exit(0)  # Exit cleanly, not an error
-
-            # Show output directory upfront
-            console.print("[bold cyan]Inkwell Extraction Pipeline[/bold cyan]")
-            console.print(f"[dim]Output: {effective_output_dir}[/dim]\n")
-
-            # Create pipeline options from CLI arguments
-            options = PipelineOptions(
-                url=url,
-                category=resolved_category,
-                templates=[t.strip() for t in templates.split(",")] if templates else None,
-                provider=provider,
-                interview=interview,
-                no_resume=no_resume,
-                resume_session=resume_session,
-                output_dir=output_dir,
-                skip_cache=skip_cache,
-                dry_run=dry_run,
-                overwrite=overwrite,
-                interview_template=interview_template,
-                interview_format=interview_format,
-                max_questions=max_questions,
-                auth_username=auth_username,
-                auth_password=auth_password,
-                episode_title=episode_title,
-                podcast_name=podcast_name,
-            )
-
-            # Create orchestrator
-            orchestrator = PipelineOrchestrator(config)
-
-            # Use PipelineProgress for Docker-style multi-stage display
-            # with auto-updating elapsed time
-            pipeline_progress = PipelineProgress(
-                console=console,
-                include_interview=will_interview,
-            )
-
-            # Map transcription sub-steps to user-friendly messages
-            transcription_substeps = {
-                "checking_cache": "Checking cache...",
-                "trying_youtube": "Trying YouTube (free)...",
-                "downloading_audio": "Downloading audio...",
-                "transcribing_gemini": "Transcribing with Gemini...",
-                "caching_result": "Caching result...",
-            }
-
-            # Track results for summary display after progress
-            completion_details: dict[str, object] = {}
-
-            # Progress callback for pipeline stages
-            from typing import Any
-
-            def handle_progress(step_name: str, step_data: dict[str, Any]) -> None:
-                nonlocal completion_details
-
-                if step_name == "transcription_start":
-                    pipeline_progress.start_stage("transcribe")
-
-                elif step_name == "transcription_step":
-                    substep = step_data.get("step", "")
-                    message = transcription_substeps.get(substep, substep)
-                    pipeline_progress.update_substep("transcribe", message)
-
-                elif step_name == "transcription_complete":
-                    source = step_data["source"]
-                    if step_data.get("from_cache"):
-                        summary = "from cache"
-                    else:
-                        summary = f"via {source}"
-                    pipeline_progress.complete_stage("transcribe", summary)
-                    completion_details["words"] = step_data["word_count"]
-
-                elif step_name == "template_selection_start":
-                    pipeline_progress.start_stage("select")
-
-                elif step_name == "template_selection_complete":
-                    count = step_data["template_count"]
-                    pipeline_progress.complete_stage("select", f"{count} templates")
-                    completion_details["templates"] = step_data["templates"]
-
-                elif step_name == "extraction_start":
-                    pipeline_progress.start_stage("extract")
-                    pipeline_progress.update_substep("extract", "Processing...")
-
-                elif step_name == "extraction_complete":
-                    success = step_data["successful"]
-                    failed = step_data["failed"]
-                    if failed > 0:
-                        pipeline_progress.complete_stage(
-                            "extract", f"{success}/{success + failed} ok"
-                        )
-                    else:
-                        pipeline_progress.complete_stage("extract", f"{success} templates")
-                    completion_details["cost"] = step_data["cost_usd"]
-                    completion_details["cached"] = step_data["cached"]
-                    completion_details["failed"] = failed
-
-                elif step_name == "output_start":
-                    pipeline_progress.start_stage("write")
-
-                elif step_name == "output_complete":
-                    pipeline_progress.complete_stage("write", f"{step_data['file_count']} files")
-                    completion_details["directory"] = step_data["directory"]
-
-                elif step_name == "interview_start":
-                    pipeline_progress.start_stage("interview")
-
-                elif step_name == "interview_complete":
-                    pipeline_progress.complete_stage(
-                        "interview", f"{step_data['question_count']} questions"
-                    )
-
-                elif step_name == "interview_cancelled":
-                    pipeline_progress.complete_stage("interview", "skipped")
-
-                elif step_name == "interview_failed":
-                    pipeline_progress.fail_stage("interview", step_data.get("error", ""))
-
-            # Execute pipeline with progress display
-            # Suppress INFO logs during progress display to avoid cluttering the UI
-            inkwell_logger = logging.getLogger("inkwell")
-            original_level = inkwell_logger.level
-            inkwell_logger.setLevel(logging.WARNING)
-
-            try:
-                with pipeline_progress:
-                    result = await orchestrator.process_episode(
-                        options=options,
-                        progress_callback=handle_progress,
-                    )
-            finally:
-                # Restore original log level
-                inkwell_logger.setLevel(original_level)
-
-            # Display summary
-            console.print("\n[bold green]✓ Complete![/bold green]")
-
-            # Format output directory path for display
-            try:
-                output_display = str(result.episode_output.directory.relative_to(Path.cwd()))
-            except ValueError:
-                output_display = str(result.episode_output.directory)
-
-            table = Table(show_header=False, box=None, padding=(0, 2))
-            table.add_column("Key", style="dim")
-            table.add_column("Value", style="white")
-
-            table.add_row("Episode:", result.episode_output.directory.name)
-            table.add_row("Templates:", f"{len(result.extraction_results)}")
-
-            if result.interview_result:
-                table.add_row("Extraction cost:", f"${result.extraction_cost_usd:.4f}")
-                table.add_row("Interview cost:", f"${result.interview_cost_usd:.4f}")
-                table.add_row("Total cost:", f"${result.total_cost_usd:.4f}")
-                table.add_row("Interview:", "✓ Completed")
+            # Build list of episodes to process
+            # For feed mode: selected_episodes from RSS parsing
+            # For URL mode: single placeholder with url already set
+            if "selected_episodes" in dir():
+                episodes_to_process = selected_episodes
             else:
-                table.add_row("Total cost:", f"${result.extraction_cost_usd:.4f}")
+                episodes_to_process = [None]  # URL mode: process once with ep=None
 
-            table.add_row("Output:", output_display)
+            # Process each episode
+            for ep in episodes_to_process:
+                if ep is not None:
+                    url = str(ep.url)
+                    if len(episodes_to_process) > 1:
+                        console.print(
+                            f"\n[bold cyan]Processing:[/bold cyan] {ep.title}"
+                        )
 
-            console.print(table)
+                # Determine if interview will be included for progress display
+                will_interview = interview or config.interview.auto_start
+
+                # Extract episode metadata if available from feed parsing
+                episode_title: str | None = None
+                podcast_name: str | None = None
+                if ep is not None:
+                    episode_title = ep.title
+                    podcast_name = ep.podcast_name or url_or_feed
+
+                # Compute effective output directory
+                effective_output_dir = output_dir or config.default_output_dir
+
+                # Early check: if we have episode metadata, check if directory already exists
+                if episode_title and podcast_name and ep is not None and not overwrite:
+                    expected_dir = _compute_episode_dir_path(
+                        output_dir=effective_output_dir,
+                        podcast_name=podcast_name,
+                        episode_title=episode_title,
+                        published_date=ep.published.strftime("%Y-%m-%d"),
+                    )
+                    if expected_dir.exists():
+                        console.print(
+                            f"\n[yellow]⚠[/yellow]  Episode already processed: "
+                            f"[cyan]{expected_dir.name}[/cyan]"
+                        )
+                        console.print(f"   [dim]{expected_dir}[/dim]")
+                        console.print("   Use [cyan]--overwrite[/cyan] to re-process")
+                        continue  # Skip to next episode
+
+                # Show output directory upfront
+                console.print("[bold cyan]Inkwell Extraction Pipeline[/bold cyan]")
+                console.print(f"[dim]Output: {effective_output_dir}[/dim]\n")
+
+                # Create pipeline options from CLI arguments
+                options = PipelineOptions(
+                    url=url,
+                    category=resolved_category,
+                    templates=[t.strip() for t in templates.split(",")] if templates else None,
+                    provider=provider,
+                    interview=interview,
+                    no_resume=no_resume,
+                    resume_session=resume_session,
+                    output_dir=output_dir,
+                    skip_cache=skip_cache,
+                    dry_run=dry_run,
+                    overwrite=overwrite,
+                    interview_template=interview_template,
+                    interview_format=interview_format,
+                    max_questions=max_questions,
+                    auth_username=auth_username,
+                    auth_password=auth_password,
+                    episode_title=episode_title,
+                    podcast_name=podcast_name,
+                )
+
+                # Create orchestrator
+                orchestrator = PipelineOrchestrator(config)
+
+                # Use PipelineProgress for Docker-style multi-stage display
+                pipeline_progress = PipelineProgress(
+                    console=console,
+                    include_interview=will_interview,
+                )
+
+                # Map transcription sub-steps to user-friendly messages
+                transcription_substeps = {
+                    "checking_cache": "Checking cache...",
+                    "trying_youtube": "Trying YouTube (free)...",
+                    "downloading_audio": "Downloading audio...",
+                    "transcribing_gemini": "Transcribing with Gemini...",
+                    "caching_result": "Caching result...",
+                }
+
+                # Track results for summary display after progress
+                completion_details: dict[str, object] = {}
+
+                # Progress callback for pipeline stages
+                from typing import Any
+
+                def handle_progress(step_name: str, step_data: dict[str, Any]) -> None:
+                    nonlocal completion_details
+
+                    if step_name == "transcription_start":
+                        pipeline_progress.start_stage("transcribe")
+
+                    elif step_name == "transcription_step":
+                        substep = step_data.get("step", "")
+                        message = transcription_substeps.get(substep, substep)
+                        pipeline_progress.update_substep("transcribe", message)
+
+                    elif step_name == "transcription_complete":
+                        source = step_data["source"]
+                        if step_data.get("from_cache"):
+                            summary = "from cache"
+                        else:
+                            summary = f"via {source}"
+                        pipeline_progress.complete_stage("transcribe", summary)
+                        completion_details["words"] = step_data["word_count"]
+
+                    elif step_name == "template_selection_start":
+                        pipeline_progress.start_stage("select")
+
+                    elif step_name == "template_selection_complete":
+                        count = step_data["template_count"]
+                        pipeline_progress.complete_stage("select", f"{count} templates")
+                        completion_details["templates"] = step_data["templates"]
+
+                    elif step_name == "extraction_start":
+                        pipeline_progress.start_stage("extract")
+                        pipeline_progress.update_substep("extract", "Processing...")
+
+                    elif step_name == "extraction_complete":
+                        success = step_data["successful"]
+                        failed = step_data["failed"]
+                        if failed > 0:
+                            pipeline_progress.complete_stage(
+                                "extract", f"{success}/{success + failed} ok"
+                            )
+                        else:
+                            pipeline_progress.complete_stage("extract", f"{success} templates")
+                        completion_details["cost"] = step_data["cost_usd"]
+                        completion_details["cached"] = step_data["cached"]
+                        completion_details["failed"] = failed
+
+                    elif step_name == "output_start":
+                        pipeline_progress.start_stage("write")
+
+                    elif step_name == "output_complete":
+                        pipeline_progress.complete_stage("write", f"{step_data['file_count']} files")
+                        completion_details["directory"] = step_data["directory"]
+
+                    elif step_name == "interview_start":
+                        pipeline_progress.start_stage("interview")
+
+                    elif step_name == "interview_complete":
+                        pipeline_progress.complete_stage(
+                            "interview", f"{step_data['question_count']} questions"
+                        )
+
+                    elif step_name == "interview_cancelled":
+                        pipeline_progress.complete_stage("interview", "skipped")
+
+                    elif step_name == "interview_failed":
+                        pipeline_progress.fail_stage("interview", step_data.get("error", ""))
+
+                # Execute pipeline with progress display
+                # Suppress INFO logs during progress display to avoid cluttering the UI
+                inkwell_logger = logging.getLogger("inkwell")
+                original_level = inkwell_logger.level
+                inkwell_logger.setLevel(logging.WARNING)
+
+                try:
+                    with pipeline_progress:
+                        result = await orchestrator.process_episode(
+                            options=options,
+                            progress_callback=handle_progress,
+                        )
+                finally:
+                    # Restore original log level
+                    inkwell_logger.setLevel(original_level)
+
+                # Display summary
+                console.print("\n[bold green]✓ Complete![/bold green]")
+
+                # Format output directory path for display
+                try:
+                    output_display = str(result.episode_output.directory.relative_to(Path.cwd()))
+                except ValueError:
+                    output_display = str(result.episode_output.directory)
+
+                table = Table(show_header=False, box=None, padding=(0, 2))
+                table.add_column("Key", style="dim")
+                table.add_column("Value", style="white")
+
+                table.add_row("Episode:", result.episode_output.directory.name)
+                table.add_row("Templates:", f"{len(result.extraction_results)}")
+
+                if result.interview_result:
+                    table.add_row("Extraction cost:", f"${result.extraction_cost_usd:.4f}")
+                    table.add_row("Interview cost:", f"${result.interview_cost_usd:.4f}")
+                    table.add_row("Total cost:", f"${result.total_cost_usd:.4f}")
+                    table.add_row("Interview:", "✓ Completed")
+                else:
+                    table.add_row("Total cost:", f"${result.extraction_cost_usd:.4f}")
+
+                table.add_row("Output:", output_display)
+
+                console.print(table)
 
         except KeyboardInterrupt:
             console.print("\n[yellow]Cancelled by user[/yellow]")

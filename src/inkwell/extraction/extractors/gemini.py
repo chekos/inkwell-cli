@@ -17,26 +17,27 @@ from .base import BaseExtractor
 class GeminiExtractor(BaseExtractor):
     """Extractor using Gemini (Google AI) API.
 
-    Supports Gemini 2.5 Flash with:
-    - Fast, cost-effective extraction
-    - Good quality for most tasks
+    Supports Gemini 3 Pro with:
+    - Advanced reasoning capabilities
+    - High quality extraction
     - Native JSON mode for structured output
     - Long context support (1M tokens)
 
-    Cost (as of Nov 2024):
-    - Input: $0.075 per million tokens (<128K tokens)
-    - Input: $0.15 per million tokens (>128K tokens)
-    - Output: $0.30 per million tokens
+    Cost (as of Dec 2025):
+    - Input: $2.00 per million tokens (<200K tokens)
+    - Input: $4.00 per million tokens (>200K tokens)
+    - Output: $12.00 per million tokens (<200K tokens)
+    - Output: $18.00 per million tokens (>200K tokens)
     """
 
     # Model to use
-    MODEL = "gemini-2.5-flash"
+    MODEL = "gemini-3-pro"
 
     # Pricing per million tokens (USD)
-    INPUT_PRICE_PER_M_SHORT = 0.075  # < 128K tokens
-    INPUT_PRICE_PER_M_LONG = 0.15  # > 128K tokens
-    OUTPUT_PRICE_PER_M = 0.30
-    CONTEXT_THRESHOLD = 128_000  # Token threshold for pricing
+    INPUT_PRICE_PER_M_SHORT = 2.00  # < 200K tokens
+    INPUT_PRICE_PER_M_LONG = 4.00  # > 200K tokens
+    OUTPUT_PRICE_PER_M = 12.00  # < 200K tokens (using base rate)
+    CONTEXT_THRESHOLD = 200_000  # Token threshold for pricing
 
     def __init__(self, api_key: str | None = None) -> None:
         """Initialize Gemini extractor.

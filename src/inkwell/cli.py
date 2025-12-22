@@ -3,7 +3,6 @@
 import asyncio
 import logging
 import os
-import re
 import sys
 from datetime import timedelta
 from pathlib import Path
@@ -37,38 +36,6 @@ app = typer.Typer(
 )
 console = Console()
 
-
-def _compute_episode_dir_path(
-    output_dir: Path,
-    podcast_name: str,
-    episode_title: str,
-    published_date: str,
-) -> Path:
-    """Compute expected episode directory path.
-
-    This replicates the logic from EpisodeMetadata for early checking.
-    Structure: output_dir/podcast-slug/YYYY-MM-DD-episode-slug/
-    """
-    # Slugify podcast name
-    podcast_slug = re.sub(r"[^\w\s-]", "", podcast_name.lower())
-    podcast_slug = re.sub(r"[-\s]+", "-", podcast_slug).strip("-")
-
-    # Slugify episode title
-    title_slug = re.sub(r"[^\w\s-]", "", episode_title.lower())
-    title_slug = re.sub(r"[-\s]+", "-", title_slug).strip("-")
-
-    # Truncate if too long
-    if len(title_slug) > 50:
-        title_slug = title_slug[:50].rstrip("-")
-
-    # Episode slug is date + title
-    episode_slug = f"{published_date}-{title_slug}"
-
-    # Sanitize each component (same as OutputManager)
-    podcast_slug = podcast_slug.replace("..", "").replace("\0", "")
-    episode_slug = episode_slug.replace("..", "").replace("\0", "")
-
-    return output_dir / podcast_slug / episode_slug
 
 
 @app.callback()
@@ -895,22 +862,10 @@ def fetch_command(
                 # Compute effective output directory
                 effective_output_dir = output_dir or config.default_output_dir
 
-                # Early check: if we have episode metadata, check if directory already exists
-                if episode_title and podcast_name and ep is not None and not overwrite:
-                    expected_dir = _compute_episode_dir_path(
-                        output_dir=effective_output_dir,
-                        podcast_name=podcast_name,
-                        episode_title=episode_title,
-                        published_date=ep.published.strftime("%Y-%m-%d"),
-                    )
-                    if expected_dir.exists():
-                        console.print(
-                            f"\n[yellow]⚠[/yellow]  Episode already processed: "
-                            f"[cyan]{expected_dir.name}[/cyan]"
-                        )
-                        console.print(f"   [dim]{expected_dir}[/dim]")
-                        console.print("   Use [cyan]--overwrite[/cyan] to re-process")
-                        continue  # Skip to next episode
+                # Note: No longer skipping existing episodes here.
+                # The orchestrator handles incremental mode: if the episode directory exists
+                # and --overwrite is not set, it will only regenerate templates that are
+                # missing or have updated versions.
 
                 # Show output directory upfront
                 console.print("[bold cyan]Inkwell Extraction Pipeline[/bold cyan]")
@@ -1011,7 +966,8 @@ def fetch_command(
                         pipeline_progress.start_stage("write")
 
                     elif step_name == "output_complete":
-                        pipeline_progress.complete_stage("write", f"{step_data['file_count']} files")
+                        file_count = step_data["file_count"]
+                        pipeline_progress.complete_stage("write", f"{file_count} files")
                         completion_details["directory"] = step_data["directory"]
 
                     elif step_name == "interview_start":

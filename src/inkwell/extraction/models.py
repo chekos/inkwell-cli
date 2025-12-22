@@ -218,6 +218,7 @@ class ExtractionResult(BaseModel):
 
     episode_url: str = Field(..., description="URL of the episode")
     template_name: str = Field(..., description="Template used for extraction")
+    template_version: str = Field("unknown", description="Version of template used")
 
     # Result status
     success: bool = Field(..., description="Whether extraction succeeded")

@@ -146,9 +146,10 @@ class OutputManager:
                     ),
                 )
 
-            # Update metadata with cost
+            # Update metadata with cost and template versions
             episode_metadata.total_cost_usd = total_cost
-            episode_metadata.templates_applied = [r.template_name for r in extraction_results]
+            for result in extraction_results:
+                episode_metadata.add_template(result.template_name, result.template_version)
 
             # Write metadata file
             metadata_file = episode_dir / ".metadata.yaml"
@@ -175,6 +176,98 @@ class OutputManager:
                 # Restore backup to original location
                 backup_dir.rename(episode_dir)
             raise
+
+    def write_incremental_episode(
+        self,
+        episode_dir: Path,
+        existing_metadata: EpisodeMetadata,
+        new_extraction_results: list[ExtractionResult],
+        transcript: str | None = None,
+        transcript_summary: str | None = None,
+    ) -> EpisodeOutput:
+        """Write new/updated extraction results to an existing episode directory.
+
+        Unlike write_episode, this method:
+        - Does NOT delete existing directory
+        - Writes only new/changed template files
+        - Merges metadata (templates_applied, templates_versions, costs)
+        - Preserves existing files not being updated
+
+        Args:
+            episode_dir: Existing episode directory
+            existing_metadata: Metadata loaded from existing directory
+            new_extraction_results: New extraction results to write
+            transcript: Optional transcript (only written if _transcript.md doesn't exist)
+            transcript_summary: Optional summary for transcript
+
+        Returns:
+            EpisodeOutput with merged metadata and all files
+        """
+        output_files: list[OutputFile] = []
+        added_cost = 0.0
+
+        # Write new markdown files
+        for result in new_extraction_results:
+            # Generate markdown
+            markdown_content = self.markdown_generator.generate(
+                result,
+                existing_metadata.model_dump(),
+                include_frontmatter=True,
+            )
+
+            # Write file (overwrites if exists)
+            filename = f"{result.template_name}.md"
+            file_path = episode_dir / filename
+
+            self._write_file_atomic(file_path, markdown_content)
+
+            output_files.append(
+                OutputFile(
+                    template_name=result.template_name,
+                    filename=filename,
+                    content=markdown_content,
+                    size_bytes=len(markdown_content.encode("utf-8")),
+                )
+            )
+
+            added_cost += result.cost_usd
+
+            # Update metadata with new template and version
+            existing_metadata.add_template(result.template_name, result.template_version)
+
+        # Write transcript only if it doesn't exist
+        transcript_path = episode_dir / "_transcript.md"
+        if transcript and not transcript_path.exists():
+            if transcript_summary:
+                transcript_content = (
+                    f"# Transcript\n\n"
+                    f"## Summary\n\n{transcript_summary}\n\n"
+                    f"---\n\n"
+                    f"## Full Transcript\n\n{transcript}"
+                )
+            else:
+                transcript_content = f"# Transcript\n\n{transcript}"
+
+            self._write_file_atomic(transcript_path, transcript_content)
+            output_files.insert(
+                0,
+                OutputFile(
+                    template_name="_transcript",
+                    filename="_transcript.md",
+                    content=transcript_content,
+                    size_bytes=len(transcript_content.encode("utf-8")),
+                ),
+            )
+
+        # Update metadata costs
+        existing_metadata.add_cost(added_cost)
+
+        # Write updated metadata file
+        metadata_file = episode_dir / ".metadata.yaml"
+        self._write_metadata(metadata_file, existing_metadata)
+
+        # Load complete EpisodeOutput (includes all files, not just new ones)
+        return EpisodeOutput.from_directory(episode_dir)
 
     def _get_episode_directory_path(self, episode_metadata: EpisodeMetadata) -> Path:
         """Get episode directory path without creating it.

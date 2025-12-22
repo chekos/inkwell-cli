@@ -184,6 +184,7 @@ class ExtractionEngine:
                 return ExtractionResult(
                     episode_url=episode_url,
                     template_name=template.name,
+                    template_version=template.version,
                     success=True,
                     extracted_content=content,
                     cost_usd=0.0,  # Cached, no cost
@@ -229,6 +230,7 @@ class ExtractionEngine:
             return ExtractionResult(
                 episode_url=episode_url,
                 template_name=template.name,
+                template_version=template.version,
                 success=True,
                 extracted_content=content,
                 cost_usd=estimated_cost,
@@ -242,6 +244,7 @@ class ExtractionEngine:
             return ExtractionResult(
                 episode_url=episode_url,
                 template_name=template.name,
+                template_version=template.version,
                 success=False,
                 extracted_content=None,
                 error=error_msg,
@@ -398,6 +401,7 @@ class ExtractionEngine:
                 cached_results[template.name] = ExtractionResult(
                     episode_url=episode_url,
                     template_name=template.name,
+                    template_version=template.version,
                     success=True,
                     extracted_content=content,
                     cost_usd=0.0,
@@ -553,10 +557,11 @@ class ExtractionEngine:
                 error_result = ExtractionResult(
                     episode_url=episode_url,
                     template_name=template.name,
+                    template_version=template.version,
                     success=False,
                     error="Template not found in batch results",
                     cost_usd=0.0,
-                    provider=provider_name,
+                    provider="gemini",  # Default to gemini for batched extraction
                 )
                 all_results.append(error_result)
                 attempts.append(
@@ -859,6 +864,7 @@ Use the exact template names as JSON keys.
                     results[template.name] = ExtractionResult(
                         episode_url=episode_url,
                         template_name=template.name,
+                        template_version=template.version,
                         success=False,
                         error=f"Missing '{template.name}' in batch response",
                         cost_usd=0.0,
@@ -893,6 +899,7 @@ Use the exact template names as JSON keys.
                     results[template.name] = ExtractionResult(
                         episode_url=episode_url,
                         template_name=template.name,
+                        template_version=template.version,
                         success=True,
                         extracted_content=content,
                         cost_usd=cost_per_template,
@@ -943,6 +950,7 @@ Use the exact template names as JSON keys.
                 results[template.name] = ExtractionResult(
                     episode_url=episode_url,
                     template_name=template.name,
+                    template_version=template.version,
                     success=False,
                     error=str(result),
                     cost_usd=0.0,

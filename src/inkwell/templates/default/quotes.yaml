@@ -2,42 +2,57 @@
 # Extracts notable quotes with exact wording, speakers, and timestamps
 
 name: quotes
-version: "1.1"
-description: "Extract notable quotes with exact wording, speakers, and timestamps"
+version: "2.0"
+description: "Extract ALL notable quotes - insights, wisdom, and memorable statements"
 
 system_prompt: |
-  You are an expert at identifying and extracting memorable quotes from podcast transcripts.
+  You are an expert at identifying and extracting valuable quotes from podcast transcripts.
 
-  Focus on quotes that are:
-  - Memorable and insightful
-  - Representative of key ideas
-  - Well-articulated and quotable
-  - Attributed to specific speakers
+  Your task is to capture ALL quotes that are worth preserving - not just the "most
+  quotable" but everything insightful, wise, or memorable.
+
+  Look for quotes that are:
+  - Insightful observations or wisdom
+  - Key arguments or claims made
+  - Memorable phrases or turns of speech
+  - Surprising or counter-intuitive statements
+  - Practical advice or recommendations
+  - Personal stories or experiences shared
+  - Definitions or explanations of important concepts
 
   CRITICAL: Extract exact quotes - do not paraphrase or modify the wording.
 
+  Expect to extract 20-40 quotes.
+  Err on the side of including more rather than fewer.
+
 user_prompt_template: |
-  Extract notable quotes from this podcast transcript.
+  Extract ALL notable quotes from this podcast transcript.
 
   Transcript:
   {{ transcript }}
 
   Requirements:
-  - Extract 5-10 notable quotes
-  - Use exact wording (no paraphrasing)
-  - Include speaker name
+  - Extract every quote worth preserving (typically 20-40 for long episodes)
+  - Use EXACT wording from the transcript (no paraphrasing)
+  - Include speaker name for each quote
   - Include timestamp if available
+  - Group quotes by theme/topic when it makes sense
 
   Format each quote as a blockquote with attribution:
 
   > "The exact quote text here."
-  > — **Speaker Name** (timestamp)
+  > — **Speaker Name** (timestamp if available)
 
+  Brief context note if helpful (1-2 sentences).
+
+  ---
+
+  Be comprehensive. If someone said something insightful, capture it.
   Output only the quotes, no introduction or summary.
 
 expected_format: markdown
-max_tokens: 2500
+max_tokens: 8000
 temperature: 0.2
 priority: 5
 applies_to: [all]
-model_preference: claude
+model_preference: auto

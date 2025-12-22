@@ -78,6 +78,7 @@ class MarkdownGenerator:
 
         frontmatter_data = {
             "template": result.template_name,
+            "template_version": result.template_version,
             "podcast": episode_metadata.get("podcast_name", "Unknown"),
             "episode": episode_metadata.get("episode_title", "Unknown"),
             "date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),

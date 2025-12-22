@@ -52,6 +52,10 @@ class EpisodeMetadata(BaseModel):
     templates_applied: list[str] = Field(
         default_factory=list, description="Templates used for extraction"
     )
+    templates_versions: dict[str, str] = Field(
+        default_factory=dict,
+        description="Map of template name to version (e.g., {'summary': '1.1'})",
+    )
 
     # Cost tracking
     transcription_cost_usd: float = Field(0.0, description="Cost of transcription", ge=0)
@@ -117,10 +121,11 @@ class EpisodeMetadata(BaseModel):
         """
         return f"{self.podcast_slug}/{self.episode_slug}"
 
-    def add_template(self, template_name: str) -> None:
-        """Add template to applied templates list."""
+    def add_template(self, template_name: str, version: str = "unknown") -> None:
+        """Add template to applied templates list with version tracking."""
         if template_name not in self.templates_applied:
             self.templates_applied.append(template_name)
+        self.templates_versions[template_name] = version
 
     def add_cost(self, extraction_cost: float) -> None:
         """Add extraction cost to total."""
@@ -344,9 +349,14 @@ class EpisodeOutput(BaseModel):
         with metadata_file.open("r") as f:
             metadata_dict = yaml.safe_load(f)
 
+        # Handle schema migration: ensure templates_versions exists
+        if "templates_versions" not in metadata_dict:
+            # v1 schema - initialize empty, will be populated from frontmatter
+            metadata_dict["templates_versions"] = {}
+
         metadata = EpisodeMetadata(**metadata_dict)
 
-        # Load all markdown files
+        # Load all markdown files and extract template versions from frontmatter
         files: list[OutputFile] = []
         for md_file in sorted(output_dir.glob("*.md")):
             # Read file content
@@ -366,6 +376,12 @@ class EpisodeOutput(BaseModel):
 
             # Determine template name from filename (remove .md)
             template_name = md_file.stem
+
+            # Extract template version from frontmatter if available
+            # This populates templates_versions for v1 data migration
+            if template_name not in metadata.templates_versions:
+                version = frontmatter.get("template_version", "unknown")
+                metadata.templates_versions[template_name] = version
 
             # Create OutputFile
             output_file = OutputFile(

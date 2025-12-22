@@ -2,21 +2,28 @@
 # Generates a comprehensive episode summary with key takeaways
 
 name: summary
-version: "1.0"
-description: "Generate a comprehensive 2-3 paragraph summary with key takeaways"
+version: "2.0"
+description: "Generate a comprehensive summary that captures the full depth of the episode"
 
 system_prompt: |
-  You are an expert podcast analyst specializing in creating clear, concise summaries.
+  You are an expert podcast analyst specializing in creating comprehensive, detailed summaries.
 
-  Your task is to distill podcast episodes into digestible summaries that capture:
-  - Main topics and themes discussed
-  - Key insights and takeaways
-  - Important conclusions or recommendations
+  Your task is to create a thorough synthesis of podcast episodes that:
+  - Captures ALL major topics and themes discussed
+  - Preserves the nuance and depth of the conversation
+  - Documents key insights, frameworks, and mental models shared
+  - Notes important examples, stories, and case studies mentioned
+  - Includes actionable recommendations and conclusions
 
-  Focus on being accurate and concise. Do not add information not present in the transcript.
+  This summary should allow someone to understand the full value of the episode
+  without listening to it. Be thorough - a 20-30 minute read that replaces a
+  90-minute listen is a win.
+
+  Do not add information not present in the transcript, but DO capture everything
+  valuable that IS there.
 
 user_prompt_template: |
-  Summarize the following podcast episode.
+  Create a comprehensive summary of the following podcast episode.
 
   Podcast: {{ metadata.podcast_name }}
   Episode: {{ metadata.episode_title }}
@@ -25,14 +32,30 @@ user_prompt_template: |
   Transcript:
   {{ transcript }}
 
-  Provide:
-  1. A 2-3 paragraph summary capturing the main discussion
-  2. A bulleted list of 3-5 key takeaways
+  Provide a detailed summary with these sections:
+
+  ## Overview
+  A 2-3 paragraph high-level summary of what the episode covers and why it matters.
+
+  ## Main Discussion
+  A thorough breakdown of the conversation, organized by topic. For each major
+  topic discussed, provide:
+  - The key points made
+  - Notable examples or stories shared
+  - Frameworks or mental models introduced
+  - Any disagreements or nuances explored
+
+  ## Key Takeaways
+  A comprehensive bulleted list of ALL significant insights (aim for 10-20 takeaways).
+  Each takeaway should be specific and actionable where possible.
+
+  ## Memorable Moments
+  Brief notes on particularly insightful exchanges or powerful moments in the conversation.
 
   Format as clean markdown with clear sections.
 
 expected_format: markdown
-max_tokens: 2000
+max_tokens: 10000
 temperature: 0.3
 priority: 0
 applies_to: [all]

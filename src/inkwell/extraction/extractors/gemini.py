@@ -31,7 +31,7 @@ class GeminiExtractor(BaseExtractor):
     """
 
     # Model to use
-    MODEL = "gemini-3-pro"
+    MODEL = "gemini-3-pro-preview"
 
     # Pricing per million tokens (USD)
     INPUT_PRICE_PER_M_SHORT = 2.00  # < 200K tokens

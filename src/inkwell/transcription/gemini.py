@@ -16,7 +16,7 @@ from inkwell.utils.rate_limiter import get_rate_limiter
 # Allowed Gemini models for transcription
 ALLOWED_GEMINI_MODELS = {
     "gemini-3-flash-preview",
-    "gemini-3-pro",
+    "gemini-3-pro-preview",
     "gemini-2.5-flash",
     "gemini-2.5-pro",
     "gemini-1.5-flash",

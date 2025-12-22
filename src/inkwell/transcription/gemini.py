@@ -226,57 +226,28 @@ class GeminiTranscriber:
         # Upload audio file using new SDK
         audio_file = self.client.files.upload(file=audio_path)
 
-        # Generate transcript with structured prompt
+        # Generate transcript with plain text prompt
+        # Using plain text instead of JSON to avoid truncation issues with long podcasts
+        # (JSON mode hits token limits and produces malformed output - see ADR-034)
         prompt = (
-            "Process the audio file and generate a detailed transcription. "
-            "Requirements:\n"
-            "1. First, provide a brief summary of the entire audio content.\n"
-            "2. Identify distinct speakers (use names if context allows, otherwise Speaker 1, Speaker 2, etc.).\n"
-            "3. Provide accurate timestamps for each segment of speech in MM:SS format.\n"
-            "4. Ensure the transcription is verbatim, capturing all spoken words.\n"
-            "5. Use proper punctuation and capitalization for readability.\n"
-        )
-
-        # Define structured output schema for consistent parsing
-        response_schema = types.Schema(
-            type="object",
-            properties={
-                "summary": types.Schema(
-                    type="string",
-                    description="Brief summary of the entire audio content",
-                ),
-                "segments": types.Schema(
-                    type="array",
-                    items=types.Schema(
-                        type="object",
-                        properties={
-                            "timestamp": types.Schema(
-                                type="string",
-                                description="Timestamp in MM:SS format",
-                            ),
-                            "speaker": types.Schema(
-                                type="string",
-                                description="Speaker identifier or name",
-                            ),
-                            "text": types.Schema(
-                                type="string",
-                                description="Verbatim transcription of speech",
-                            ),
-                        },
-                        required=["timestamp", "speaker", "text"],
-                    ),
-                ),
-            },
-            required=["summary", "segments"],
+            "Transcribe this audio file in plain text format.\n\n"
+            "IMPORTANT FORMAT REQUIREMENTS:\n"
+            "1. Start with a brief summary paragraph (2-3 sentences) on its own line, prefixed with 'SUMMARY:'\n"
+            "2. Then transcribe the full content with timestamps\n"
+            "3. Use this exact format for each segment:\n"
+            "   [MM:SS] Speaker Name: What they said...\n"
+            "4. Use HH:MM:SS for podcasts over 1 hour\n"
+            "5. Identify speakers by name when possible, otherwise use 'Speaker 1', 'Speaker 2', etc.\n"
+            "6. Capture all spoken words verbatim with proper punctuation\n\n"
+            "Example output:\n"
+            "SUMMARY: This episode discusses AI developments and their impact on software engineering.\n\n"
+            "[00:00] Host: Welcome to the show. Today we're talking about...\n"
+            "[00:15] Guest: Thanks for having me. I've been working on...\n"
         )
 
         response = self.client.models.generate_content(
             model=self.model_name,
             contents=[audio_file, prompt],
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                response_schema=response_schema,
-            ),
         )
 
         return response
@@ -284,42 +255,50 @@ class GeminiTranscriber:
     def _parse_response(
         self, response: types.GenerateContentResponse, audio_path: Path, episode_url: str | None
     ) -> Transcript:
-        """Parse Gemini structured JSON response into Transcript object.
+        """Parse Gemini plain text response into Transcript object.
 
         Args:
-            response: Gemini API response with JSON content
+            response: Gemini API response with plain text content
             audio_path: Path to audio file (for metadata)
             episode_url: Optional episode URL
 
         Returns:
             Transcript object with summary and segments
         """
-        import json
+        import re
 
         if not response.text:
             raise APIError("Gemini returned empty transcript")
 
-        # Parse JSON response
-        try:
-            data = json.loads(response.text)
-        except json.JSONDecodeError as e:
-            raise APIError(f"Failed to parse Gemini JSON response: {e}") from e
+        text = response.text.strip()
 
-        # Extract summary
-        summary = data.get("summary", "")
+        # Extract summary if present (SUMMARY: prefix)
+        summary = ""
+        summary_match = re.match(r"^SUMMARY:\s*(.+?)(?:\n\n|\n\[)", text, re.DOTALL | re.IGNORECASE)
+        if summary_match:
+            summary = summary_match.group(1).strip()
 
-        # Parse segments from structured output
+        # Parse timestamp markers: [HH:MM:SS] or [MM:SS] followed by Speaker: text
+        # Pattern matches: [00:00] Speaker Name: text or [00:00:00] Speaker: text
+        timestamp_pattern = r"\[(\d{1,2}:\d{2}(?::\d{2})?)\]\s*([^:]+):\s*"
+
         segments: list[TranscriptSegment] = []
-        for seg in data.get("segments", []):
-            timestamp_str = seg.get("timestamp", "00:00")
-            speaker = seg.get("speaker", "Speaker")
-            text = seg.get("text", "")
+        matches = list(re.finditer(timestamp_pattern, text))
 
-            # Parse MM:SS timestamp to seconds
+        for i, match in enumerate(matches):
+            timestamp_str = match.group(1)
+            speaker = match.group(2).strip()
+
+            # Get text until next timestamp or end
+            start_pos = match.end()
+            end_pos = matches[i + 1].start() if i + 1 < len(matches) else len(text)
+            segment_text = text[start_pos:end_pos].strip()
+
+            # Parse timestamp to seconds
             start_seconds = self._parse_timestamp(timestamp_str)
 
-            # Format text with speaker label
-            formatted_text = f"[{timestamp_str}] {speaker}: {text}"
+            # Format text with speaker label (preserve original format)
+            formatted_text = f"[{timestamp_str}] {speaker}: {segment_text}"
 
             segments.append(
                 TranscriptSegment(
@@ -333,11 +312,11 @@ class GeminiTranscriber:
         for i in range(len(segments) - 1):
             segments[i].duration = segments[i + 1].start - segments[i].start
 
-        # Fallback if no segments parsed
+        # Fallback if no segments parsed - use entire text as single segment
         if not segments:
             segments = [
                 TranscriptSegment(
-                    text=response.text.strip(),
+                    text=text,
                     start=0.0,
                     duration=0.0,
                 )

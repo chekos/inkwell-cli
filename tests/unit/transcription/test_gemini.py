@@ -91,7 +91,7 @@ class TestGeminiTranscriber:
         transcriber = GeminiTranscriber(api_key="test-key")
 
         assert transcriber.api_key == "test-key"
-        assert transcriber.model_name == "gemini-2.5-flash"
+        assert transcriber.model_name == "gemini-3-flash-preview"
         assert transcriber.cost_threshold_usd == 1.0
 
         mock_genai.Client.assert_called_once_with(api_key="test-key")

@@ -2,7 +2,7 @@
 # Extracts tools, frameworks, and libraries mentioned in tech podcasts
 
 name: tools-mentioned
-version: "1.0"
+version: "1.1"
 description: "Extract tools, frameworks, and libraries mentioned in tech podcasts"
 category: tech
 
@@ -28,46 +28,13 @@ user_prompt_template: |
   Transcript:
   {{ transcript }}
 
-  For each tool, provide:
-  - Name (official name of the tool)
-  - Category (language, framework, library, tool, service, database, platform)
-  - Context (brief description of how it was discussed)
-  - Timestamp (if mentioned at a specific time, format MM:SS)
+  For each tool, format as a bullet point:
 
-  Return as JSON:
-  {
-    "tools": [
-      {
-        "name": "Tool Name",
-        "category": "framework",
-        "context": "How it was discussed",
-        "timestamp": "12:34"
-      }
-    ]
-  }
+  - **Tool Name** (category) — Brief context of how it was discussed
 
-expected_format: json
-output_schema:
-  type: object
-  required: [tools]
-  properties:
-    tools:
-      type: array
-      items:
-        type: object
-        required: [name, category]
-        properties:
-          name:
-            type: string
-          category:
-            type: string
-            enum: [language, framework, library, tool, service, database, platform, other]
-          context:
-            type: string
-          timestamp:
-            type: string
-            pattern: "^\\d+:\\d+$"
+  Group by category if helpful. Output only the list, no introduction.
 
+expected_format: markdown
 max_tokens: 3000
 temperature: 0.2
 priority: 15

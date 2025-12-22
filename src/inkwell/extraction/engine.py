@@ -496,79 +496,21 @@ class ExtractionEngine:
             )
             return results_list, summary
 
-        # Build batched prompt
-        logger.info(f"Batching {len(uncached_templates)} templates in single API call")
-        batched_prompt = self._create_batch_prompt(uncached_templates, transcript, metadata)
+        # Extract each template individually for focused, reliable results
+        logger.info(f"Extracting {len(uncached_templates)} templates individually")
+        batch_results = await self._extract_individually(
+            uncached_templates, transcript, metadata, episode_url
+        )
 
-        # Select provider (use first template's preference or default)
-        extractor = self._select_extractor(uncached_templates[0])
-        provider_name = "claude" if extractor.__class__.__name__ == "ClaudeExtractor" else "gemini"
-
-        # Estimate cost (slightly higher than sum of individual calls due to larger prompt)
-        estimated_cost = (
-            sum(extractor.estimate_cost(t, len(transcript)) for t in uncached_templates) * 1.1
-        )  # 10% overhead for batch prompt
-
-        # Single API call for all templates
-        batch_results = {}
-        try:
-            # Calculate total max_tokens for all templates
-            total_max_tokens = sum(t.max_tokens for t in uncached_templates)
-
-            # Call LLM with batched prompt
-            # Force JSON mode since batch responses must be JSON
-            response = await extractor.extract(
-                uncached_templates[0],  # Use first template for LLM config
-                batched_prompt,
-                metadata,
-                force_json=True,
-                max_tokens_override=total_max_tokens,
-            )
-
-            # Parse batch response
-            batch_results = self._parse_batch_response(
-                response, uncached_templates, episode_url, provider_name, estimated_cost
-            )
-
-            # Cache individual results
-            if use_cache:
-                for template in uncached_templates:
-                    result = batch_results.get(template.name)
-                    if result and result.success and result.extracted_content:
-                        # Cache the raw output for this template
-                        raw_output = self._serialize_extracted_content(result.extracted_content)
-                        await self.cache.set(
-                            template.name, template.version, transcript, raw_output
-                        )
-
-            # Track cost in CostTracker if available
-            if self.cost_tracker:
-                # Estimate token counts for batch operation
-                input_tokens = len(batched_prompt) // 4
-                output_tokens = len(response) // 4
-
-                # Track once for the batch (distributed across templates)
-                for template in uncached_templates:
-                    self.cost_tracker.add_cost(
-                        provider=provider_name,
-                        model=extractor.model if hasattr(extractor, "model") else "unknown",
-                        operation="extraction",
-                        input_tokens=input_tokens // len(uncached_templates),
-                        output_tokens=output_tokens // len(uncached_templates),
-                        episode_title=metadata.get("episode_title"),
-                        template_name=template.name,
+        # Cache successful results
+        if use_cache:
+            for template in uncached_templates:
+                result = batch_results.get(template.name)
+                if result and result.success and result.extracted_content:
+                    raw_output = self._serialize_extracted_content(result.extracted_content)
+                    await self.cache.set(
+                        template.name, template.version, transcript, raw_output
                     )
-
-            logger.info(f"Batch extraction successful for {len(batch_results)} templates")
-
-        except Exception as e:
-            # Sanitize error message to prevent API key leakage in logs
-            sanitized_error_msg = _sanitize_error_message(str(e))
-            logger.error(f"Batch extraction failed: {sanitized_error_msg}", exc_info=True)
-            # Fallback to individual extraction
-            batch_results = await self._extract_individually(
-                uncached_templates, transcript, metadata, episode_url
-            )
 
         # Combine cached and new results in original order and build summary
         all_results = []
@@ -970,7 +912,9 @@ Use the exact template names as JSON keys.
         metadata: dict[str, Any],
         episode_url: str,
     ) -> dict[str, ExtractionResult]:
-        """Fallback: extract templates individually if batch fails.
+        """Extract templates individually in parallel.
+
+        Each template gets its own focused LLM call for better reliability.
 
         Args:
             templates: Templates to extract
@@ -982,11 +926,6 @@ Use the exact template names as JSON keys.
             Dict mapping template name to ExtractionResult
         """
         import asyncio
-
-        logger.warning(
-            f"Batch extraction failed, falling back to individual extraction "
-            f"for {len(templates)} templates"
-        )
 
         tasks = [
             self.extract(template, transcript, metadata, use_cache=False) for template in templates

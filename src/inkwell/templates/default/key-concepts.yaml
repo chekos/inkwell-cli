@@ -2,7 +2,7 @@
 # Identifies and explains main concepts discussed in the episode
 
 name: key-concepts
-version: "1.0"
+version: "1.1"
 description: "Identify and explain 5-7 key concepts discussed in the episode"
 
 system_prompt: |
@@ -25,45 +25,19 @@ user_prompt_template: |
   Transcript:
   {{ transcript }}
 
-  For each concept:
-  - Provide the concept name
-  - Give a clear, concise definition (1-2 sentences)
-  - Optionally note the context in which it was discussed
+  For each concept, format as:
 
-  Extract 5-7 key concepts.
+  ## Concept Name
 
-  Return as JSON:
-  {
-    "concepts": [
-      {
-        "name": "Concept Name",
-        "definition": "Clear explanation of the concept",
-        "context": "Optional context or application discussed"
-      }
-    ]
-  }
+  **Definition:** Clear explanation of the concept in 1-2 sentences.
 
-expected_format: json
-output_schema:
-  type: object
-  required: [concepts]
-  properties:
-    concepts:
-      type: array
-      minItems: 5
-      maxItems: 7
-      items:
-        type: object
-        required: [name, definition]
-        properties:
-          name:
-            type: string
-          definition:
-            type: string
-            minLength: 20
-          context:
-            type: string
+  **Context:** How it was discussed or applied in the episode.
 
+  ---
+
+  Extract 5-7 key concepts. Output only the concepts, no introduction.
+
+expected_format: markdown
 max_tokens: 2000
 temperature: 0.3
 priority: 10

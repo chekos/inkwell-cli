@@ -74,6 +74,9 @@ class Transcript(BaseModel):
     )
 
     # Optional metadata
+    summary: str | None = Field(
+        None, description="Brief summary of the audio content (from Gemini structured output)"
+    )
     duration_seconds: float | None = Field(
         None, ge=0, description="Total duration of audio in seconds"
     )

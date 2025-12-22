@@ -61,6 +61,7 @@ class OutputManager:
         extraction_results: list[ExtractionResult],
         overwrite: bool = False,
         transcript: str | None = None,
+        transcript_summary: str | None = None,
     ) -> EpisodeOutput:
         """Write extraction results for an episode to disk.
 
@@ -69,6 +70,7 @@ class OutputManager:
             extraction_results: List of extraction results
             overwrite: Whether to overwrite existing directory
             transcript: Optional transcript text to include as _transcript.md
+            transcript_summary: Optional summary to include at top of transcript
 
         Returns:
             EpisodeOutput with directory and file information
@@ -121,7 +123,18 @@ class OutputManager:
             if transcript:
                 transcript_filename = "_transcript.md"
                 transcript_path = episode_dir / transcript_filename
-                transcript_content = f"# Transcript\n\n{transcript}"
+
+                # Build transcript content with optional summary
+                if transcript_summary:
+                    transcript_content = (
+                        f"# Transcript\n\n"
+                        f"## Summary\n\n{transcript_summary}\n\n"
+                        f"---\n\n"
+                        f"## Full Transcript\n\n{transcript}"
+                    )
+                else:
+                    transcript_content = f"# Transcript\n\n{transcript}"
+
                 self._write_file_atomic(transcript_path, transcript_content)
                 output_files.insert(
                     0,  # Insert at beginning so it's first in list

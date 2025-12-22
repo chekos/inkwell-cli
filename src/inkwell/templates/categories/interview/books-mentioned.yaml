@@ -2,7 +2,7 @@
 # Extracts books and publications mentioned in interview podcasts
 
 name: books-mentioned
-version: "1.0"
+version: "1.1"
 description: "Extract books and publications mentioned in interview podcasts"
 category: interview
 
@@ -27,51 +27,13 @@ user_prompt_template: |
   Transcript:
   {{ transcript }}
 
-  For each book/publication:
-  - Title (exact title)
-  - Author (author name if mentioned)
-  - Type (book, article, paper, etc.)
-  - Context (why it was mentioned - recommendation, reference, etc.)
-  - Timestamp (if mentioned at specific time, format MM:SS)
+  For each book, format as:
 
-  Return as JSON:
-  {
-    "books": [
-      {
-        "title": "Book Title",
-        "author": "Author Name",
-        "type": "book",
-        "context": "How/why it was mentioned",
-        "timestamp": "12:34"
-      }
-    ]
-  }
+  - **Title** by *Author* — Brief context of why it was mentioned
 
-expected_format: json
-output_schema:
-  type: object
-  required: [books]
-  properties:
-    books:
-      type: array
-      items:
-        type: object
-        required: [title]
-        properties:
-          title:
-            type: string
-          author:
-            type: string
-          type:
-            type: string
-            enum: [book, article, paper, magazine, publication, other]
-            default: book
-          context:
-            type: string
-          timestamp:
-            type: string
-            pattern: "^\\d+:\\d+$"
+  If the author wasn't mentioned, omit it. Output only the list, no introduction.
 
+expected_format: markdown
 max_tokens: 2000
 temperature: 0.2
 priority: 15

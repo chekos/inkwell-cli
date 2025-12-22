@@ -10,9 +10,10 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 from ..extraction.models import ExtractionResult
 from ..utils.errors import SecurityError
-from ..utils.yaml_integrity import YAMLWithIntegrity
 from .markdown import MarkdownGenerator
 from .models import EpisodeMetadata, EpisodeOutput, OutputFile
 
@@ -326,7 +327,7 @@ class OutputManager:
             raise
 
     def _write_metadata(self, metadata_file: Path, episode_metadata: EpisodeMetadata) -> None:
-        """Write metadata file with schema version and integrity checksum.
+        """Write metadata file with schema version.
 
         Args:
             metadata_file: Path to metadata file
@@ -339,8 +340,11 @@ class OutputManager:
         if "schema_version" not in metadata_dict or metadata_dict["schema_version"] is None:
             metadata_dict["schema_version"] = self.CURRENT_METADATA_SCHEMA_VERSION
 
-        # Write with integrity checksum via atomic write (temp file + rename)
-        YAMLWithIntegrity.write_yaml_with_checksum(metadata_file, metadata_dict)
+        # Write YAML
+        metadata_file.write_text(
+            yaml.dump(metadata_dict, default_flow_style=False, sort_keys=False),
+            encoding="utf-8",
+        )
 
     def list_episodes(self) -> list[Path]:
         """List all episode directories.
@@ -385,8 +389,7 @@ class OutputManager:
         if not metadata_file.exists():
             raise FileNotFoundError(f"Metadata file not found: {metadata_file}")
 
-        # Load with integrity verification
-        data = YAMLWithIntegrity.read_yaml_with_verification(metadata_file)
+        data = yaml.safe_load(metadata_file.read_text(encoding="utf-8")) or {}
 
         # Handle schema migrations
         schema_version = data.get("schema_version", 0)

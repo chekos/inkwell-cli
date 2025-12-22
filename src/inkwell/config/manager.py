@@ -32,7 +32,6 @@ from inkwell.utils.paths import (
     get_feeds_file,
     get_key_file,
 )
-from inkwell.utils.yaml_integrity import YAMLIntegrityError, YAMLWithIntegrity
 
 
 class ConfigManager:
@@ -140,14 +139,8 @@ class ConfigManager:
             return DEFAULT_GLOBAL_CONFIG
 
         try:
-            # Load with integrity verification
-            data = YAMLWithIntegrity.read_yaml_with_verification(self.config_file)
+            data = yaml.safe_load(self.config_file.read_text(encoding="utf-8")) or {}
             return GlobalConfig(**data)
-        except YAMLIntegrityError as e:
-            # Integrity check failed - file is corrupted
-            raise ConfigError(
-                f"Configuration file is corrupted:\n{e}\n\nRun 'inkwell config edit' to fix"
-            ) from e
         except ValidationError as e:
             # Format Pydantic validation errors nicely
             error_lines = ["Invalid configuration in config.yaml:"]
@@ -188,8 +181,11 @@ class ConfigManager:
 
         self.config_dir.mkdir(parents=True, exist_ok=True)
 
-        # Write with integrity checksum
-        YAMLWithIntegrity.write_yaml_with_checksum(self.config_file, data)
+        # Write YAML
+        self.config_file.write_text(
+            yaml.dump(data, default_flow_style=False, sort_keys=False),
+            encoding="utf-8",
+        )
 
         # Log config changes
         if old_config:
@@ -260,8 +256,7 @@ class ConfigManager:
             return Feeds()
 
         try:
-            # Load with integrity verification
-            data = YAMLWithIntegrity.read_yaml_with_verification(self.feeds_file)
+            data = yaml.safe_load(self.feeds_file.read_text(encoding="utf-8")) or {}
 
             # Decrypt and validate credentials in feed configs
             if "feeds" in data:
@@ -301,11 +296,6 @@ class ConfigManager:
                             ) from e
 
             return Feeds(**data)
-        except YAMLIntegrityError as e:
-            # Integrity check failed - file is corrupted
-            raise ConfigError(
-                f"Feeds configuration file is corrupted:\n{e}\n\nCheck feeds.yaml for errors"
-            ) from e
         except ValidationError as e:
             # Format Pydantic validation errors nicely
             error_lines = ["Invalid feeds configuration in feeds.yaml:"]
@@ -352,8 +342,11 @@ class ConfigManager:
 
         self.config_dir.mkdir(parents=True, exist_ok=True)
 
-        # Write with integrity checksum
-        YAMLWithIntegrity.write_yaml_with_checksum(self.feeds_file, data)
+        # Write YAML
+        self.feeds_file.write_text(
+            yaml.dump(data, default_flow_style=False, sort_keys=False),
+            encoding="utf-8",
+        )
 
     def add_feed(self, name: str, feed_config: FeedConfig) -> None:
         """Add or update a feed.

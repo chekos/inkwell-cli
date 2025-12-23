@@ -23,6 +23,10 @@ from inkwell.utils.api_keys import APIKeyError, get_validated_api_key
 from inkwell.utils.costs import CostTracker
 from inkwell.utils.datetime import now_utc
 from inkwell.utils.errors import InkwellError
+from inkwell.utils.url_metadata import (
+    INBOX_PODCAST_NAME,
+    create_fallback_title,
+)
 
 from .models import PipelineOptions, PipelineResult
 
@@ -89,7 +93,7 @@ class PipelineOrchestrator:
         Returns:
             List of templates that need processing
         """
-        templates_to_process: list["ExtractionTemplate"] = []
+        templates_to_process: list[ExtractionTemplate] = []
         existing_versions = existing_output.metadata.templates_versions
 
         for template in templates:
@@ -203,9 +207,10 @@ class PipelineOrchestrator:
         )
 
         # Create episode metadata (use values from options if available)
+        # Fallbacks use _inbox for podcast and a readable title from URL
         episode_metadata = EpisodeMetadata(
-            podcast_name=options.podcast_name or "Unknown Podcast",
-            episode_title=options.episode_title or f"Episode from {options.url}",
+            podcast_name=options.podcast_name or INBOX_PODCAST_NAME,
+            episode_title=options.episode_title or create_fallback_title(options.url),
             episode_url=options.url,
             transcription_source=transcript_result.transcript.source,
         )

@@ -25,22 +25,6 @@ class URLMetadata(BaseModel):
     domain: str | None = None
     duration_seconds: float | None = None
 
-    @property
-    def short_slug(self) -> str:
-        """Get a short identifier for the URL.
-
-        Priority:
-        1. Video ID (for YouTube, etc.)
-        2. First 12 chars of URL hash
-
-        Returns:
-            Short, filesystem-safe identifier
-        """
-        if self.video_id:
-            return self.video_id
-        # Fallback to hash - should not happen if video_id is extracted
-        return "unknown"
-
 
 def extract_youtube_id(url: str) -> str | None:
     """Extract YouTube video ID from URL.
@@ -152,7 +136,9 @@ def create_fallback_title(url: str) -> str:
 async def extract_url_metadata(url: str) -> URLMetadata:
     """Extract metadata from URL without downloading.
 
-    Uses yt-dlp to fetch metadata when available.
+    Uses yt-dlp to fetch metadata when available. Results are cached
+    to avoid duplicate network calls when the same URL is processed
+    for transcription later.
 
     Args:
         url: URL to extract metadata from
@@ -160,15 +146,27 @@ async def extract_url_metadata(url: str) -> URLMetadata:
     Returns:
         URLMetadata with extracted information
     """
-    from inkwell.audio import AudioDownloader
+    from inkwell.audio.downloader import AudioDownloader, get_cached_info
+    from inkwell.utils.errors import APIError
 
     # Pre-extract what we can from the URL itself
     video_id = extract_youtube_id(url) or extract_url_slug(url)
     parsed = urlparse(url)
     domain = parsed.netloc.replace("www.", "")
 
+    # Check cache first to avoid duplicate yt-dlp calls
+    cached = get_cached_info(url)
+    if cached:
+        logger.debug(f"Using cached metadata for {url}")
+        return URLMetadata(
+            title=cached.get("title"),
+            video_id=cached.get("id", video_id),
+            domain=domain,
+            duration_seconds=cached.get("duration"),
+        )
+
     try:
-        # Use yt-dlp to get full metadata
+        # Use yt-dlp to get full metadata (will be cached for later use)
         downloader = AudioDownloader()
         info = await downloader.get_info(url)
 
@@ -186,9 +184,9 @@ async def extract_url_metadata(url: str) -> URLMetadata:
             duration_seconds=duration,
         )
 
-    except Exception as e:
+    except APIError as e:
+        # yt-dlp extraction failed (network error, unsupported URL, etc.)
         logger.debug(f"Could not extract metadata from {url}: {e}")
-        # Return what we could extract from URL parsing
         return URLMetadata(
             title=None,
             video_id=video_id,

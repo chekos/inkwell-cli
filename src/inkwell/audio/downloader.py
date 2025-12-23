@@ -16,6 +16,27 @@ from inkwell.utils.errors import APIError
 
 logger = logging.getLogger(__name__)
 
+# Module-level cache for URL metadata to avoid duplicate yt-dlp calls
+# Key: URL, Value: info dict from yt-dlp
+_info_cache: dict[str, dict[str, Any]] = {}
+
+
+def get_cached_info(url: str) -> dict[str, Any] | None:
+    """Get cached URL info if available.
+
+    Args:
+        url: URL to look up
+
+    Returns:
+        Cached info dict or None if not cached
+    """
+    return _info_cache.get(url)
+
+
+def clear_info_cache() -> None:
+    """Clear the URL info cache. Primarily for testing."""
+    _info_cache.clear()
+
 
 class DownloadProgress(BaseModel):
     """Progress information for audio download."""
@@ -221,11 +242,15 @@ class AudioDownloader:
             logger.info(f"Cached audio to: {output_path}")
             return output_path
 
-    async def get_info(self, url: str) -> dict[str, Any]:
+    async def get_info(self, url: str, use_cache: bool = True) -> dict[str, Any]:
         """Get information about audio/video without downloading.
+
+        Uses module-level cache to avoid duplicate yt-dlp calls when the same
+        URL is processed multiple times (e.g., metadata extraction then download).
 
         Args:
             url: URL to get info from
+            use_cache: Whether to use/populate the info cache (default: True)
 
         Returns:
             Dictionary with metadata (title, duration, formats, etc.)
@@ -233,6 +258,11 @@ class AudioDownloader:
         Raises:
             AudioDownloadError: If info extraction fails
         """
+        # Check cache first
+        if use_cache and url in _info_cache:
+            logger.debug(f"Using cached info for {url}")
+            return _info_cache[url]
+
         ydl_opts = {
             "quiet": True,
             "no_warnings": True,
@@ -242,6 +272,11 @@ class AudioDownloader:
         try:
             loop = asyncio.get_event_loop()
             info = await loop.run_in_executor(None, self._get_info_sync, url, ydl_opts)
+
+            # Cache the result
+            if use_cache:
+                _info_cache[url] = info
+
             return info
 
         except (DownloadError, ExtractorError) as e:

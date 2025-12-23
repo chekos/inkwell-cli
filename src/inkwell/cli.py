@@ -872,13 +872,14 @@ def fetch_command(
                     podcast_name = ep.podcast_name or url_or_feed
                 else:
                     # Direct URL mode: extract metadata from URL
-                    console.print("[dim]Extracting episode metadata...[/dim]")
-                    url_metadata = await extract_url_metadata(url)
+                    with console.status("[dim]Extracting episode metadata...[/dim]"):
+                        url_metadata = await extract_url_metadata(url)
                     episode_title = get_episode_title_from_metadata(url_metadata, url)
                     # Use --podcast override or default to _inbox
                     podcast_name = podcast or INBOX_PODCAST_NAME
                     console.print(
-                        f"[green]✓[/green] {episode_title} → [cyan]{podcast_name}/[/cyan]"
+                        f"[dim]Episode:[/dim] {episode_title}\n"
+                        f"[dim]Destination:[/dim] [cyan]{podcast_name}/[/cyan]"
                     )
 
                 # Compute effective output directory

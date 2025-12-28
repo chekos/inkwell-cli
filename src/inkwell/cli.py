@@ -19,6 +19,7 @@ from inkwell.feeds.models import Episode
 from inkwell.feeds.parser import RSSParser
 from inkwell.pipeline import PipelineOptions, PipelineOrchestrator
 from inkwell.transcription import CostEstimate, TranscriptionManager
+from inkwell.ui import get_theme, set_theme
 from inkwell.utils.datetime import now_utc
 from inkwell.utils.display import truncate_url
 from inkwell.utils.errors import (
@@ -43,10 +44,24 @@ def main(
     ctx: typer.Context,
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose (DEBUG) logging"),
     log_file: Path | None = typer.Option(None, "--log-file", help="Write logs to file"),
+    theme: str | None = typer.Option(None, "--theme", help="Color theme: auto, light, dark"),
 ) -> None:
     """Inkwell - Transform podcasts into structured markdown notes."""
     # Initialize logging before any command runs
     setup_logging(verbose=verbose, log_file=log_file)
+
+    # Initialize theme (CLI flag overrides config)
+    if theme:
+        set_theme(theme)
+    else:
+        # Load from config
+        try:
+            manager = ConfigManager()
+            config = manager.load_config()
+            set_theme(config.theme)
+        except Exception:
+            # Fallback to auto-detection if config fails
+            set_theme("auto")
 
 
 @app.command("version")
@@ -54,7 +69,8 @@ def show_version() -> None:
     """Show version information."""
     from inkwell import __version__
 
-    console.print(f"[bold cyan]Inkwell CLI[/bold cyan] v{__version__}")
+    t = get_theme()
+    console.print(f"[bold {t.primary}]Inkwell CLI[/bold {t.primary}] v{__version__}")
 
 
 @app.command("add")
@@ -135,20 +151,23 @@ def list_feeds() -> None:
     Displays a table showing feed names, URLs, authentication status, and categories.
     """
     try:
+        t = get_theme()
         manager = ConfigManager()
         feeds = manager.list_feeds()
 
         if not feeds:
-            console.print("[yellow]No feeds configured yet.[/yellow]")
-            console.print("\nAdd a feed: [cyan]inkwell add <url> --name <name>[/cyan]")
+            console.print(f"[{t.warning}]No feeds configured yet.[/{t.warning}]")
+            console.print(
+                f"\nAdd a feed: [{t.primary}]inkwell add <url> --name <name>[/{t.primary}]"
+            )
             return
 
-        # Create table
+        # Create table with themed colors
         table = Table(title="[bold]Configured Podcast Feeds[/bold]")
-        table.add_column("Name", style="cyan", no_wrap=True)
-        table.add_column("URL", style="blue")
-        table.add_column("Auth", justify="center", style="yellow")
-        table.add_column("Category", style="green")
+        table.add_column("Name", style=t.data_name, no_wrap=True)
+        table.add_column("URL", style=t.data_url)
+        table.add_column("Auth", justify="center", style=t.warning)
+        table.add_column("Category", style=t.data_date)
 
         # Add rows
         for name, feed in feeds.items():
@@ -159,10 +178,10 @@ def list_feeds() -> None:
             table.add_row(name, url_display, auth_status, category_display)
 
         console.print(table)
-        console.print(f"\n[dim]Total: {len(feeds)} feed(s)[/dim]")
+        console.print(f"\n[{t.muted}]Total: {len(feeds)} feed(s)[/{t.muted}]")
 
     except InkwellError as e:
-        console.print(f"[red]✗[/red] Error: {e}")
+        console.print(f"[{t.error}]✗[/{t.error}] Error: {e}")
         sys.exit(1)
 
 
@@ -225,14 +244,17 @@ def episodes_command(
 
     async def run_episodes() -> None:
         try:
+            t = get_theme()
             manager = ConfigManager()
 
             # Get feed config
             try:
                 feed_config = manager.get_feed(name)
             except NotFoundError:
-                console.print(f"[red]✗[/red] Feed '{name}' not found.")
-                console.print("  Use [cyan]inkwell list[/cyan] to see configured feeds.")
+                console.print(f"[{t.error}]✗[/{t.error}] Feed '{name}' not found.")
+                console.print(
+                    f"  Use [{t.primary}]inkwell list[/{t.primary}] to see configured feeds."
+                )
                 sys.exit(1)
 
             # Fetch and parse the RSS feed
@@ -247,12 +269,12 @@ def episodes_command(
                 progress.add_task("Parsing RSS feed...", total=None)
                 feed = await parser.fetch_feed(str(feed_config.url), feed_config.auth)
 
-            # Display episodes in a table
+            # Display episodes in a table with themed colors
             table = Table(title=f"Episodes from {name}", show_lines=True)
-            table.add_column("#", style="dim", width=4)
-            table.add_column("Title", style="cyan", max_width=60)
-            table.add_column("Date", style="green", width=12)
-            table.add_column("Duration", style="yellow", width=10)
+            table.add_column("#", style=t.muted, width=4)
+            table.add_column("Title", style=t.data_name, max_width=60)
+            table.add_column("Date", style=t.data_date, width=12)
+            table.add_column("Duration", style=t.data_value, width=10)
 
             for i, entry in enumerate(feed.entries[:limit], 1):
                 try:
@@ -269,13 +291,13 @@ def episodes_command(
             console.print(table)
             shown = min(limit, len(feed.entries))
             total = len(feed.entries)
-            console.print(f"\n[dim]Showing {shown} of {total} episodes[/dim]")
+            console.print(f"\n[{t.muted}]Showing {shown} of {total} episodes[/{t.muted}]")
             console.print("\n[bold]To fetch an episode:[/bold]")
             console.print(f"  inkwell fetch {name} --latest")
             console.print(f'  inkwell fetch {name} --episode "keyword"')
 
         except InkwellError as e:
-            console.print(f"[red]✗[/red] Error: {e}")
+            console.print(f"[{t.error}]✗[/{t.error}] Error: {e}")
             sys.exit(1)
 
     asyncio.run(run_episodes())
@@ -305,19 +327,21 @@ def config_command(
         manager = ConfigManager()
 
         if action == "show":
+            t = get_theme()
             config = manager.load_config()
 
             console.print("\n[bold]Inkwell Configuration[/bold]\n")
 
             table = Table(show_header=False, box=None)
-            table.add_column("Key", style="cyan")
-            table.add_column("Value", style="white")
+            table.add_column("Key", style=t.primary)
+            table.add_column("Value", style=t.data_value)
 
             table.add_row("Config file", str(manager.config_file))
             table.add_row("Feeds file", str(manager.feeds_file))
             table.add_row("", "")
             table.add_row("Output directory", str(config.default_output_dir))
             table.add_row("Log level", config.log_level)
+            table.add_row("Theme", config.theme)
             table.add_row("YouTube check", "✓" if config.transcription.youtube_check else "✗")
             table.add_row("Transcription model", config.transcription.model_name)
             table.add_row("Interview model", config.interview.model)
@@ -1224,6 +1248,82 @@ def costs_command(
         import traceback
 
         console.print(f"[dim]{traceback.format_exc()}[/dim]")
+        sys.exit(1)
+
+
+@app.command("theme")
+def theme_command(
+    mode: str | None = typer.Argument(
+        None, help="Theme mode to set: auto, light, or dark"
+    ),
+) -> None:
+    """View or change the terminal color theme.
+
+    The theme affects colors used throughout the CLI for better readability
+    on different terminal backgrounds.
+
+    Modes:
+        auto:  Detect terminal background (default)
+        light: Optimized for light backgrounds
+        dark:  Optimized for dark backgrounds
+
+    Examples:
+        inkwell theme        # Show current theme
+        inkwell theme dark   # Set dark theme
+        inkwell theme auto   # Use auto-detection
+    """
+    try:
+        t = get_theme()
+        manager = ConfigManager()
+
+        if mode is None:
+            # Show current theme
+            config = manager.load_config()
+            console.print(f"\n[bold]Current Theme:[/bold] {config.theme}")
+            console.print(f"[{t.muted}]Active: {t.mode} mode[/{t.muted}]")
+
+            # Show color preview
+            console.print("\n[bold]Color Preview:[/bold]")
+            console.print(f"  [{t.success}]✓ Success[/{t.success}]")
+            console.print(f"  [{t.error}]✗ Error[/{t.error}]")
+            console.print(f"  [{t.warning}]⚠ Warning[/{t.warning}]")
+            console.print(f"  [{t.info}]→ Info[/{t.info}]")
+            console.print(f"  [{t.primary}]Primary text[/{t.primary}]")
+            console.print(f"  [{t.secondary}]Secondary text[/{t.secondary}]")
+            console.print(f"  [{t.muted}]Muted text[/{t.muted}]")
+
+            console.print(
+                f"\n[{t.muted}]Set theme: inkwell theme <auto|light|dark>[/{t.muted}]"
+            )
+            console.print(
+                f"[{t.muted}]Override for session: inkwell --theme dark <command>[/{t.muted}]"
+            )
+            return
+
+        # Validate mode
+        valid_modes = ["auto", "light", "dark"]
+        if mode.lower() not in valid_modes:
+            console.print(f"[{t.error}]✗[/{t.error}] Invalid theme: {mode}")
+            console.print(f"Valid themes: {', '.join(valid_modes)}")
+            sys.exit(1)
+
+        # Update config
+        config = manager.load_config()
+        config.theme = mode.lower()  # type: ignore
+        manager.save_config(config)
+
+        # Apply immediately
+        new_theme = set_theme(mode.lower())
+
+        console.print(
+            f"[{new_theme.success}]✓[/{new_theme.success}] Theme set to "
+            f"[bold]{mode.lower()}[/bold]"
+        )
+        if mode.lower() == "auto":
+            console.print(f"[{new_theme.muted}]Detected: {new_theme.mode} mode[/{new_theme.muted}]")
+
+    except InkwellError as e:
+        console.print(f"[{t.error}]✗[/{t.error}] Error: {e}")
         sys.exit(1)
 
 

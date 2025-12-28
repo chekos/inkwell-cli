@@ -20,6 +20,8 @@ from rich.progress import (
     TextColumn,
 )
 
+from inkwell.ui import get_theme
+
 
 class StageStatus(Enum):
     """Status of a pipeline stage."""
@@ -145,10 +147,11 @@ class PipelineProgress:
         if not stage or stage.task_id is None:
             return
 
+        t = get_theme()
         stage.status = StageStatus.IN_PROGRESS
         self._progress.update(
             stage.task_id,
-            description=f"[cyan]{stage.name}[/cyan]",
+            description=f"[{t.progress_active}]{stage.name}[/{t.progress_active}]",
             substep="",
         )
 
@@ -183,11 +186,13 @@ class PipelineProgress:
         if not stage or stage.task_id is None:
             return
 
+        t = get_theme()
         stage.status = StageStatus.COMPLETE
-        completion_text = f"[green]✓[/green] {summary}" if summary else "[green]✓[/green]"
+        check = f"[{t.progress_complete}]✓[/{t.progress_complete}]"
+        completion_text = f"{check} {summary}" if summary else check
         self._progress.update(
             stage.task_id,
-            description=f"[green]{stage.name}[/green]",
+            description=f"[{t.progress_complete}]{stage.name}[/{t.progress_complete}]",
             substep=completion_text,
         )
         # Stop the spinner by setting total=1 and completed=1
@@ -207,11 +212,13 @@ class PipelineProgress:
         if not stage or stage.task_id is None:
             return
 
+        t = get_theme()
         stage.status = StageStatus.FAILED
-        error_text = f"[red]✗[/red] {error}" if error else "[red]✗[/red]"
+        x_mark = f"[{t.progress_failed}]✗[/{t.progress_failed}]"
+        error_text = f"{x_mark} {error}" if error else x_mark
         self._progress.update(
             stage.task_id,
-            description=f"[red]{stage.name}[/red]",
+            description=f"[{t.progress_failed}]{stage.name}[/{t.progress_failed}]",
             substep=error_text,
         )
         self._progress.update(stage.task_id, total=1, completed=1)

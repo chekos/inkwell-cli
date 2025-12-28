@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field, HttpUrl, field_validator, model_validator
 
 AuthType = Literal["none", "basic", "bearer"]
 LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR"]
+ThemeMode = Literal["auto", "light", "dark"]
 
 
 class AuthConfig(BaseModel):
@@ -151,6 +152,7 @@ class GlobalConfig(BaseModel):
     version: str = "1"
     default_output_dir: Path = Field(default_factory=lambda: Path("~/podcasts"))
     log_level: LogLevel = "INFO"
+    theme: ThemeMode = "auto"  # Terminal color theme: auto, light, dark
     default_templates: list[str] = Field(
         default_factory=lambda: ["summary", "quotes", "key-concepts"]
     )

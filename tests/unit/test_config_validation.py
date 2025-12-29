@@ -19,7 +19,7 @@ class TestConfigValidationErrors:
             """
 version: "1"
 log_level: INVALID_LEVEL
-default_output_dir: ~/podcasts
+default_output_dir: ~/inkwell-notes
 """
         )
 

@@ -8,10 +8,11 @@ Complete reference for all Inkwell commands.
 
 These options work with any command:
 
-| Option | Description |
-|--------|-------------|
-| `--help` | Show help message |
-| `--version` | Show version number |
+| Option | Short | Description |
+|--------|-------|-------------|
+| `--verbose` | `-v` | Enable verbose (DEBUG) logging |
+| `--log-file` | | Write logs to file |
+| `--help` | | Show help message |
 
 ---
 
@@ -127,19 +128,20 @@ inkwell fetch <SOURCE> [OPTIONS]
 | Option | Short | Type | Default | Description |
 |--------|-------|------|---------|-------------|
 | `--output` | `-o` | path | `~/inkwell-notes` | Output directory |
-| `--latest` | | flag | false | Process only latest episode |
-| `--count` | | int | 1 | Number of episodes to process |
+| `--latest` | `-l` | flag | false | Process only latest episode |
+| `--episode` | `-e` | string | | Position (3), range (1-5), list (1,3,7), or title keyword |
 | `--templates` | `-t` | string | Auto | Comma-separated template list |
 | `--category` | `-c` | string | Auto | Episode category |
-| `--provider` | `-p` | string | Auto | LLM provider (gemini, claude) |
+| `--provider` | `-p` | string | Auto | LLM provider (gemini, claude, auto) |
 | `--skip-cache` | | flag | false | Skip extraction cache |
 | `--dry-run` | | flag | false | Show cost estimate only |
 | `--overwrite` | | flag | false | Overwrite existing directory |
 | `--interview` | | flag | false | Enable interview mode |
-| `--interview-template` | | string | Config | Interview template |
-| `--interview-format` | | string | Config | Output format |
+| `--interview-template` | | string | Config | Interview template (reflective, analytical, creative) |
+| `--interview-format` | | string | Config | Output format (structured, narrative, qa) |
 | `--max-questions` | | int | Config | Number of questions |
 | `--no-resume` | | flag | false | Don't resume previous session |
+| `--resume-session` | | string | | Resume specific interview session by ID |
 
 ### Examples
 
@@ -150,8 +152,17 @@ inkwell fetch https://youtube.com/watch?v=xyz
 # Latest from feed
 inkwell fetch my-podcast --latest
 
-# Multiple episodes
-inkwell fetch my-podcast --count 5
+# Specific episode by position
+inkwell fetch my-podcast --episode 3
+
+# Range of episodes
+inkwell fetch my-podcast --episode 1-5
+
+# Multiple specific episodes
+inkwell fetch my-podcast --episode 1,3,7
+
+# Search by title keyword
+inkwell fetch my-podcast --episode "AI security"
 
 # Custom templates
 inkwell fetch URL --templates summary,quotes,tools-mentioned

@@ -122,7 +122,7 @@ uv run inkwell list
 
 **Output**:
 
-![inkwell list output](inkwell-list.svg)
+![inkwell list output](../assets/inkwell-list.svg)
 
 ## Step 4: Process Your First Episode (3 minutes)
 

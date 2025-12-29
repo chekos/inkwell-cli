@@ -30,59 +30,61 @@ theme:
     - navigation.tracking
     - navigation.tabs
     - navigation.sections
-    - navigation.expand
     - navigation.top
     - search.suggest
     - search.highlight
     - content.code.copy
+  icon:
+    repo: fontawesome/brands/github
 
 nav:
-  - Home: README.md
+  - Home: index.md
+
   - Getting Started:
-      - Tutorial: tutorial.md
-      - End-to-End Testing: end-to-end-testing.md
-  - Product:
-      - Product Requirements: PRD_v0.md
-      - User Guide: USER_GUIDE.md
-      - Phase 1 Summary: PHASE_1_SUMMARY.md
-      - Phase 1 Complete: PHASE_1_COMPLETE.md
-  - Architecture:
-      - Overview: architecture/phase-1-overview.md
-  - Architecture Decisions:
-      - Overview: adr/README.md
-      - ADR-001 Developer Knowledge System: adr/001-developer-knowledge-system.md
-      - ADR-002 Phase 1 Architecture: adr/002-phase-1-architecture.md
-      - ADR-003 Build System Selection: adr/003-build-system-selection.md
-      - ADR-004 Credential Encryption: adr/004-credential-encryption.md
-      - ADR-005 RSS Parser Library: adr/005-rss-parser-library.md
-      - ADR-006 Terminal Output Library: adr/006-terminal-output-library.md
-      - ADR-007 Enforce Pre-commit Hooks: adr/007-enforce-pre-commit-hooks.md
-      - ADR-008 Use UV for Python Tooling: adr/008-use-uv-for-python-tooling.md
-  - Engineering Logs:
-      - Overview: devlog/README.md
-      - Phase 1 Implementation Plan: devlog/2025-11-06-phase-1-implementation-plan.md
-      - Days 1-3 Implementation: devlog/2025-11-06-days-1-3-implementation.md
-      - Day 4 RSS Parser: devlog/2025-11-06-day-4-rss-parser.md
-      - Day 5 CLI Commands: devlog/2025-11-06-day-5-cli-commands.md
-      - Days 6-7 Final Polish: devlog/2025-11-06-days-6-7-final-polish.md
-      - PR Review Learnings: devlog/2025-11-06-pr-review-learnings.md
-  - Research:
-      - Overview: research/README.md
-      - MkDocs Material Setup: research/mkdocs-material-setup.md
-  - Experiments:
-      - Overview: experiments/README.md
-  - Lessons Learned:
-      - Overview: lessons/README.md
-      - Phase 1 Days 1-3: lessons/2025-11-06-phase-1-days-1-3.md
-      - Phase 1 Days 4-5: lessons/2025-11-06-phase-1-days-4-5.md
-      - Phase 1 Days 6-7: lessons/2025-11-06-phase-1-days-6-7.md
-      - Pre-commit Hooks Enforcement: lessons/2025-11-06-pre-commit-hooks-enforcement.md
-      - MkDocs Material ADR Theme Config: lessons/2025-11-07-mkdocs-material-adr-theme-config.md
+    - Overview: getting-started/index.md
+    - Installation: getting-started/installation.md
+    - Quick Start: getting-started/quickstart.md
+    - Your First Episode: getting-started/first-episode.md
+
+  - User Guide:
+    - Overview: user-guide/index.md
+    - Managing Feeds: user-guide/feeds.md
+    - Processing Episodes: user-guide/processing.md
+    - Content Extraction: user-guide/extraction.md
+    - Interview Mode: user-guide/interview.md
+    - Obsidian Integration: user-guide/obsidian.md
+    - Configuration: user-guide/configuration.md
+
+  - Reference:
+    - Overview: reference/index.md
+    - CLI Commands: reference/cli-commands.md
+    - Templates: reference/templates.md
+    - Configuration Options: reference/config-options.md
+    - Troubleshooting: reference/troubleshooting.md
+
+  - Building in Public:
+    - What's This?: building-in-public/index.md
+    - Architecture Decisions:
+      - Overview: building-in-public/adr/index.md
+    - Engineering Logs:
+      - Overview: building-in-public/devlog/index.md
+      - Phase 1 Plan: building-in-public/devlog/2025-11-06-phase-1-implementation-plan.md
+    - Research:
+      - Overview: building-in-public/research/index.md
+    - Experiments:
+      - Overview: building-in-public/experiments/index.md
+    - Lessons Learned:
+      - Overview: building-in-public/lessons/index.md
 
 plugins:
   - search
   - mkdocs-material-adr/adr:
-      graph_file: adr/README.md
+      graph_file: building-in-public/adr/index.md
+
+# Exclude internal and legacy directories from build
+exclude_docs: |
+  _internal/
+  legacy/
 
 markdown_extensions:
   - abbr

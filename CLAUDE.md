@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Vision:** Transform passive podcast listening into active knowledge building by capturing both *what was said* and *what you thought about it*.
 
-See [docs/PRD_v0.md](./docs/PRD_v0.md) for complete product requirements.
+See [docs/_internal/prd.md](./docs/_internal/prd.md) for complete product requirements.
 
 ## Tech Stack
 
@@ -59,7 +59,7 @@ uv run ruff check .
 - `uv run <command>` - Run commands in project venv
 - `uv sync --dev` - Install all dependencies
 
-See [ADR-008](./docs/adr/008-use-uv-for-python-tooling.md) for rationale.
+See [ADR-008](./docs/building-in-public/adr/008-use-uv-for-python-tooling.md) for rationale.
 
 ## Architecture
 
@@ -93,57 +93,41 @@ podcast-name-YYYY-MM-DD-episode-title/
 └── my-notes.md            # if --interview used
 ```
 
-## Documentation: Developer Knowledge System (DKS)
+## Documentation
 
-This project uses a structured documentation system in `docs/`. You MUST use it.
+### User Documentation
+User-facing documentation is built with MkDocs and deployed to Read the Docs. The main sections are:
+- `docs/getting-started/` - Installation, quickstart, tutorials
+- `docs/user-guide/` - Feature documentation
+- `docs/reference/` - CLI commands, templates, configuration
 
-### When Working on Tasks:
+### Developer Knowledge System (DKS)
+This project uses a structured documentation system for internal engineering knowledge, located in `docs/building-in-public/`.
 
-**During Development:**
-- Create a devlog entry in `docs/devlog/YYYY-MM-DD-description.md` when starting new features
-- Document implementation decisions, surprises, and next steps as you go
-- Link to related ADRs and issues
+**When Working on Tasks:**
 
-**When Making Significant Decisions:**
-- Create an ADR in `docs/adr/NNN-decision-title.md` (use next sequential number)
-- Keep it brief - document the decision and rationale, not implementation details
-- Reference any research docs that informed the decision
+- Create a devlog entry in `docs/building-in-public/devlog/YYYY-MM-DD-description.md` when starting new features
+- Create an ADR in `docs/building-in-public/adr/NNN-decision-title.md` for significant decisions
+- Create research docs in `docs/building-in-public/research/topic-name.md` before major decisions
+- Add lessons learned to `docs/building-in-public/lessons/YYYY-MM-DD-topic.md`
 
-**When Researching Technologies:**
-- Create research doc in `docs/research/topic-name.md` before making decisions
-- Include findings, recommendations, and references to external sources
-- Link research docs in subsequent ADRs
-
-**After Completing Work:**
-- Add lessons learned to `docs/lessons/YYYY-MM-DD-topic.md`
-- Update any related ADRs if decisions changed during implementation
-
-### Templates
-
-All templates are in their respective directories:
-- `docs/adr/000-template.md`
-- `docs/devlog/YYYY-MM-DD-template.md`
-- `docs/experiments/YYYY-MM-DD-template.md`
-- `docs/research/template.md`
-- `docs/lessons/YYYY-MM-DD-template.md`
+**Templates** are in their respective directories under `docs/building-in-public/`.
 
 **IMPORTANT:** Follow templates exactly. Keep ADRs brief to avoid hallucination.
 
-### DKS Overview
-
-See [docs/README.md](./docs/README.md) for full DKS documentation.
+See [docs/building-in-public/](./docs/building-in-public/) for full DKS documentation.
 
 ## Development Workflow
 
 When implementing features:
 1. **Start:** Create devlog entry for the feature
-2. **Research:** Document any technology research in `docs/research/`
+2. **Research:** Document any technology research in `docs/building-in-public/research/`
 3. **Decide:** Create ADR for significant architectural decisions
-4. **Experiment:** Record experiments/benchmarks in `docs/experiments/`
-5. **Reflect:** Add lessons learned to `docs/lessons/` when complete
+4. **Experiment:** Record experiments/benchmarks in `docs/building-in-public/experiments/`
+5. **Reflect:** Add lessons learned to `docs/building-in-public/lessons/` when complete
 6. **Update:** Keep this CLAUDE.md updated as the architecture evolves
 
-**Before committing:** Verify pre-commit hooks are installed once (`pre-commit install`). See [ADR-007](./docs/adr/007-enforce-pre-commit-hooks.md).
+**Before committing:** Verify pre-commit hooks are installed once (`pre-commit install`). See [ADR-007](./docs/building-in-public/adr/007-enforce-pre-commit-hooks.md).
 
 ## Releasing
 

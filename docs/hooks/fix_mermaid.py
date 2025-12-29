@@ -1,16 +1,16 @@
-"""MkDocs hook to fix duplicate classDef lines in mermaid graphs.
+"""MkDocs hook to fix mermaid graphs from mkdocs-material-adr plugin.
 
-The mkdocs-material-adr plugin has a bug where it generates duplicate
-`classDef mermaid-common` lines inside a loop. This hook removes duplicates.
+Fixes two issues:
+1. Removes duplicate `classDef mermaid-common` lines (plugin bug)
+2. Removes <code> wrapper - Material expects content directly in <pre class="mermaid">
 """
 
 import re
 
 
 def on_page_content(html: str, page, config, files) -> str:
-    """Remove duplicate classDef lines from mermaid graphs."""
+    """Fix mermaid graphs for proper rendering."""
 
-    # Find mermaid code blocks
     def fix_mermaid(match):
         content = match.group(1)
 
@@ -23,9 +23,11 @@ def on_page_content(html: str, page, config, files) -> str:
                 seen.add(line)
                 unique_lines.append(line)
 
-        return f'<pre class="mermaid"><code>{chr(10).join(unique_lines)}</code></pre>'
+        # Return WITHOUT <code> wrapper - Material for MkDocs expects
+        # content directly inside <pre class="mermaid">
+        return f'<pre class="mermaid">\n{chr(10).join(unique_lines)}\n</pre>'
 
-    # Fix mermaid blocks
+    # Fix mermaid blocks - remove <code> wrapper and deduplicate
     html = re.sub(
         r'<pre class="mermaid"><code>(.*?)</code></pre>',
         fix_mermaid,

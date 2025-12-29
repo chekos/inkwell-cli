@@ -993,7 +993,7 @@ Based on the research, here are specific recommendations for fixing Inkwell's co
 
 ### Related Inkwell Docs
 - [ADR-008: Use uv for Python Tooling](../adr/008-use-uv-for-python-tooling.md)
-- [PRD v0](../PRD_v0.md)
+- [PRD v0](../../_internal/prd.md)
 
 ---
 

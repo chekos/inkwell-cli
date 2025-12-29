@@ -2,7 +2,7 @@
 
 **Date**: 2025-11-13
 **Context**: Final polish and release preparation for v1.0.0
-**Related**: [Devlog](../devlog/2025-11-13-phase-5-unit-10-final-polish.md), [PHASE_5_COMPLETE](../PHASE_5_COMPLETE.md)
+**Related**: [Devlog](../devlog/2025-11-13-phase-5-unit-10-final-polish.md), [PHASE_5_COMPLETE](../../_internal/phases/PHASE_5_COMPLETE.md)
 
 ## README as Product Homepage
 
@@ -553,6 +553,6 @@ Release Prep:
 - [Devlog](../devlog/2025-11-13-phase-5-unit-10-final-polish.md)
 - [README.md](../../README.md)
 - [CHANGELOG.md](../../CHANGELOG.md)
-- [PHASE_5_COMPLETE.md](../PHASE_5_COMPLETE.md)
+- [PHASE_5_COMPLETE.md](../../_internal/phases/PHASE_5_COMPLETE.md)
 - [Keep a Changelog](https://keepachangelog.com/)
 - [Semantic Versioning](https://semver.org/)

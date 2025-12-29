@@ -294,7 +294,7 @@ Key lessons from Unit 10:
 
 - **Previous**: [Unit 9 - User Documentation](./2025-11-13-phase-5-unit-9-user-documentation.md)
 - **Lessons Learned**: [Unit 10 Lessons](../lessons/2025-11-13-phase-5-unit-10-final-polish.md)
-- **Phase Summary**: [PHASE_5_COMPLETE.md](../PHASE_5_COMPLETE.md)
+- **Phase Summary**: [PHASE_5_COMPLETE.md](../../_internal/phases/PHASE_5_COMPLETE.md)
 - **CHANGELOG**: [CHANGELOG.md](../../CHANGELOG.md)
 - **README**: [README.md](../../README.md)
 

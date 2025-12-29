@@ -79,8 +79,7 @@ nav:
 
 plugins:
   - search
-  - mkdocs-material-adr/adr:
-      graph_file: building-in-public/adr/index.md
+  - mkdocs-material-adr/adr
 
 # Exclude internal and legacy directories from build
 exclude_docs: |

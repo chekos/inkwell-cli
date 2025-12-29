@@ -1,5 +1,5 @@
 ---
-status: complete
+status: resolved
 priority: p3
 issue_id: "068"
 tags: [code-review, type-safety, architecture, pr-26]

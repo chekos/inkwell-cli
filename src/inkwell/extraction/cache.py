@@ -9,6 +9,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+import aiofiles
 import platformdirs
 
 from inkwell.utils.cache import FileCache
@@ -18,18 +19,19 @@ logger = logging.getLogger(__name__)
 __all__ = ["ExtractionCache"]
 
 
-class ExtractionCache(FileCache[str]):
+class ExtractionCache:
     """File-based cache for extraction results.
 
     Uses template version in cache key for automatic invalidation
     when templates change. Cache files stored in XDG cache directory.
 
-    Inherits from FileCache[str] for all core cache operations.
+    Uses composition with FileCache[str] for core cache operations,
+    providing a clean domain-specific API.
 
     Example:
         >>> cache = ExtractionCache()
-        >>> await cache.set(template, transcript, "extracted content")
-        >>> result = await cache.get(template, transcript)
+        >>> await cache.set("summary", "v1.0", transcript, "extracted content")
+        >>> result = await cache.get("summary", "v1.0", transcript)
         'extracted content'
     """
 
@@ -45,13 +47,16 @@ class ExtractionCache(FileCache[str]):
         if cache_dir is None:
             cache_dir = Path(platformdirs.user_cache_dir("inkwell")) / "extractions"
 
-        super().__init__(
+        self._cache = FileCache[str](
             cache_dir=cache_dir,
             ttl_days=ttl_days,
             serializer=self._serialize_result,
             deserializer=self._deserialize_result,
             key_generator=self._make_key,
         )
+
+        # Expose cache_dir for compatibility
+        self.cache_dir = cache_dir
 
         # Store ttl_seconds for compatibility with existing code
         self.ttl_seconds = ttl_days * 24 * 60 * 60
@@ -99,7 +104,6 @@ class ExtractionCache(FileCache[str]):
         """
         return str(data["result"])
 
-    # Convenience methods that match the original API
     async def get(self, template_name: str, template_version: str, transcript: str) -> str | None:
         """Get cached extraction result.
 
@@ -124,8 +128,6 @@ class ExtractionCache(FileCache[str]):
         # Additional validation for partial writes (ExtractionCache-specific)
         if cache_file.exists():
             try:
-                import aiofiles
-
                 async with aiofiles.open(cache_file) as f:
                     content = await f.read()
 
@@ -135,17 +137,16 @@ class ExtractionCache(FileCache[str]):
                     logger.warning(
                         f"Detected partial write in cache file {cache_file.name}, removing"
                     )
-                    await self._delete_file(cache_file)
+                    await self._cache._delete_file(cache_file)
                     return None
 
             except OSError:
                 # File system error
                 return None
 
-        return await super().get(template_name, template_version, transcript)
+        return await self._cache.get(template_name, template_version, transcript)
 
-    # LSP violation: set() signature differs from FileCache.set() - tracked in todo #068
-    async def set(  # type: ignore[override]
+    async def set(
         self, template_name: str, template_version: str, transcript: str, result: str
     ) -> None:
         """Store extraction result in cache.
@@ -157,7 +158,7 @@ class ExtractionCache(FileCache[str]):
             result: Extraction result to cache
         """
         # Override serializer temporarily to include template metadata
-        original_serializer = self.serializer
+        original_serializer = self._cache.serializer
 
         def extended_serializer(result: str) -> dict[str, Any]:
             base_data = original_serializer(result)
@@ -169,13 +170,42 @@ class ExtractionCache(FileCache[str]):
             )
             return base_data
 
-        self.serializer = extended_serializer
+        self._cache.serializer = extended_serializer
 
         try:
-            await super().set(template_name, template_version, transcript, value=result)
+            await self._cache.set(template_name, template_version, transcript, value=result)
         finally:
             # Restore original serializer
-            self.serializer = original_serializer
+            self._cache.serializer = original_serializer
+
+    async def delete(self, template_name: str, template_version: str, transcript: str) -> bool:
+        """Delete cached extraction result.
+
+        Args:
+            template_name: Template name
+            template_version: Template version
+            transcript: Transcript text
+
+        Returns:
+            True if deleted, False if not found
+        """
+        return await self._cache.delete(template_name, template_version, transcript)
+
+    async def clear(self) -> int:
+        """Clear all cached values.
+
+        Returns:
+            Number of cache entries deleted
+        """
+        return await self._cache.clear()
+
+    async def clear_expired(self) -> int:
+        """Clear expired cache entries.
+
+        Returns:
+            Number of expired entries deleted
+        """
+        return await self._cache.clear_expired()
 
     async def get_stats(self) -> dict[str, Any]:
         """Get cache statistics.
@@ -207,8 +237,6 @@ class ExtractionCache(FileCache[str]):
         # Find oldest entry in parallel
         import json
 
-        import aiofiles
-
         async def get_timestamp(cache_file: Path) -> float:
             """Get timestamp from cache file, returns current time if error."""
             try:
@@ -229,3 +257,11 @@ class ExtractionCache(FileCache[str]):
             "total_size_mb": round(total_size_mb, 2),
             "oldest_entry_age_days": round(oldest_age_days, 1),
         }
+
+    async def stats(self) -> dict[str, Any]:
+        """Get cache statistics (FileCache-compatible method).
+
+        Returns:
+            Dictionary with cache stats
+        """
+        return await self._cache.stats()

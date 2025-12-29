@@ -77,9 +77,13 @@ nav:
     - Lessons Learned:
       - Overview: building-in-public/lessons/index.md
 
+hooks:
+  - docs/hooks/fix_mermaid.py
+
 plugins:
   - search
-  - mkdocs-material-adr/adr
+  - mkdocs-material-adr/adr:
+      graph_file: building-in-public/adr/index.md
 
 # Exclude internal and legacy directories from build
 exclude_docs: |

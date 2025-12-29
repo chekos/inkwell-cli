@@ -73,6 +73,6 @@ Don't write ADRs for:
 - What trade-offs we accepted
 - Links to relevant resources
 
-## ADR Index
+## ADR Relationships
 
-Browse the ADRs in the navigation menu to see all architectural decisions.
+[GRAPH]

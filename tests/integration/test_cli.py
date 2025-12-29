@@ -75,11 +75,8 @@ class TestCLIList:
 
     def test_list_empty_feeds(self, tmp_path: Path, monkeypatch) -> None:
         """Test listing feeds when none are configured."""
-        # Mock all path functions to use tmp_path for complete isolation
+        # Mock get_config_dir - other path functions derive from it
         monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
-        monkeypatch.setattr("inkwell.utils.paths.get_config_file", lambda: tmp_path / "config.yaml")
-        monkeypatch.setattr("inkwell.utils.paths.get_feeds_file", lambda: tmp_path / "feeds.yaml")
-        monkeypatch.setattr("inkwell.utils.paths.get_key_file", lambda: tmp_path / ".keyfile")
 
         result = runner.invoke(app, ["list"])
 

@@ -11,6 +11,7 @@ permissions:
 jobs:
   ci:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -18,6 +19,7 @@ jobs:
         uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
+          python-version: "3.10"
 
       - name: Install dependencies
         run: uv sync --dev --frozen

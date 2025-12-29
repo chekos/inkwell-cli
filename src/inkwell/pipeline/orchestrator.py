@@ -179,7 +179,8 @@ class PipelineOrchestrator:
 
         # Transcript is guaranteed to exist after successful _transcribe()
         transcript = transcript_result.transcript
-        assert transcript is not None
+        if transcript is None:
+            raise InkwellError("Transcription succeeded but returned no transcript")
 
         if progress_callback:
             progress_callback(
@@ -431,7 +432,8 @@ class PipelineOrchestrator:
         if not result.success:
             raise InkwellError(f"Transcription failed: {result.error}")
 
-        assert result.transcript is not None
+        if result.transcript is None:
+            raise InkwellError("Transcription succeeded but returned no transcript")
         return result
 
     def _select_templates(
@@ -459,9 +461,10 @@ class PipelineOrchestrator:
             custom_template_list = [t.strip() for t in options.templates]
 
         # Create episode object for template selection
+        # url is HttpUrl but Pydantic validates str at runtime
         episode = Episode(
             title=f"Episode from {episode_url}",
-            url=episode_url,  # type: ignore
+            url=episode_url,  # type: ignore[arg-type]
             published=now_utc(),
             description="",
             podcast_name="Unknown Podcast",

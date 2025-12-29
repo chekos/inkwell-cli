@@ -278,9 +278,10 @@ class RSSParser:
         # Extract GUID
         guid = entry.get("id") or entry.get("guid")
 
+        # url is HttpUrl but Pydantic validates str at runtime
         return Episode(
             title=title,
-            url=enclosure_url,  # type: ignore
+            url=enclosure_url,  # type: ignore[arg-type]
             published=published,
             description=description,
             duration_seconds=duration_seconds,

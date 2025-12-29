@@ -98,6 +98,7 @@ class TranscriptCache(FileCache[Transcript]):
         """
         return await super().get(episode_url)
 
+    # LSP violation: set() signature differs from FileCache.set() - tracked in todo #068
     async def set(  # type: ignore[override]
         self, episode_url: str, transcript: Transcript
     ) -> None:

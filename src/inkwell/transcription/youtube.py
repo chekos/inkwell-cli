@@ -180,6 +180,7 @@ class YouTubeTranscriber:
             transcript_data = transcript_obj.fetch()
 
             # Convert to our model
+            # youtube_transcript_api FetchedTranscript supports indexing but lacks proper type stubs
             segments = [
                 TranscriptSegment(
                     text=entry["text"],  # type: ignore[index]

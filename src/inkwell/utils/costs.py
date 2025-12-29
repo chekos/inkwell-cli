@@ -421,7 +421,7 @@ class CostTracker:
             output_tokens=output_tokens,
         )
 
-        # Create usage record
+        # Create usage record (provider/operation are str but APIUsage expects Literal types)
         usage = APIUsage(
             provider=provider,  # type: ignore[arg-type]
             model=model,

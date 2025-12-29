@@ -287,7 +287,7 @@ Guidelines:
                 output_tokens=output_tokens,
             )
 
-        # Response content is always TextBlock for non-tool calls
+        # Response content is always TextBlock for non-tool calls (Anthropic SDK union type)
         first_block = response.content[0]
         return first_block.text.strip()  # type: ignore[union-attr]
 

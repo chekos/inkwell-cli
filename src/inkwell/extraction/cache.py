@@ -144,6 +144,7 @@ class ExtractionCache(FileCache[str]):
 
         return await super().get(template_name, template_version, transcript)
 
+    # LSP violation: set() signature differs from FileCache.set() - tracked in todo #068
     async def set(  # type: ignore[override]
         self, template_name: str, template_version: str, transcript: str, result: str
     ) -> None:

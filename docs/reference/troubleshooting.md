@@ -12,25 +12,25 @@ Common issues and their solutions.
 
 **Solutions:**
 
-1. If installed with pip:
+1. If installed with uv:
    ```bash
-   # Check if installed
-   pip show inkwell-cli
+   # Check if uv tools are in PATH
+   uv tool list
 
    # Reinstall
-   pip install --upgrade inkwell-cli
+   uv tool install --force inkwell-cli
    ```
 
-2. If installed with pipx:
-   ```bash
-   pipx ensurepath
-   # Restart your terminal
-   ```
-
-3. If installed from source:
+2. If installed from source:
    ```bash
    cd inkwell-cli
-   pip install -e .
+   uv sync --dev
+   ```
+
+3. Ensure uv bin directory is in PATH:
+   ```bash
+   # Add to your shell profile (~/.bashrc or ~/.zshrc)
+   export PATH="$HOME/.local/bin:$PATH"
    ```
 
 ### "ffmpeg not found"

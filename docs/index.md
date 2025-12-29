@@ -9,8 +9,8 @@ Inkwell downloads podcast audio, transcribes it, extracts key information using 
 ## Quick Start
 
 ```bash
-# Install with pip
-pip install inkwell-cli
+# Install with uv (recommended)
+uv tool install inkwell-cli
 
 # Set your API key
 export GOOGLE_API_KEY="your-key-here"

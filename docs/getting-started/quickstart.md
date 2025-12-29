@@ -6,7 +6,7 @@ Process your first podcast episode in under 5 minutes.
 
 ## Prerequisites
 
-- Inkwell installed (`pip install inkwell-cli`)
+- Inkwell installed (`uv tool install inkwell-cli`)
 - ffmpeg installed
 - Google AI API key
 

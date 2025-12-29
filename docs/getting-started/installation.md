@@ -8,22 +8,26 @@ Complete installation instructions for Inkwell.
 
 - **Python 3.10+** - Check with `python --version`
 - **ffmpeg** - Required for audio processing
-- **pip or pipx** - Python package installer
+- **uv** - Modern Python package installer ([install uv](https://docs.astral.sh/uv/getting-started/installation/))
 
 ---
 
 ## Install Inkwell
 
-### Using pip (Recommended)
+### Using uv (Recommended)
+
+```bash
+# Install uv if you haven't already
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Install inkwell as a tool
+uv tool install inkwell-cli
+```
+
+### Using pip
 
 ```bash
 pip install inkwell-cli
-```
-
-### Using pipx (Isolated)
-
-```bash
-pipx install inkwell-cli
 ```
 
 ### From Source
@@ -33,7 +37,7 @@ pipx install inkwell-cli
 git clone https://github.com/chekos/inkwell-cli.git
 cd inkwell-cli
 
-# Install with uv (recommended for development)
+# Install with uv (recommended)
 uv sync --dev
 
 # Or with pip

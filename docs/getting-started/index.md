@@ -30,6 +30,7 @@ Before you begin, make sure you have:
 
 - **Python 3.10+** - Check with `python --version`
 - **ffmpeg** - Required for audio processing
+- **uv** - Modern Python package installer ([install uv](https://docs.astral.sh/uv/getting-started/installation/))
 - **Google AI API key** - For transcription and extraction
 
 Optional:
@@ -41,7 +42,7 @@ Optional:
 
 ```bash
 # 1. Install Inkwell
-pip install inkwell-cli
+uv tool install inkwell-cli
 
 # 2. Set your API key
 export GOOGLE_API_KEY="your-key"

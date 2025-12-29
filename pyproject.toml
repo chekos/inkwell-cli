@@ -92,6 +92,9 @@ inkwell = ["templates/**/*.yaml"]
 line-length = 100
 target-version = "py310"
 src = ["src"]
+extend-exclude = [
+    "docs/building-in-public/research/*.py",  # Research examples, not production code
+]
 
 [tool.ruff.lint]
 select = [
@@ -120,7 +123,10 @@ ignore = []
     "E741",  # Allow ambiguous variable names in lambdas (e.g., `l` for length)
     "B007",  # Allow unused loop control variables in tests
 ]
-"src/inkwell/cli.py" = ["B008"]  # Allow typer.Option in function defaults (Typer pattern)
+"src/inkwell/cli.py" = [
+    "B008",  # Allow typer.Option in function defaults (Typer pattern)
+    "B023",  # Allow loop variable capture in progress callbacks (intentional design)
+]
 "src/inkwell/utils/retry.py" = ["A001"]  # Intentional custom exception classes (TimeoutError, ConnectionError)
 "benchmarks/**/*.py" = [
     "E501",  # Long lines in benchmarks are acceptable
@@ -180,6 +186,7 @@ dev = [
     "mypy>=1.18.2",
     "pytest>=8.4.2",
     "pytest-asyncio>=1.2.0",
+    "pytest-cov>=7.0.0",
     "pytest-mock>=3.15.1",
     "respx>=0.22.0",
     "ruff>=0.14.4",

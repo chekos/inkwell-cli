@@ -512,9 +512,7 @@ class ExtractionEngine:
                 result = batch_results.get(template.name)
                 if result and result.success and result.extracted_content:
                     raw_output = self._serialize_extracted_content(result.extracted_content)
-                    await self.cache.set(
-                        template.name, template.version, transcript, raw_output
-                    )
+                    await self.cache.set(template.name, template.version, transcript, raw_output)
 
         # Combine cached and new results in original order and build summary
         all_results = []

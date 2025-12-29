@@ -9,8 +9,8 @@ from typing import Any
 
 import platformdirs
 from pydantic import BaseModel, Field
-from yt_dlp import YoutubeDL
-from yt_dlp.utils import DownloadError, ExtractorError
+from yt_dlp import YoutubeDL  # type: ignore[import-untyped]
+from yt_dlp.utils import DownloadError, ExtractorError  # type: ignore[import-untyped]
 
 from inkwell.utils.errors import APIError
 
@@ -253,4 +253,4 @@ class AudioDownloader:
             info = ydl.extract_info(url, download=False)
             if not info:
                 raise APIError("Failed to extract information")
-            return info
+            return dict(info)

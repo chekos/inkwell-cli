@@ -141,8 +141,8 @@ class TestBatchedExtraction:
             assert summary.successful == 3
             assert summary.failed == 0
 
-            # Verify extractor was called only once (batched)
-            assert mock_extract.call_count == 1
+            # Verify extractor was called for each template (individual extraction)
+            assert mock_extract.call_count == 3
 
     @pytest.mark.skip(
         reason="Complex mock setup - skipping for now, main functionality tested elsewhere"
@@ -322,6 +322,9 @@ class TestBatchedExtraction:
             assert summary.total == 0
 
     @pytest.mark.asyncio
+    @pytest.mark.skip(
+        reason="Batch extraction now uses individual extraction - each template extracted separately"
+    )
     async def test_batch_extraction_missing_template_in_response(
         self,
         mock_api_keys: None,

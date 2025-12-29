@@ -37,7 +37,6 @@ app = typer.Typer(
 console = Console()
 
 
-
 @app.callback()
 def main(
     ctx: typer.Context,
@@ -811,6 +810,8 @@ def fetch_command(
                             f"[green]✓[/green] Latest episode: {selected_episodes[0].title}"
                         )
                     else:
+                        # episode is guaranteed to be set when not using --latest
+                        assert episode is not None, "Episode selector required"
                         selected_episodes = parser.parse_and_fetch_episodes(
                             feed, episode, url_or_feed
                         )
@@ -835,8 +836,9 @@ def fetch_command(
             # Build list of episodes to process
             # For feed mode: selected_episodes from RSS parsing
             # For URL mode: single placeholder with url already set
+            episodes_to_process: list[Episode | None]
             if "selected_episodes" in dir():
-                episodes_to_process = selected_episodes
+                episodes_to_process = list(selected_episodes)  # Copy to allow None type
             else:
                 episodes_to_process = [None]  # URL mode: process once with ep=None
 
@@ -845,9 +847,7 @@ def fetch_command(
                 if ep is not None:
                     url = str(ep.url)
                     if len(episodes_to_process) > 1:
-                        console.print(
-                            f"\n[bold cyan]Processing:[/bold cyan] {ep.title}"
-                        )
+                        console.print(f"\n[bold cyan]Processing:[/bold cyan] {ep.title}")
 
                 # Determine if interview will be included for progress display
                 will_interview = interview or config.interview.auto_start

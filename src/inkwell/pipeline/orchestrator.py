@@ -89,7 +89,7 @@ class PipelineOrchestrator:
         Returns:
             List of templates that need processing
         """
-        templates_to_process: list["ExtractionTemplate"] = []
+        templates_to_process: list[ExtractionTemplate] = []
         existing_versions = existing_output.metadata.templates_versions
 
         for template in templates:
@@ -101,9 +101,7 @@ class PipelineOrchestrator:
                 templates_to_process.append(template)
             elif existing_version == "unknown":
                 # Migrated v1 data - treat as needing regeneration
-                logger.debug(
-                    f"Template '{template.name}' has unknown version, will regenerate"
-                )
+                logger.debug(f"Template '{template.name}' has unknown version, will regenerate")
                 templates_to_process.append(template)
             elif existing_version != template.version:
                 # Version mismatch - needs regeneration
@@ -114,9 +112,7 @@ class PipelineOrchestrator:
                 templates_to_process.append(template)
             else:
                 # Same version - skip
-                logger.debug(
-                    f"Template '{template.name}' v{template.version} unchanged, skipping"
-                )
+                logger.debug(f"Template '{template.name}' v{template.version} unchanged, skipping")
 
         return templates_to_process
 
@@ -181,13 +177,18 @@ class PipelineOrchestrator:
             progress_callback=transcription_progress,
         )
 
+        # Transcript is guaranteed to exist after successful _transcribe()
+        transcript = transcript_result.transcript
+        if transcript is None:
+            raise InkwellError("Transcription succeeded but returned no transcript")
+
         if progress_callback:
             progress_callback(
                 "transcription_complete",
                 {
-                    "source": transcript_result.transcript.source,
+                    "source": transcript.source,
                     "duration_seconds": transcript_result.duration_seconds,
-                    "word_count": len(transcript_result.transcript.full_text.split()),
+                    "word_count": len(transcript.full_text.split()),
                     "from_cache": transcript_result.from_cache,
                 },
             )
@@ -198,7 +199,7 @@ class PipelineOrchestrator:
 
         selected_templates = self._select_templates(
             options=options,
-            transcript=transcript_result.transcript.full_text,
+            transcript=transcript.full_text,
             episode_url=options.url,
         )
 
@@ -207,7 +208,7 @@ class PipelineOrchestrator:
             podcast_name=options.podcast_name or "Unknown Podcast",
             episode_title=options.episode_title or f"Episode from {options.url}",
             episode_url=options.url,
-            transcription_source=transcript_result.transcript.source,
+            transcription_source=transcript.source,
         )
 
         if progress_callback:
@@ -242,9 +243,7 @@ class PipelineOrchestrator:
                             "templates_to_process": len(templates_to_process),
                             "templates_skipped": skipped_count,
                             "skipped_templates": [
-                                t.name
-                                for t in selected_templates
-                                if t not in templates_to_process
+                                t.name for t in selected_templates if t not in templates_to_process
                             ],
                         },
                     )
@@ -264,7 +263,7 @@ class PipelineOrchestrator:
 
         extraction_results, extraction_summary, extraction_cost = await self._extract_content(
             templates=templates_to_process,
-            transcript=transcript_result.transcript.full_text,
+            transcript=transcript.full_text,
             metadata=episode_metadata,
             provider=options.provider,
             skip_cache=options.skip_cache,
@@ -286,8 +285,9 @@ class PipelineOrchestrator:
         if options.dry_run:
             # Create a minimal result for dry run
             dry_run_output = EpisodeOutput(
-                directory=output_path / "dry-run",
-                output_files=[],
+                metadata=episode_metadata,
+                output_dir=output_path / "dry-run",
+                files=[],
             )
             return PipelineResult(
                 episode_output=dry_run_output,
@@ -309,8 +309,8 @@ class PipelineOrchestrator:
                 episode_dir=episode_dir,
                 existing_output=existing_output,
                 extraction_results=extraction_results,
-                transcript=transcript_result.transcript.full_text,
-                transcript_summary=transcript_result.transcript.summary,
+                transcript=transcript.full_text,
+                transcript_summary=transcript.summary,
             )
         else:
             # Full write
@@ -319,8 +319,8 @@ class PipelineOrchestrator:
                 episode_metadata=episode_metadata,
                 extraction_results=extraction_results,
                 overwrite=options.overwrite,
-                transcript=transcript_result.transcript.full_text,
-                transcript_summary=transcript_result.transcript.summary,
+                transcript=transcript.full_text,
+                transcript_summary=transcript.summary,
             )
 
         if progress_callback:
@@ -432,7 +432,8 @@ class PipelineOrchestrator:
         if not result.success:
             raise InkwellError(f"Transcription failed: {result.error}")
 
-        assert result.transcript is not None
+        if result.transcript is None:
+            raise InkwellError("Transcription succeeded but returned no transcript")
         return result
 
     def _select_templates(
@@ -460,9 +461,10 @@ class PipelineOrchestrator:
             custom_template_list = [t.strip() for t in options.templates]
 
         # Create episode object for template selection
+        # url is HttpUrl but Pydantic validates str at runtime
         episode = Episode(
             title=f"Episode from {episode_url}",
-            url=episode_url,  # type: ignore
+            url=episode_url,  # type: ignore[arg-type]
             published=now_utc(),
             description="",
             podcast_name="Unknown Podcast",
@@ -527,6 +529,7 @@ class PipelineOrchestrator:
                 successful=0,
                 failed=0,
                 cached=0,
+                attempts=[],
             )
             return [], summary, estimated_cost
 

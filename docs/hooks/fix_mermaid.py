@@ -35,15 +35,10 @@ def on_post_page(output: str, page, config) -> str:
 
         # Fix nested brackets in node definitions: id[label with [nested] brackets]
         # Pattern: node-id[...text...[nested]...text...]
-        content = re.sub(
-            r'^(\S+)\[(.+)\]$',
-            fix_node_label,
-            content,
-            flags=re.MULTILINE
-        )
+        content = re.sub(r"^(\S+)\[(.+)\]$", fix_node_label, content, flags=re.MULTILINE)
 
         # Split into lines, deduplicate while preserving order
-        lines = content.split('\n')
+        lines = content.split("\n")
         seen = set()
         unique_lines = []
         for line in lines:
@@ -57,10 +52,7 @@ def on_post_page(output: str, page, config) -> str:
 
     # Fix mermaid blocks - remove <code> wrapper and deduplicate
     output = re.sub(
-        r'<pre class="mermaid"><code>(.*?)</code></pre>',
-        fix_mermaid,
-        output,
-        flags=re.DOTALL
+        r'<pre class="mermaid"><code>(.*?)</code></pre>', fix_mermaid, output, flags=re.DOTALL
     )
 
     return output

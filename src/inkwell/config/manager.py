@@ -197,13 +197,13 @@ class ConfigManager:
                 }
             if old_config.transcription_model != config.transcription_model:
                 changes["transcription_model"] = {
-                    "old": old_config.transcription_model,
-                    "new": config.transcription_model,
+                    "old": old_config.transcription_model or "",
+                    "new": config.transcription_model or "",
                 }
             if old_config.interview_model != config.interview_model:
                 changes["interview_model"] = {
-                    "old": old_config.interview_model,
-                    "new": config.interview_model,
+                    "old": old_config.interview_model or "",
+                    "new": config.interview_model or "",
                 }
             if old_config.log_level != config.log_level:
                 changes["log_level"] = {
@@ -417,11 +417,11 @@ class ConfigManager:
                     "new": str(feed_config.url),
                 }
             if old_config.auth.type != feed_config.auth.type:
-                changes["auth_type_changed"] = True
+                changes["auth_type"] = {"old": old_config.auth.type, "new": feed_config.auth.type}
             if old_config.category != feed_config.category:
                 changes["category"] = {
-                    "old": old_config.category,
-                    "new": feed_config.category,
+                    "old": old_config.category or "",
+                    "new": feed_config.category or "",
                 }
 
             self._log_change(

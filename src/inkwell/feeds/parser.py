@@ -203,8 +203,9 @@ class RSSParser:
             range_size = abs(end - start) + 1
             if range_size > MAX_EPISODES_PER_SELECTION:
                 raise ValidationError(
-                    f"Range '{selector}' contains {range_size} episodes, maximum is {MAX_EPISODES_PER_SELECTION}",
-                    suggestion="Select fewer episodes or use multiple smaller requests"
+                    f"Range '{selector}' contains {range_size} episodes, "
+                    f"maximum is {MAX_EPISODES_PER_SELECTION}",
+                    suggestion="Select fewer episodes or use multiple smaller requests",
                 )
             positions = list(range(min(start, end), max(start, end) + 1))
 
@@ -213,8 +214,9 @@ class RSSParser:
             positions = [int(x.strip()) for x in selector.split(",")]
             if len(positions) > MAX_EPISODES_PER_SELECTION:
                 raise ValidationError(
-                    f"List contains {len(positions)} episodes, maximum is {MAX_EPISODES_PER_SELECTION}",
-                    suggestion="Select fewer episodes or use multiple smaller requests"
+                    f"List contains {len(positions)} episodes, "
+                    f"maximum is {MAX_EPISODES_PER_SELECTION}",
+                    suggestion="Select fewer episodes or use multiple smaller requests",
                 )
 
         # Keyword search (existing behavior)
@@ -234,8 +236,7 @@ class RSSParser:
 
         # Fetch episodes (1-indexed to 0-indexed)
         return [
-            self.extract_episode_metadata(feed.entries[pos - 1], podcast_name)
-            for pos in positions
+            self.extract_episode_metadata(feed.entries[pos - 1], podcast_name) for pos in positions
         ]
 
     def extract_episode_metadata(self, entry: dict, podcast_name: str) -> Episode:
@@ -277,9 +278,10 @@ class RSSParser:
         # Extract GUID
         guid = entry.get("id") or entry.get("guid")
 
+        # url is HttpUrl but Pydantic validates str at runtime
         return Episode(
             title=title,
-            url=enclosure_url,  # type: ignore
+            url=enclosure_url,  # type: ignore[arg-type]
             published=published,
             description=description,
             duration_seconds=duration_seconds,
@@ -304,13 +306,15 @@ class RSSParser:
             if enclosure.get("type", "").startswith("audio/") or enclosure.get(
                 "type", ""
             ).startswith("video/"):
-                return enclosure.get("href") or enclosure.get("url")
+                href = enclosure.get("href") or enclosure.get("url")
+                return str(href) if href else None
 
         # Fallback: check links
         links = entry.get("links", [])
         for link in links:
             if link.get("rel") == "enclosure":
-                return link.get("href")
+                href = link.get("href")
+                return str(href) if href else None
 
         return None
 
@@ -327,12 +331,14 @@ class RSSParser:
         if hasattr(entry, "published_parsed") and entry.published_parsed:
             import time
 
-            return datetime.fromtimestamp(time.mktime(entry.published_parsed))
+            timestamp = time.mktime(entry.published_parsed)
+            return datetime.fromtimestamp(timestamp)
 
         # Try parsing published string
         if "published" in entry:
             try:
-                return parsedate_to_datetime(entry["published"])
+                parsed: datetime = parsedate_to_datetime(entry["published"])
+                return parsed
             except (ValueError, TypeError):
                 pass
 
@@ -359,15 +365,16 @@ class RSSParser:
         """
         # Try summary first
         if "summary" in entry:
-            return entry["summary"]
+            return str(entry["summary"])
 
         # Try description
         if "description" in entry:
-            return entry["description"]
+            return str(entry["description"])
 
         # Try content
         if "content" in entry and entry["content"]:
-            return entry["content"][0].get("value", "")
+            value = entry["content"][0].get("value", "")
+            return str(value) if value else ""
 
         return ""
 

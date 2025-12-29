@@ -287,7 +287,9 @@ Guidelines:
                 output_tokens=output_tokens,
             )
 
-        return response.content[0].text.strip()
+        # Response content is always TextBlock for non-tool calls (Anthropic SDK union type)
+        first_block = response.content[0]
+        return first_block.text.strip()  # type: ignore[union-attr]
 
     def _format_markdown(
         self,

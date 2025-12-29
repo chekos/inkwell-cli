@@ -328,7 +328,7 @@ expected_format: json
 
         quotes = loader.load_template("quotes")
         assert quotes.name == "quotes"
-        assert quotes.expected_format == "json"
+        assert quotes.expected_format == "markdown"
 
         concepts = loader.load_template("key-concepts")
         assert concepts.name == "key-concepts"

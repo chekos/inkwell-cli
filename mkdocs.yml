@@ -1,4 +1,5 @@
 site_name: Inkwell Documentation
+site_url: https://chekos.github.io/inkwell-cli/
 site_description: Transform podcast episodes into structured, searchable markdown notes
 site_author: Inkwell Contributors
 repo_url: https://github.com/chekos/inkwell-cli

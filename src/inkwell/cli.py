@@ -28,6 +28,11 @@ from inkwell.utils.errors import (
     ValidationError,
 )
 from inkwell.utils.progress import PipelineProgress
+from inkwell.utils.url_metadata import (
+    INBOX_PODCAST_NAME,
+    extract_url_metadata,
+    get_episode_title_from_metadata,
+)
 
 app = typer.Typer(
     name="inkwell",
@@ -729,6 +734,11 @@ def fetch_command(
     resume_session: str | None = typer.Option(
         None, "--resume-session", help="Resume specific interview session by ID"
     ),
+    podcast: str | None = typer.Option(
+        None,
+        "--podcast",
+        help="Podcast name for direct URL captures (default: _inbox)",
+    ),
 ) -> None:
     """Fetch and process a podcast episode.
 
@@ -852,12 +862,25 @@ def fetch_command(
                 # Determine if interview will be included for progress display
                 will_interview = interview or config.interview.auto_start
 
-                # Extract episode metadata if available from feed parsing
+                # Extract episode metadata
                 episode_title: str | None = None
                 podcast_name: str | None = None
+
                 if ep is not None:
+                    # Feed mode: use episode metadata from RSS
                     episode_title = ep.title
                     podcast_name = ep.podcast_name or url_or_feed
+                else:
+                    # Direct URL mode: extract metadata from URL
+                    with console.status("[dim]Extracting episode metadata...[/dim]"):
+                        url_metadata = await extract_url_metadata(url)
+                    episode_title = get_episode_title_from_metadata(url_metadata, url)
+                    # Use --podcast override or default to _inbox
+                    podcast_name = podcast or INBOX_PODCAST_NAME
+                    console.print(
+                        f"[dim]Episode:[/dim] {episode_title}\n"
+                        f"[dim]Destination:[/dim] [cyan]{podcast_name}/[/cyan]"
+                    )
 
                 # Compute effective output directory
                 effective_output_dir = output_dir or config.default_output_dir

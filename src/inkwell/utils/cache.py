@@ -9,7 +9,7 @@ import json
 from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Generic, TypeVar
+from typing import Any, Generic, TypeVar, cast
 
 import aiofiles
 
@@ -75,7 +75,7 @@ class FileCache(Generic[T]):
         self.cache_dir = cache_dir
         self.ttl_days = ttl_days
         self.serializer = serializer or (lambda x: x if isinstance(x, dict) else {"value": x})
-        self.deserializer = deserializer or (lambda d: d)
+        self.deserializer = deserializer or (lambda d: cast(T, d))
         self.key_generator = key_generator or self._default_key_generator
 
         # Create cache directory

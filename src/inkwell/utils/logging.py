@@ -28,6 +28,7 @@ def setup_logging(
     logger.handlers.clear()
 
     # Console handler with rich formatting
+    console_handler: logging.Handler
     if rich_console:
         console = Console(stderr=True)
         console_handler = RichHandler(
@@ -38,9 +39,10 @@ def setup_logging(
             tracebacks_show_locals=False,
         )
     else:
-        console_handler = logging.StreamHandler(sys.stderr)
+        stream_handler = logging.StreamHandler(sys.stderr)
         console_formatter = logging.Formatter("%(levelname)s: %(message)s")
-        console_handler.setFormatter(console_formatter)
+        stream_handler.setFormatter(console_formatter)
+        console_handler = stream_handler
 
     console_handler.setLevel(level)
     logger.addHandler(console_handler)

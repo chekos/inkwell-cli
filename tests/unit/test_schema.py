@@ -106,7 +106,7 @@ class TestGlobalConfig:
         assert "interview" in config.template_categories
 
         # New nested config structure
-        assert config.transcription.model_name == "gemini-2.5-flash"
+        assert config.transcription.model_name == "gemini-3-flash-preview"
         assert config.transcription.youtube_check is True
         assert config.transcription.cost_threshold_usd == 1.0
         assert config.interview.model == "claude-sonnet-4-5"
@@ -226,7 +226,7 @@ class TestGlobalConfig:
 
         # Should NOT migrate because user explicitly provided transcription config
         # This is the new intended behavior - explicit config wins, even if empty
-        assert config.transcription.model_name == "gemini-2.5-flash"  # Default, not migrated
+        assert config.transcription.model_name == "gemini-3-flash-preview"  # Default, not migrated
 
     def test_global_config_new_fields_only(self) -> None:
         """Using only new nested structure works correctly.

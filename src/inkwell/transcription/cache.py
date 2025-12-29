@@ -98,7 +98,9 @@ class TranscriptCache(FileCache[Transcript]):
         """
         return await super().get(episode_url)
 
-    async def set(self, episode_url: str, transcript: Transcript) -> None:
+    async def set(  # type: ignore[override]
+        self, episode_url: str, transcript: Transcript
+    ) -> None:
         """Save transcript to cache.
 
         Args:
@@ -145,7 +147,7 @@ class TranscriptCache(FileCache[Transcript]):
         cache_key = self._make_cache_key(episode_url)
         return self.cache_dir / f"{cache_key}.json"
 
-    def _is_expired(self, cached_at) -> bool:
+    def _is_expired(self, cached_at: Any) -> bool:
         """Check if cache entry is expired (compatibility method).
 
         Args:

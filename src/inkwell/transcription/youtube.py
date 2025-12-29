@@ -182,9 +182,9 @@ class YouTubeTranscriber:
             # Convert to our model
             segments = [
                 TranscriptSegment(
-                    text=entry["text"],
-                    start=entry["start"],
-                    duration=entry["duration"],
+                    text=entry["text"],  # type: ignore[index]
+                    start=entry["start"],  # type: ignore[index]
+                    duration=entry["duration"],  # type: ignore[index]
                 )
                 for entry in transcript_data
             ]

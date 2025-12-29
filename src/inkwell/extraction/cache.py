@@ -97,7 +97,7 @@ class ExtractionCache(FileCache[str]):
         Returns:
             Extraction result string
         """
-        return data["result"]
+        return str(data["result"])
 
     # Convenience methods that match the original API
     async def get(self, template_name: str, template_version: str, transcript: str) -> str | None:
@@ -144,7 +144,7 @@ class ExtractionCache(FileCache[str]):
 
         return await super().get(template_name, template_version, transcript)
 
-    async def set(
+    async def set(  # type: ignore[override]
         self, template_name: str, template_version: str, transcript: str, result: str
     ) -> None:
         """Store extraction result in cache.
@@ -214,7 +214,7 @@ class ExtractionCache(FileCache[str]):
                 async with aiofiles.open(cache_file) as f:
                     content = await f.read()
                     data = json.loads(content)
-                    return data["timestamp"]
+                    return float(data["timestamp"])
             except (json.JSONDecodeError, KeyError, OSError):
                 return time.time()
 

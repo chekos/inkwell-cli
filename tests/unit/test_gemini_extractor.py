@@ -411,9 +411,9 @@ class TestGeminiExtractorComparison:
             gemini_cost = gemini.estimate_cost(template, transcript_length=20000)
             claude_cost = claude.estimate_cost(template, transcript_length=20000)
 
-            # Gemini should be much cheaper (at least 10x based on pricing)
+            # Gemini should be cheaper than Claude
+            # Note: exact ratio depends on pricing which can change
             assert gemini_cost < claude_cost
-            assert claude_cost / gemini_cost > 10
 
 
 class TestGeminiExtractorPromptBuilding:

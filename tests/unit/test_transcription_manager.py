@@ -86,7 +86,7 @@ class TestTranscriptionManagerConfigInjection:
 
         # Should use defaults from TranscriptionConfig
         assert manager.gemini_transcriber is not None
-        assert manager.gemini_transcriber.model_name == "gemini-2.5-flash"
+        assert manager.gemini_transcriber.model_name == "gemini-3-flash-preview"
         assert manager.gemini_transcriber.cost_threshold_usd == 1.0
 
     def test_no_config_no_params_tries_environment(self, monkeypatch: pytest.MonkeyPatch) -> None:

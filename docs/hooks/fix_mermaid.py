@@ -11,16 +11,21 @@ import html
 import re
 
 
-def on_page_content(page_html: str, page, config, files) -> str:
-    """Fix mermaid graphs for proper rendering."""
+def on_post_page(output: str, page, config) -> str:
+    """Fix mermaid graphs for proper rendering.
+
+    Uses on_post_page to run AFTER all plugins (including mkdocs-material-adr)
+    have finished modifying the page content.
+    """
 
     def fix_node_label(match):
-        """Fix node labels with nested brackets."""
+        """Fix node labels by quoting them to avoid mermaid syntax errors."""
         node_id = match.group(1)
         label = match.group(2)
-        # Replace inner brackets with parentheses to avoid mermaid syntax errors
-        fixed_label = label.replace('[', '(').replace(']', ')')
-        return f'{node_id}[{fixed_label}]'
+        # Wrap label in quotes to prevent mermaid from parsing special chars
+        # Also escape any existing quotes in the label
+        escaped_label = label.replace('"', "'")
+        return f'{node_id}["{escaped_label}"]'
 
     def fix_mermaid(match):
         content = match.group(1)
@@ -51,11 +56,11 @@ def on_page_content(page_html: str, page, config, files) -> str:
         return f'<pre class="mermaid">\n{chr(10).join(unique_lines)}\n</pre>'
 
     # Fix mermaid blocks - remove <code> wrapper and deduplicate
-    page_html = re.sub(
+    output = re.sub(
         r'<pre class="mermaid"><code>(.*?)</code></pre>',
         fix_mermaid,
-        page_html,
+        output,
         flags=re.DOTALL
     )
 
-    return page_html
+    return output

@@ -582,7 +582,7 @@ Detailed architecture documentation with diagrams:
 
 ## References
 
-- [Phase 2 Complete Summary](../PHASE_2_COMPLETE.md)
+- [Phase 2 Complete Summary](../../_internal/phases/PHASE_2_COMPLETE.md)
 - [Phase 2 Complete Lessons](../lessons/2025-11-07-phase-2-complete.md)
 - [Phase 2 Architecture](../architecture/phase-2-transcription.md)
 - [ADR-009: Transcription Strategy](../adr/009-transcription-strategy.md)

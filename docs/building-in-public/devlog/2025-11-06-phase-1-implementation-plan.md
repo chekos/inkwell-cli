@@ -2,7 +2,7 @@
 
 **Date**: 2025-11-06
 **Status**: Planning
-**Related**: [PRD_v0.md](../PRD_v0.md), [ADR-001](../adr/001-developer-knowledge-system.md)
+**Related**: [PRD](../../_internal/prd.md), [ADR-001](../adr/001-developer-knowledge-system.md)
 
 ## Overview
 

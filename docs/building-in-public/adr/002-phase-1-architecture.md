@@ -11,7 +11,7 @@ adr:
 **Status**: Proposed
 **Date**: 2025-11-06
 **Deciders**: Claude
-**Related**: [PRD_v0.md](../PRD_v0.md), [Devlog: Phase 1 Plan](../devlog/2025-11-06-phase-1-implementation-plan.md)
+**Related**: [PRD](../../_internal/prd.md), [Devlog: Phase 1 Plan](../devlog/2025-11-06-phase-1-implementation-plan.md)
 
 ## Context
 

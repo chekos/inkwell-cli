@@ -149,7 +149,7 @@ class GlobalConfig(BaseModel):
     """Global Inkwell configuration."""
 
     version: str = "1"
-    default_output_dir: Path = Field(default_factory=lambda: Path("~/podcasts"))
+    default_output_dir: Path = Field(default_factory=lambda: Path("~/inkwell-notes"))
     log_level: LogLevel = "INFO"
     default_templates: list[str] = Field(
         default_factory=lambda: ["summary", "quotes", "key-concepts"]

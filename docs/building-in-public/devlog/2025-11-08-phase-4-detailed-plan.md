@@ -3,7 +3,7 @@
 **Date**: 2025-11-08
 **Status**: Planning
 **Phase**: 4 of 5
-**Related**: [PRD_v0.md](../PRD_v0.md), [Phase 3 Complete](../PHASE_3_COMPLETE.md)
+**Related**: [PRD](../../_internal/prd.md), [Phase 3 Complete](../../_internal/phases/PHASE_3_COMPLETE.md)
 
 ## Overview
 

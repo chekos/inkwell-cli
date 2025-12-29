@@ -97,7 +97,7 @@ class TestGlobalConfig:
         config = GlobalConfig()
         assert config.version == "1"
         # Default output dir should be expanded (validator auto-expands ~)
-        assert config.default_output_dir == Path("~/podcasts").expanduser()
+        assert config.default_output_dir == Path("~/inkwell-notes").expanduser()
         assert config.log_level == "INFO"
         assert "summary" in config.default_templates
         assert "quotes" in config.default_templates

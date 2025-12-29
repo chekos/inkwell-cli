@@ -192,7 +192,7 @@ class EpisodeOutput(BaseModel):
     Example:
         >>> output = EpisodeOutput(
         ...     metadata=metadata,
-        ...     output_dir=Path("~/podcasts/ep123"),
+        ...     output_dir=Path("~/inkwell-notes/ep123"),
         ...     files=[summary_file, quotes_file]
         ... )
     """

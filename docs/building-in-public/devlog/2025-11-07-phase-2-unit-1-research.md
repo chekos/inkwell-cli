@@ -382,8 +382,8 @@ Implement Transcript data models with Pydantic:
 ## References
 
 - [Phase 2 Implementation Plan](./2025-11-07-phase-2-detailed-plan.md)
-- [Phase 2 Summary](../PHASE_2_SUMMARY.md)
-- [Phase 1 Complete](../PHASE_1_COMPLETE.md)
+- [Phase 2 Summary](../../_internal/phases/PHASE_2_SUMMARY.md)
+- [Phase 1 Complete](../../_internal/phases/PHASE_1_COMPLETE.md)
 
 ---
 

@@ -14,7 +14,7 @@ CONFIG_YAML_TEMPLATE = """# Inkwell Configuration
 version: "1"
 
 # Directory where processed episodes will be saved
-default_output_dir: ~/podcasts
+default_output_dir: ~/inkwell-notes
 
 # LLM models to use
 transcription_model: gemini-2.5-flash

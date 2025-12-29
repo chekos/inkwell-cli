@@ -1,5 +1,6 @@
 """Integration tests for CLI commands."""
 
+import os
 from pathlib import Path
 
 import pytest
@@ -8,6 +9,10 @@ from typer.testing import CliRunner
 from inkwell.cli import app
 from inkwell.config.manager import ConfigManager
 from inkwell.utils.errors import NotFoundError, ValidationError
+
+# Disable Rich formatting in tests for consistent output across environments
+os.environ["NO_COLOR"] = "1"
+os.environ["TERM"] = "dumb"
 
 runner = CliRunner()
 

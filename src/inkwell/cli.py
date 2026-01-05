@@ -684,7 +684,13 @@ def cache_command(
 def fetch_command(
     url_or_feed: str = typer.Argument(..., help="Episode URL or configured feed name"),
     output_dir: Path | None = typer.Option(
-        None, "--output", "-o", help="Output directory (default: ~/inkwell-notes)"
+        None, "--output-dir", "-o", help="Base directory for output (default: ~/inkwell-notes)"
+    ),
+    podcast_name: str | None = typer.Option(
+        None,
+        "--podcast-name",
+        "-n",
+        help="Podcast name for output directory (overrides auto-detection)",
     ),
     latest: bool = typer.Option(False, "--latest", "-l", help="Fetch the latest episode from feed"),
     episode: str | None = typer.Option(
@@ -854,10 +860,10 @@ def fetch_command(
 
                 # Extract episode metadata if available from feed parsing
                 episode_title: str | None = None
-                podcast_name: str | None = None
+                detected_podcast_name: str | None = None
                 if ep is not None:
                     episode_title = ep.title
-                    podcast_name = ep.podcast_name or url_or_feed
+                    detected_podcast_name = ep.podcast_name or url_or_feed
 
                 # Compute effective output directory
                 effective_output_dir = output_dir or config.default_output_dir
@@ -890,7 +896,7 @@ def fetch_command(
                     auth_username=auth_username,
                     auth_password=auth_password,
                     episode_title=episode_title,
-                    podcast_name=podcast_name,
+                    podcast_name=podcast_name or detected_podcast_name,
                 )
 
                 # Create orchestrator

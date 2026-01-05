@@ -80,6 +80,7 @@ temperature: 0.2
 priority: 15
 applies_to: [tutorial]
 model_preference: auto
+max_tokens: 16000
 
 few_shot_examples:
   - input: |

@@ -248,6 +248,18 @@ class TestCLIHelp:
         assert "edit" in result.stdout.lower()
         assert "set" in result.stdout.lower()
 
+    def test_fetch_help_shows_new_options(self) -> None:
+        """Test fetch command help shows --output-dir and --podcast-name."""
+        result = runner.invoke(app, ["fetch", "--help"])
+
+        assert result.exit_code == 0
+        # New flag names
+        assert "--output-dir" in result.stdout
+        assert "--podcast-name" in result.stdout
+        # Short forms
+        assert "-o" in result.stdout
+        assert "-n" in result.stdout
+
 
 class TestCLIErrorHandling:
     """Tests for CLI error handling."""

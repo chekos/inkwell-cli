@@ -127,7 +127,8 @@ inkwell fetch <SOURCE> [OPTIONS]
 
 | Option | Short | Type | Default | Description |
 |--------|-------|------|---------|-------------|
-| `--output` | `-o` | path | `~/inkwell-notes` | Output directory |
+| `--output-dir` | `-o` | path | `~/inkwell-notes` | Base directory for output |
+| `--podcast-name` | `-n` | string | Auto | Podcast name for output directory (overrides auto-detection) |
 | `--latest` | `-l` | flag | false | Process only latest episode |
 | `--episode` | `-e` | string | | Position (3), range (1-5), list (1,3,7), or title keyword |
 | `--templates` | `-t` | string | Auto | Comma-separated template list |
@@ -148,6 +149,9 @@ inkwell fetch <SOURCE> [OPTIONS]
 ```bash
 # From URL
 inkwell fetch https://youtube.com/watch?v=xyz
+
+# From URL with custom podcast name
+inkwell fetch https://youtube.com/watch?v=xyz --podcast-name "Python Tutorials"
 
 # Latest from feed
 inkwell fetch my-podcast --latest

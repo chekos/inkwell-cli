@@ -415,7 +415,7 @@ expected_format: json
         assert template.category == "tutorial"
         assert template.expected_format == "markdown"
         assert template.temperature == 0.2
-        assert len(template.few_shot_examples) >= 1
+        assert template.max_tokens == 16000
 
     def test_list_templates_includes_tutorial(self) -> None:
         """Test that tutorial template appears in template list."""

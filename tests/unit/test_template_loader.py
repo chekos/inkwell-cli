@@ -405,3 +405,21 @@ expected_format: json
             loader.load_template("test")
 
         assert "jinja2" in str(exc_info.value).lower()
+
+    def test_load_tutorial_template(self) -> None:
+        """Test loading tutorial category template."""
+        loader = TemplateLoader()
+
+        template = loader.load_template("step-by-step-plan")
+        assert template.name == "step-by-step-plan"
+        assert template.category == "tutorial"
+        assert template.expected_format == "markdown"
+        assert template.temperature == 0.2
+        assert len(template.few_shot_examples) >= 1
+
+    def test_list_templates_includes_tutorial(self) -> None:
+        """Test that tutorial template appears in template list."""
+        loader = TemplateLoader()
+        templates = loader.list_templates()
+
+        assert "step-by-step-plan" in templates

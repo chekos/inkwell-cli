@@ -1,5 +1,5 @@
 ---
-status: ready
+status: complete
 priority: p3
 issue_id: "080"
 tags: [code-review, security, documentation, plugin-architecture]

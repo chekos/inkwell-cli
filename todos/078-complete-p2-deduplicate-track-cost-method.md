@@ -1,5 +1,5 @@
 ---
-status: ready
+status: complete
 priority: p2
 issue_id: "078"
 tags: [code-review, code-duplication, plugin-architecture]

@@ -77,6 +77,36 @@ class ExtractionConfig(BaseModel):
     )
 
 
+class PluginConfig(BaseModel):
+    """Configuration for a single plugin.
+
+    Example YAML:
+        plugins:
+          whisper:
+            enabled: true
+            priority: 50
+            config:
+              model: base
+              device: cuda
+    """
+
+    enabled: bool = Field(
+        default=True,
+        description="Whether this plugin is enabled",
+    )
+    priority: int = Field(
+        default=50,
+        ge=0,
+        le=200,
+        description="Plugin selection priority (higher = preferred). "
+        "Standard ranges: 150 (user override), 100 (built-in), 50 (third-party), 0 (experimental)",
+    )
+    config: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Plugin-specific configuration passed to plugin.configure()",
+    )
+
+
 class InterviewConfig(BaseModel):
     """Interview mode configuration."""
 
@@ -165,6 +195,12 @@ class GlobalConfig(BaseModel):
     transcription: TranscriptionConfig = Field(default_factory=TranscriptionConfig)
     extraction: ExtractionConfig = Field(default_factory=ExtractionConfig)
     interview: InterviewConfig = Field(default_factory=InterviewConfig)
+
+    # Plugin configurations (keyed by plugin name)
+    plugins: dict[str, PluginConfig] = Field(
+        default_factory=dict,
+        description="Per-plugin configuration. Keys are plugin names.",
+    )
 
     # Deprecated fields (for backward compatibility with existing configs)
     transcription_model: str | None = None

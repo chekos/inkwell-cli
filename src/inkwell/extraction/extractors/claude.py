@@ -8,7 +8,6 @@ from anthropic.types import Message
 from ...plugins.types.extraction import ExtractionPlugin
 from ...utils.api_keys import get_validated_api_key
 from ...utils.errors import APIError, ValidationError
-from ...utils.json_utils import JSONParsingError, safe_json_loads
 from ...utils.rate_limiter import get_rate_limiter
 from ..models import ExtractionTemplate
 
@@ -219,30 +218,3 @@ class ClaudeExtractor(ExtractionPlugin):
             True (Claude supports JSON mode)
         """
         return True
-
-    def _validate_json_output(self, output: str, schema: dict[str, Any]) -> None:
-        """Validate JSON output against schema.
-
-        Args:
-            output: JSON string from LLM
-            schema: JSON Schema to validate against
-
-        Raises:
-            ValidationError: If validation fails
-        """
-        try:
-            # Use safe JSON parsing with size/depth limits
-            # 5MB for extraction results, depth of 10 for structured data
-            data = safe_json_loads(output, max_size=5_000_000, max_depth=10)
-        except JSONParsingError as e:
-            raise ValidationError(f"Invalid JSON from Claude: {str(e)}") from e
-
-        # Basic schema validation
-        # For production, would use jsonschema library
-        if "required" in schema:
-            for field in schema["required"]:
-                if field not in data:
-                    raise ValidationError(
-                        f"Missing required field '{field}' in Claude output",
-                        details={"schema": schema},
-                    )

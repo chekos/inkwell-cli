@@ -11,6 +11,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
+from inkwell.config.manager import ConfigManager
 from inkwell.plugins import (
     ENTRY_POINT_GROUPS,
     PluginEntry,
@@ -18,6 +19,7 @@ from inkwell.plugins import (
     PluginValidationError,
     discover_all_plugins,
 )
+from inkwell.plugins.config import PluginConfigManager
 from inkwell.plugins.types import ExtractionPlugin, OutputPlugin, TranscriptionPlugin
 
 app = typer.Typer(
@@ -223,31 +225,39 @@ def list_plugins(
 @app.command("enable")
 def enable_plugin(
     name: str = typer.Argument(..., help="Plugin name to enable"),
+    persist: bool = typer.Option(
+        False,
+        "--persist",
+        "-p",
+        help="Persist state to config file (survives restart)",
+    ),
 ) -> None:
     """Enable a disabled plugin.
 
     Examples:
         inkwell plugins enable whisper
+
+        inkwell plugins enable whisper --persist
     """
     registries = _load_all_registries()
     result = _find_plugin_entry(name, registries)
 
     if not result:
-        console.print(f"[red]✗[/red] Plugin '{name}' not found")
+        console.print(f"[red]x[/red] Plugin '{name}' not found")
         console.print("\nUse [cyan]inkwell plugins list --all[/cyan] to see available plugins")
         sys.exit(1)
 
     plugin_type, entry = result
 
     if entry.status == "broken":
-        console.print(f"[red]✗[/red] Cannot enable broken plugin '{name}'")
+        console.print(f"[red]x[/red] Cannot enable broken plugin '{name}'")
         if entry.error:
             console.print(f"  Error: {entry.error}")
         if entry.recovery_hint:
             console.print(f"  Recovery: {entry.recovery_hint}")
         sys.exit(1)
 
-    if entry.status == "loaded":
+    if entry.status == "loaded" and not persist:
         console.print(f"[yellow]Plugin '{name}' is already enabled[/yellow]")
         return
 
@@ -255,37 +265,52 @@ def enable_plugin(
     registry = registries[plugin_type]
     registry.enable(name)
 
-    console.print(f"[green]✓[/green] Plugin '{name}' enabled")
-    console.print(
-        "[dim]Note: Plugin state is not persisted. "
-        "Use config file to permanently enable/disable plugins.[/dim]"
-    )
+    # Persist to config if requested
+    if persist:
+        config_manager = ConfigManager()
+        plugin_config_manager = PluginConfigManager(config_manager)
+        plugin_config_manager.set_plugin_enabled(name, enabled=True)
+        console.print(f"[green]v[/green] Plugin '{name}' enabled and saved to config")
+    else:
+        console.print(f"[green]v[/green] Plugin '{name}' enabled")
+        console.print(
+            "[dim]Note: Plugin state is not persisted. "
+            "Use --persist to save to config file.[/dim]"
+        )
 
 
 @app.command("disable")
 def disable_plugin(
     name: str = typer.Argument(..., help="Plugin name to disable"),
+    persist: bool = typer.Option(
+        False,
+        "--persist",
+        "-p",
+        help="Persist state to config file (survives restart)",
+    ),
 ) -> None:
     """Disable a plugin (prevent it from being used).
 
     Examples:
         inkwell plugins disable gemini
+
+        inkwell plugins disable gemini --persist
     """
     registries = _load_all_registries()
     result = _find_plugin_entry(name, registries)
 
     if not result:
-        console.print(f"[red]✗[/red] Plugin '{name}' not found")
+        console.print(f"[red]x[/red] Plugin '{name}' not found")
         console.print("\nUse [cyan]inkwell plugins list[/cyan] to see available plugins")
         sys.exit(1)
 
     plugin_type, entry = result
 
-    if entry.status == "disabled":
+    if entry.status == "disabled" and not persist:
         console.print(f"[yellow]Plugin '{name}' is already disabled[/yellow]")
         return
 
-    if entry.status == "broken":
+    if entry.status == "broken" and not persist:
         console.print(f"[yellow]Plugin '{name}' is broken (already unusable)[/yellow]")
         return
 
@@ -293,11 +318,18 @@ def disable_plugin(
     registry = registries[plugin_type]
     registry.disable(name)
 
-    console.print(f"[green]✓[/green] Plugin '{name}' disabled")
-    console.print(
-        "[dim]Note: Plugin state is not persisted. "
-        "Use config file to permanently enable/disable plugins.[/dim]"
-    )
+    # Persist to config if requested
+    if persist:
+        config_manager = ConfigManager()
+        plugin_config_manager = PluginConfigManager(config_manager)
+        plugin_config_manager.set_plugin_enabled(name, enabled=False)
+        console.print(f"[green]v[/green] Plugin '{name}' disabled and saved to config")
+    else:
+        console.print(f"[green]v[/green] Plugin '{name}' disabled")
+        console.print(
+            "[dim]Note: Plugin state is not persisted. "
+            "Use --persist to save to config file.[/dim]"
+        )
 
 
 @app.command("validate")

@@ -102,6 +102,14 @@ class PluginRegistry(Generic[T]):
         """
         self._plugin_type = plugin_type
         self._entries: dict[str, PluginEntry[T]] = {}
+        self._enabled_cache: list[tuple[str, T]] | None = None
+
+    def _invalidate_cache(self) -> None:
+        """Invalidate the enabled plugins cache.
+
+        Called when registry state changes (register/enable/disable).
+        """
+        self._enabled_cache = None
 
     def register(
         self,
@@ -128,6 +136,8 @@ class PluginRegistry(Generic[T]):
         if name in self._entries:
             existing = self._entries[name]
             raise PluginConflictError(name, existing.source, source)
+
+        self._invalidate_cache()
 
         status: Literal["loaded", "broken", "disabled"]
         if plugin is not None:
@@ -173,20 +183,24 @@ class PluginRegistry(Generic[T]):
     def get_enabled(self) -> list[tuple[str, T]]:
         """Get all enabled plugins in priority order (highest first).
 
+        Results are cached until the registry is modified (register/enable/disable).
+
         Returns:
             List of (name, plugin) tuples sorted by priority descending.
         """
-        # Filter to usable plugins and assert plugin is not None (is_usable guarantees this)
-        usable: list[tuple[str, T]] = [
-            (e.name, e.plugin)  # type: ignore[misc]  # is_usable guarantees plugin is not None
-            for e in self._entries.values()
-            if e.is_usable
-        ]
-        # Sort by priority (descending), then by name (ascending) for stability
-        return sorted(
-            usable,
-            key=lambda x: (-self._entries[x[0]].priority, x[0]),
-        )
+        if self._enabled_cache is None:
+            # Filter to usable plugins and assert plugin is not None (is_usable guarantees this)
+            usable: list[tuple[str, T]] = [
+                (e.name, e.plugin)  # type: ignore[misc]  # is_usable guarantees plugin is not None
+                for e in self._entries.values()
+                if e.is_usable
+            ]
+            # Sort by priority (descending), then by name (ascending) for stability
+            self._enabled_cache = sorted(
+                usable,
+                key=lambda x: (-self._entries[x[0]].priority, x[0]),
+            )
+        return self._enabled_cache
 
     def find_capable(self, predicate: Callable[[T], bool]) -> list[tuple[str, T]]:
         """Find plugins matching a predicate, in priority order.
@@ -214,6 +228,7 @@ class PluginRegistry(Generic[T]):
             True if plugin was found and disabled, False if not found.
         """
         if name in self._entries:
+            self._invalidate_cache()
             self._entries[name].status = "disabled"
             return True
         return False
@@ -229,6 +244,7 @@ class PluginRegistry(Generic[T]):
         """
         entry = self._entries.get(name)
         if entry and entry.plugin is not None:
+            self._invalidate_cache()
             entry.status = "loaded"
             return True
         return False

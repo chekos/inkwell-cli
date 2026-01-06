@@ -148,21 +148,6 @@ class TestExtractionEngineRegistry:
         # Should have discovered at least claude and gemini
         assert "claude" in registry or "gemini" in registry
 
-    def test_engine_uses_legacy_extractors_when_registry_disabled(
-        self, mock_api_keys: None
-    ) -> None:
-        """Test that engine uses legacy extractors when plugin registry disabled."""
-        from inkwell.extraction.engine import ExtractionEngine
-        from inkwell.extraction.extractors.claude import ClaudeExtractor
-        from inkwell.extraction.extractors.gemini import GeminiExtractor
-
-        engine = ExtractionEngine(use_plugin_registry=False)
-
-        # Should use legacy extractors
-        assert isinstance(engine.claude_extractor, ClaudeExtractor)
-        assert isinstance(engine.gemini_extractor, GeminiExtractor)
-
-
 class TestExtractionPluginConfigure:
     """Tests for ExtractionPlugin configuration."""
 

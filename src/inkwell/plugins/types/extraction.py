@@ -8,6 +8,8 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 from inkwell.extraction.extractors.base import BaseExtractor
 from inkwell.plugins.base import InkwellPlugin
+from inkwell.utils.errors import ValidationError
+from inkwell.utils.json_utils import JSONParsingError, safe_json_loads
 
 if TYPE_CHECKING:
     from inkwell.utils.costs import CostTracker
@@ -86,32 +88,34 @@ class ExtractionPlugin(InkwellPlugin, BaseExtractor):
         """
         super().configure(config, cost_tracker)
 
-    def track_cost(
-        self,
-        input_tokens: int,
-        output_tokens: int,
-        operation: str = "extraction",
-        episode_title: str | None = None,
-        template_name: str | None = None,
-    ) -> None:
-        """Track cost with the injected cost tracker.
+    # track_cost() is inherited from InkwellPlugin base class
 
-        Convenience method for plugins to track API costs.
+    def _validate_json_output(self, output: str, schema: dict[str, Any]) -> None:
+        """Validate JSON output against schema.
+
+        Shared implementation for all extraction plugins. Uses self.NAME
+        to include the provider name in error messages.
 
         Args:
-            input_tokens: Number of input tokens used.
-            output_tokens: Number of output tokens generated.
-            operation: Type of operation (default: "extraction").
-            episode_title: Optional episode title for tracking.
-            template_name: Optional template name for tracking.
+            output: JSON string from LLM
+            schema: JSON Schema to validate against
+
+        Raises:
+            ValidationError: If JSON parsing fails or required fields are missing
         """
-        if self._cost_tracker:
-            self._cost_tracker.add_cost(
-                provider=self.NAME,
-                model=self.MODEL,
-                operation=operation,
-                input_tokens=input_tokens,
-                output_tokens=output_tokens,
-                episode_title=episode_title,
-                template_name=template_name,
-            )
+        try:
+            # Use safe JSON parsing with size/depth limits
+            # 5MB for extraction results, depth of 10 for structured data
+            data = safe_json_loads(output, max_size=5_000_000, max_depth=10)
+        except JSONParsingError as e:
+            raise ValidationError(f"Invalid JSON from {self.NAME}: {str(e)}") from e
+
+        # Basic schema validation
+        # For production, would use jsonschema library
+        if "required" in schema:
+            for field in schema["required"]:
+                if field not in data:
+                    raise ValidationError(
+                        f"Missing required field '{field}' in {self.NAME} output",
+                        details={"schema": schema},
+                    )

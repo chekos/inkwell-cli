@@ -6,6 +6,8 @@ This module provides high-level plugin loading functionality including:
 - Configuration and validation orchestration
 """
 
+import bisect
+from collections import deque
 from typing import TYPE_CHECKING, Any, TypeVar
 
 from inkwell.utils.logging import get_logger
@@ -119,19 +121,19 @@ def resolve_dependencies(plugins: list[InkwellPlugin]) -> list[InkwellPlugin]:
             in_degree[plugin.NAME] += 1
 
     # Kahn's algorithm for topological sort
-    queue = [name for name, degree in in_degree.items() if degree == 0]
+    # Use deque for O(1) popleft, sort once at start for determinism
+    queue: deque[str] = deque(sorted(name for name, degree in in_degree.items() if degree == 0))
     result: list[InkwellPlugin] = []
 
     while queue:
-        # Sort queue for deterministic order
-        queue.sort()
-        name = queue.pop(0)
+        name = queue.popleft()  # O(1) operation
         result.append(plugin_map[name])
 
         for dependent in dependents[name]:
             in_degree[dependent] -= 1
             if in_degree[dependent] == 0:
-                queue.append(dependent)
+                # Use bisect.insort to maintain sorted order for determinism
+                bisect.insort(queue, dependent)
 
     # Check for cycles
     if len(result) != len(plugins):

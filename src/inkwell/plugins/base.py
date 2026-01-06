@@ -152,6 +152,36 @@ class InkwellPlugin(ABC):
         """Access cost tracker for API usage tracking."""
         return self._cost_tracker
 
+    def track_cost(
+        self,
+        input_tokens: int = 0,
+        output_tokens: int = 0,
+        operation: str = "unknown",
+        episode_title: str | None = None,
+        template_name: str | None = None,
+    ) -> None:
+        """Track cost with the injected cost tracker.
+
+        Convenience method for plugins to track API costs.
+
+        Args:
+            input_tokens: Number of input tokens used.
+            output_tokens: Number of output tokens generated.
+            operation: Type of operation (e.g., "extraction", "transcription").
+            episode_title: Optional episode title for tracking.
+            template_name: Optional template name for tracking.
+        """
+        if self._cost_tracker:
+            self._cost_tracker.add_cost(
+                provider=self.NAME,
+                model=getattr(self, "MODEL", "unknown"),
+                operation=operation,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                episode_title=episode_title,
+                template_name=template_name,
+            )
+
 
 def check_api_version_compatible(plugin_api_version: str) -> bool:
     """Check if a plugin's API version is compatible with current API.

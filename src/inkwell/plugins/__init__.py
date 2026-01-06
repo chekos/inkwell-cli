@@ -40,6 +40,9 @@ from .base import (
     check_api_version_compatible,
 )
 
+# Configuration persistence
+from .config import PluginConfigManager
+
 # Discovery and loading
 from .discovery import (
     ENTRY_POINT_GROUPS,
@@ -86,6 +89,8 @@ __all__ = [
     # Registry
     "PluginRegistry",
     "PluginEntry",
+    # Configuration
+    "PluginConfigManager",
     # Discovery
     "PluginLoadResult",
     "discover_plugins",

@@ -29,8 +29,6 @@ from .models import (
 
 if TYPE_CHECKING:
     from ..utils.costs import CostTracker
-    from .extractors.claude import ClaudeExtractor
-    from .extractors.gemini import GeminiExtractor
 
 logger = logging.getLogger(__name__)
 
@@ -140,11 +138,9 @@ class ExtractionEngine:
             config.default_provider if config else None, default_provider, "gemini"
         )
 
-        # Store API keys for lazy initialization
+        # Store API keys for plugin configuration
         self._claude_api_key = effective_claude_key
         self._gemini_api_key = effective_gemini_key
-        self._claude_extractor: "ClaudeExtractor | None" = None  # noqa: UP037
-        self._gemini_extractor: "GeminiExtractor | None" = None  # noqa: UP037
 
         self.cache = cache or ExtractionCache()
         self.default_provider = effective_provider
@@ -226,32 +222,6 @@ class ExtractionEngine:
         if self._use_plugin_registry and not self._plugins_loaded:
             self._load_extraction_plugins()
         return self._registry
-
-    @property
-    def claude_extractor(self) -> "ClaudeExtractor":
-        """Lazily initialize Claude extractor.
-
-        Note: For new code, prefer using the plugin registry via
-        extraction_registry.get("claude") instead.
-        """
-        if self._claude_extractor is None:
-            from .extractors.claude import ClaudeExtractor
-
-            self._claude_extractor = ClaudeExtractor(api_key=self._claude_api_key)
-        return self._claude_extractor
-
-    @property
-    def gemini_extractor(self) -> "GeminiExtractor":
-        """Lazily initialize Gemini extractor.
-
-        Note: For new code, prefer using the plugin registry via
-        extraction_registry.get("gemini") instead.
-        """
-        if self._gemini_extractor is None:
-            from .extractors.gemini import GeminiExtractor
-
-            self._gemini_extractor = GeminiExtractor(api_key=self._gemini_api_key)
-        return self._gemini_extractor
 
     async def extract(
         self,
@@ -727,32 +697,23 @@ class ExtractionEngine:
 
         Returns:
             Extractor instance (Claude, Gemini, or plugin)
+
+        Raises:
+            ValueError: If no extractor is available
         """
         # Check for extractor override (parameter takes precedence over env var)
         override = self._extractor_override or os.environ.get("INKWELL_EXTRACTOR")
         if override:
-            # Try plugin registry first
-            if self._use_plugin_registry:
-                plugin = self.extraction_registry.get(override)
-                if plugin:
-                    return plugin
-            # Fall back to direct access for built-ins
-            if override == "claude":
-                return self.claude_extractor
-            elif override == "gemini":
-                return self.gemini_extractor
-            else:
-                raise ValueError(
-                    f"Extractor '{override}' not found. "
-                    f"Available: {', '.join(n for n, _ in self.extraction_registry.get_enabled())}"
-                )
+            plugin = self.extraction_registry.get(override)
+            if plugin:
+                return plugin
+            raise ValueError(
+                f"Extractor '{override}' not found. "
+                f"Available: {', '.join(n for n, _ in self.extraction_registry.get_enabled())}"
+            )
 
-        # Try to use plugin registry if enabled
-        if self._use_plugin_registry:
-            return self._select_extractor_from_registry(template)
-
-        # Fall back to legacy behavior
-        return self._select_extractor_legacy(template)
+        # Use plugin registry for selection
+        return self._select_extractor_from_registry(template)
 
     def _select_extractor_from_registry(self, template: ExtractionTemplate) -> BaseExtractor:
         """Select extractor using plugin registry.
@@ -762,6 +723,9 @@ class ExtractionEngine:
 
         Returns:
             Extractor instance from registry
+
+        Raises:
+            ValueError: If no extractor plugins are available
         """
         # Template's explicit preference
         if template.model_preference:
@@ -773,8 +737,10 @@ class ExtractionEngine:
         enabled_plugins = self.extraction_registry.get_enabled()
 
         if not enabled_plugins:
-            # No plugins loaded, fall back to legacy
-            return self._select_extractor_legacy(template)
+            raise ValueError(
+                "No extraction plugins available. "
+                "Set GOOGLE_API_KEY or ANTHROPIC_API_KEY environment variable."
+            )
 
         # Heuristics for auto-selection
         # Use Claude for quote extraction (precision critical)
@@ -798,54 +764,6 @@ class ExtractionEngine:
 
         # Use highest priority available plugin
         return enabled_plugins[0][1]
-
-    def _select_extractor_legacy(self, template: ExtractionTemplate) -> BaseExtractor:
-        """Select extractor using legacy (non-registry) approach.
-
-        Args:
-            template: Extraction template
-
-        Returns:
-            Extractor instance (Claude or Gemini)
-        """
-        # Check which extractors are available (have API keys)
-        claude_available = self._claude_api_key is not None
-        gemini_available = self._gemini_api_key is not None
-
-        # Explicit preference (only if available, fallback otherwise)
-        if template.model_preference == "claude":
-            if claude_available:
-                return self.claude_extractor
-            # Fall through to use gemini if claude not available
-        elif template.model_preference == "gemini":
-            if gemini_available:
-                return self.gemini_extractor
-            # Fall through to use claude if gemini not available
-
-        # Heuristics for auto-selection (only if extractor is available)
-        # Use Claude for:
-        # - Quote extraction (precision critical)
-        # - Complex structured data (many required fields)
-        if claude_available:
-            if "quote" in template.name.lower():
-                return self.claude_extractor
-
-            if template.expected_format == "json" and template.output_schema:
-                required_fields = template.output_schema.get("required", [])
-                if len(required_fields) > 5:  # Complex schema
-                    return self.claude_extractor
-
-        # Default provider (if available)
-        if self.default_provider == "claude" and claude_available:
-            return self.claude_extractor
-        elif gemini_available:
-            return self.gemini_extractor
-        elif claude_available:
-            return self.claude_extractor
-        else:
-            raise ValueError(
-                "No extraction provider available. Set GOOGLE_API_KEY or ANTHROPIC_API_KEY."
-            )
 
     def _parse_output(self, raw_output: str, template: ExtractionTemplate) -> ExtractedContent:
         """Parse raw LLM output into ExtractedContent.

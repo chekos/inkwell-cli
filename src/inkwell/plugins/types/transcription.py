@@ -193,29 +193,4 @@ class TranscriptionPlugin(InkwellPlugin):
         """
         super().configure(config, cost_tracker)
 
-    def track_cost(
-        self,
-        input_tokens: int = 0,
-        output_tokens: int = 0,
-        operation: str = "transcription",
-        episode_title: str | None = None,
-    ) -> None:
-        """Track cost with the injected cost tracker.
-
-        Convenience method for plugins to track API costs.
-
-        Args:
-            input_tokens: Number of input tokens used (approx. for audio).
-            output_tokens: Number of output tokens generated.
-            operation: Type of operation (default: "transcription").
-            episode_title: Optional episode title for tracking.
-        """
-        if self._cost_tracker:
-            self._cost_tracker.add_cost(
-                provider=self.NAME,
-                model=getattr(self, "MODEL", "unknown"),
-                operation=operation,
-                input_tokens=input_tokens,
-                output_tokens=output_tokens,
-                episode_title=episode_title,
-            )
+    # track_cost() is inherited from InkwellPlugin base class

@@ -14,6 +14,10 @@ Inkwell's plugin architecture allows third-party developers to add:
 
 Plugins are discovered automatically via Python entry points, configured through YAML, and managed via the `inkwell plugins` CLI commands.
 
+!!! warning "Security Notice"
+    Plugins run with full privileges and are automatically loaded when installed.
+    Only install plugins from trusted sources. See [Security](security.md) for details.
+
 ---
 
 ## Quick Start
@@ -78,6 +82,9 @@ Test utilities, mocks, and best practices.
 
 ### [Publishing to PyPI](publishing.md)
 Package structure, metadata, and distribution.
+
+### [Security](security.md)
+Trust model, security implications, and best practices.
 
 ---
 

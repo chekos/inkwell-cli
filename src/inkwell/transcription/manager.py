@@ -491,144 +491,71 @@ class TranscriptionManager:
                     from_cache=True,
                 )
 
-        # Try to get the plugin from registry
-        if self._use_plugin_registry:
-            plugin = self.transcription_registry.get(transcriber_name)
-            if plugin:
-                try:
-                    # YouTube plugin handles URLs directly
-                    if transcriber_name == "youtube":
-                        _progress("trying_youtube")
-                        request = TranscriptionRequest(url=episode_url)
-                        if not plugin.can_handle(request):
-                            raise APIError(
-                                f"Plugin '{transcriber_name}' cannot handle URL: {episode_url}"
-                            )
-                        transcript = await plugin.transcribe(request)
-                    # Gemini and other file-based plugins need audio download first
-                    else:
-                        _progress("downloading_audio", url=episode_url)
-                        audio_path = await self.audio_downloader.download(
-                            episode_url,
-                            username=auth_username,
-                            password=auth_password,
-                        )
-                        _progress(f"transcribing_{transcriber_name}", audio_path=str(audio_path))
-                        request = TranscriptionRequest(file_path=audio_path)
-                        transcript = await plugin.transcribe(request)
+        # Get the plugin from registry
+        plugin = self.transcription_registry.get(transcriber_name)
+        if not plugin:
+            # Unknown transcriber
+            duration = (datetime.now(timezone.utc) - start_time).total_seconds()
+            available = [name for name, _ in self.transcription_registry.get_enabled()]
+            return TranscriptionResult(
+                success=False,
+                error=(
+                    f"Transcriber '{transcriber_name}' not found (set via INKWELL_TRANSCRIBER). "
+                    f"Available: {', '.join(available) or 'none'}"
+                ),
+                attempts=attempts,
+                duration_seconds=duration,
+                cost_usd=0.0,
+                from_cache=False,
+            )
 
-                    # Cache result
-                    if use_cache:
-                        _progress("caching_result")
-                        await self.cache.set(episode_url, transcript)
-
-                    duration = (datetime.now(timezone.utc) - start_time).total_seconds()
-                    return TranscriptionResult(
-                        success=True,
-                        transcript=transcript,
-                        attempts=attempts,
-                        duration_seconds=duration,
-                        cost_usd=transcript.cost_usd or 0.0,
-                        from_cache=False,
+        try:
+            # YouTube plugin handles URLs directly
+            if transcriber_name == "youtube":
+                _progress("trying_youtube")
+                request = TranscriptionRequest(url=episode_url)
+                if not plugin.can_handle(request):
+                    raise APIError(
+                        f"Plugin '{transcriber_name}' cannot handle URL: {episode_url}"
                     )
-
-                except Exception as e:
-                    duration = (datetime.now(timezone.utc) - start_time).total_seconds()
-                    return TranscriptionResult(
-                        success=False,
-                        error=f"Transcription with '{transcriber_name}' failed: {e}",
-                        attempts=attempts,
-                        duration_seconds=duration,
-                        cost_usd=0.0,
-                        from_cache=False,
-                    )
-
-        # Fall back to direct access for built-in transcribers
-        if transcriber_name == "youtube":
-            _progress("trying_youtube")
-            try:
-                transcript = await self.youtube_transcriber.transcribe(episode_url)
-                if use_cache:
-                    await self.cache.set(episode_url, transcript)
-                duration = (datetime.now(timezone.utc) - start_time).total_seconds()
-                return TranscriptionResult(
-                    success=True,
-                    transcript=transcript,
-                    attempts=attempts,
-                    duration_seconds=duration,
-                    cost_usd=0.0,
-                    from_cache=False,
-                )
-            except Exception as e:
-                duration = (datetime.now(timezone.utc) - start_time).total_seconds()
-                return TranscriptionResult(
-                    success=False,
-                    error=f"YouTube transcription failed: {e}",
-                    attempts=attempts,
-                    duration_seconds=duration,
-                    cost_usd=0.0,
-                    from_cache=False,
-                )
-
-        elif transcriber_name == "gemini":
-            if self.gemini_transcriber is None:
-                duration = (datetime.now(timezone.utc) - start_time).total_seconds()
-                return TranscriptionResult(
-                    success=False,
-                    error="Gemini transcriber not available (API key not configured)",
-                    attempts=attempts,
-                    duration_seconds=duration,
-                    cost_usd=0.0,
-                    from_cache=False,
-                )
-
-            try:
+                transcript = await plugin.transcribe(request)
+            # Gemini and other file-based plugins need audio download first
+            else:
                 _progress("downloading_audio", url=episode_url)
                 audio_path = await self.audio_downloader.download(
                     episode_url,
                     username=auth_username,
                     password=auth_password,
                 )
-                _progress("transcribing_gemini", audio_path=str(audio_path))
-                transcript = await self.gemini_transcriber.transcribe(audio_path, episode_url)
-                if use_cache:
-                    await self.cache.set(episode_url, transcript)
-                duration = (datetime.now(timezone.utc) - start_time).total_seconds()
-                return TranscriptionResult(
-                    success=True,
-                    transcript=transcript,
-                    attempts=attempts,
-                    duration_seconds=duration,
-                    cost_usd=transcript.cost_usd or 0.0,
-                    from_cache=False,
-                )
-            except Exception as e:
-                duration = (datetime.now(timezone.utc) - start_time).total_seconds()
-                return TranscriptionResult(
-                    success=False,
-                    error=f"Gemini transcription failed: {e}",
-                    attempts=attempts,
-                    duration_seconds=duration,
-                    cost_usd=0.0,
-                    from_cache=False,
-                )
+                _progress(f"transcribing_{transcriber_name}", audio_path=str(audio_path))
+                request = TranscriptionRequest(file_path=audio_path)
+                transcript = await plugin.transcribe(request)
 
-        # Unknown transcriber
-        duration = (datetime.now(timezone.utc) - start_time).total_seconds()
-        available = ["youtube", "gemini"]
-        if self._use_plugin_registry:
-            available.extend(name for name, _ in self.transcription_registry.get_enabled())
-        return TranscriptionResult(
-            success=False,
-            error=(
-                f"Unknown transcriber '{transcriber_name}' (set via INKWELL_TRANSCRIBER). "
-                f"Available: {', '.join(set(available))}"
-            ),
-            attempts=attempts,
-            duration_seconds=duration,
-            cost_usd=0.0,
-            from_cache=False,
-        )
+            # Cache result
+            if use_cache:
+                _progress("caching_result")
+                await self.cache.set(episode_url, transcript)
+
+            duration = (datetime.now(timezone.utc) - start_time).total_seconds()
+            return TranscriptionResult(
+                success=True,
+                transcript=transcript,
+                attempts=attempts,
+                duration_seconds=duration,
+                cost_usd=transcript.cost_usd or 0.0,
+                from_cache=False,
+            )
+
+        except Exception as e:
+            duration = (datetime.now(timezone.utc) - start_time).total_seconds()
+            return TranscriptionResult(
+                success=False,
+                error=f"Transcription with '{transcriber_name}' failed: {e}",
+                attempts=attempts,
+                duration_seconds=duration,
+                cost_usd=0.0,
+                from_cache=False,
+            )
 
     async def get_transcript(
         self,

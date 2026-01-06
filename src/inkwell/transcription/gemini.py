@@ -1,6 +1,7 @@
 """Gemini-based audio transcription using modern google-genai SDK."""
 
 import asyncio
+import logging
 import os
 from collections.abc import Callable
 from pathlib import Path
@@ -12,6 +13,8 @@ from pydantic import BaseModel, Field
 from inkwell.transcription.models import Transcript, TranscriptSegment
 from inkwell.utils.errors import APIError
 from inkwell.utils.rate_limiter import get_rate_limiter
+
+logger = logging.getLogger(__name__)
 
 # Allowed Gemini models for transcription
 ALLOWED_GEMINI_MODELS = {
@@ -251,7 +254,18 @@ class GeminiTranscriber:
         response = self.client.models.generate_content(
             model=self.model_name,
             contents=[audio_file, prompt],
+            config=types.GenerateContentConfig(
+                response_mime_type="text/plain",
+                max_output_tokens=65536,  # Support long transcripts (2+ hours)
+            ),
         )
+
+        # Check if output was truncated due to token limit
+        if response.candidates and response.candidates[0].finish_reason.name == "MAX_TOKENS":
+            logger.warning(
+                "Transcript may be incomplete - output hit token limit. "
+                "Consider processing shorter audio segments."
+            )
 
         return response
 

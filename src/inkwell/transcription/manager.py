@@ -615,9 +615,7 @@ class TranscriptionManager:
         duration = (datetime.now(timezone.utc) - start_time).total_seconds()
         available = ["youtube", "gemini"]
         if self._use_plugin_registry:
-            available.extend(
-                name for name, _ in self.transcription_registry.get_enabled()
-            )
+            available.extend(name for name, _ in self.transcription_registry.get_enabled())
         return TranscriptionResult(
             success=False,
             error=(

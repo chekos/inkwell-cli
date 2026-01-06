@@ -98,10 +98,12 @@ class TestMockPlugin:
     def test_custom_validation_errors(self) -> None:
         """Test custom validation error messages."""
         plugin = MockPlugin()
-        plugin.configure({
-            "should_fail": True,
-            "validation_errors": ["Error 1", "Error 2"],
-        })
+        plugin.configure(
+            {
+                "should_fail": True,
+                "validation_errors": ["Error 1", "Error 2"],
+            }
+        )
 
         with pytest.raises(PluginValidationError) as exc:
             plugin.validate()

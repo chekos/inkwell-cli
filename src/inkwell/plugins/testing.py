@@ -232,8 +232,7 @@ def assert_plugin_valid(plugin: InkwellPlugin) -> None:
         plugin.validate()
     except PluginValidationError as e:
         raise AssertionError(
-            f"Plugin '{e.plugin_name}' failed validation:\n"
-            f"  Errors: {e.errors}"
+            f"Plugin '{e.plugin_name}' failed validation:\n  Errors: {e.errors}"
         ) from e
 
 

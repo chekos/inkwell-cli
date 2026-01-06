@@ -115,9 +115,7 @@ def list_plugins(
         "-t",
         help="Filter by plugin type: extraction, transcription, output",
     ),
-    show_all: bool = typer.Option(
-        False, "--all", "-a", help="Show all plugins including disabled"
-    ),
+    show_all: bool = typer.Option(False, "--all", "-a", help="Show all plugins including disabled"),
 ) -> None:
     """List installed plugins by type.
 
@@ -374,8 +372,9 @@ def validate_plugin(
                 console.print(f"[red]✗[/red] {plugin_name}:")
                 for error in errors:
                     console.print(f"    • {error}")
-            console.print(f"\n[dim]{validated_count} plugins validated, "
-                         f"{len(validation_errors)} failed[/dim]")
+            console.print(
+                f"\n[dim]{validated_count} plugins validated, {len(validation_errors)} failed[/dim]"
+            )
             sys.exit(1)
         else:
             console.print(f"[green]✓[/green] All {validated_count} plugins validated successfully")

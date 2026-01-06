@@ -382,7 +382,9 @@ class TestBatchPromptCreation:
             patch("inkwell.extraction.engine.ClaudeExtractor"),
             patch("inkwell.extraction.engine.GeminiExtractor"),
         ):
-            engine = ExtractionEngine(gemini_api_key="AIzaSyD" + "X" * 32, use_plugin_registry=False)
+            engine = ExtractionEngine(
+                gemini_api_key="AIzaSyD" + "X" * 32, use_plugin_registry=False
+            )
 
             prompt = engine._create_batch_prompt(
                 templates=[summary_template, quotes_template],

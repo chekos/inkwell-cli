@@ -132,8 +132,7 @@ def discover_plugins(group: str) -> Iterator[PluginLoadResult]:
                     name=name,
                     plugin=None,
                     error=(
-                        f"Entry point does not point to an InkwellPlugin subclass: "
-                        f"{plugin_class}"
+                        f"Entry point does not point to an InkwellPlugin subclass: {plugin_class}"
                     ),
                     source=source,
                 )

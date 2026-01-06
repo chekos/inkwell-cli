@@ -173,10 +173,7 @@ class TestResolveDependencies:
             [plugin_b, plugin_a, plugin_c],
         ]
 
-        results = [
-            [p.NAME for p in resolve_dependencies(order)]
-            for order in orders
-        ]
+        results = [[p.NAME for p in resolve_dependencies(order)] for order in orders]
 
         # All results should be the same
         assert all(r == results[0] for r in results)

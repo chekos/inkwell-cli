@@ -112,9 +112,7 @@ class YouTubeTranscriber(TranscriptionPlugin):
         super().configure(config, cost_tracker)
 
         # Get preferred languages from config or use parameter/default
-        preferred_languages = config.get(
-            "preferred_languages", self._preferred_languages_param
-        )
+        preferred_languages = config.get("preferred_languages", self._preferred_languages_param)
         self._initialize_api(preferred_languages)
 
     async def can_transcribe(self, url: str) -> bool:

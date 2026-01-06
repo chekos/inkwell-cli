@@ -177,7 +177,9 @@ class TestMarkdownOutputRender:
             success=True,
             extracted_content=ExtractedContent(
                 template_name="quotes",
-                content={"quotes": [{"text": "Test quote", "speaker": "John", "timestamp": "5:30"}]},
+                content={
+                    "quotes": [{"text": "Test quote", "speaker": "John", "timestamp": "5:30"}]
+                },
             ),
             cost_usd=0.02,
             provider="claude",

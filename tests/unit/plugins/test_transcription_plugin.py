@@ -86,6 +86,7 @@ class TestTranscriptionPluginBase:
 
     def test_default_estimate_cost_is_zero(self) -> None:
         """Test that default estimate_cost returns 0 (free)."""
+
         # Create a concrete test plugin
         class TestPlugin(TranscriptionPlugin):
             NAME = "test"

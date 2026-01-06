@@ -47,7 +47,7 @@ def get_audio_duration(audio_path: Path) -> float:
         )
         return float(result.stdout.strip())
     except FileNotFoundError as e:
-        raise RuntimeError(f"ffprobe not found - install ffmpeg") from e
+        raise RuntimeError("ffprobe not found - install ffmpeg") from e
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"ffprobe failed: {e.stderr}") from e
     except ValueError as e:

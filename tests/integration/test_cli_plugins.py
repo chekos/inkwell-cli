@@ -2,7 +2,6 @@
 
 import os
 
-import pytest
 from typer.testing import CliRunner
 
 from inkwell.cli import app

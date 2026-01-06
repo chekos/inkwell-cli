@@ -1,6 +1,9 @@
 """Unit tests for OutputPlugin base class and MarkdownOutput integration."""
 
+from __future__ import annotations
+
 import warnings
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -8,21 +11,25 @@ from inkwell.extraction.models import ExtractedContent, ExtractionResult
 from inkwell.plugins import OutputPlugin, PluginRegistry
 from inkwell.plugins.base import PLUGIN_API_VERSION
 
+if TYPE_CHECKING:
+    from inkwell.output.markdown import MarkdownOutput
+
 
 class TestOutputPluginBase:
     """Tests for OutputPlugin base class."""
 
     def test_plugin_requires_abstract_methods(self) -> None:
         """Test that plugins must implement abstract methods."""
+
+        # Define incomplete plugin class
+        class BadPlugin(OutputPlugin):
+            NAME = "bad-plugin"
+            VERSION = "1.0.0"
+            DESCRIPTION = "Incomplete plugin"
+
         # This should raise TypeError for abstract class
         with pytest.raises(TypeError, match="abstract"):
-
-            class BadPlugin(OutputPlugin):
-                NAME = "bad-plugin"
-                VERSION = "1.0.0"
-                DESCRIPTION = "Incomplete plugin"
-
-            BadPlugin()  # Should fail because abstract methods not implemented
+            BadPlugin()
 
     def test_plugin_inherits_from_inkwell_plugin(self) -> None:
         """Test that OutputPlugin inherits from InkwellPlugin."""
@@ -98,7 +105,7 @@ class TestMarkdownOutputRender:
     """Tests for MarkdownOutput.render() method."""
 
     @pytest.fixture
-    def markdown_output(self) -> "MarkdownOutput":
+    def markdown_output(self) -> MarkdownOutput:
         """Create configured MarkdownOutput instance."""
         from inkwell.output.markdown import MarkdownOutput
 

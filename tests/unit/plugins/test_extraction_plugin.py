@@ -1,7 +1,5 @@
 """Unit tests for ExtractionPlugin base class and integration."""
 
-from unittest.mock import AsyncMock, patch
-
 import pytest
 
 from inkwell.plugins import ExtractionPlugin, PluginRegistry
@@ -13,15 +11,16 @@ class TestExtractionPluginBase:
 
     def test_plugin_requires_abstract_methods(self) -> None:
         """Test that plugins must implement abstract methods."""
+
+        # Define incomplete plugin class
+        class BadPlugin(ExtractionPlugin):
+            NAME = "bad-plugin"
+            VERSION = "1.0.0"
+            DESCRIPTION = "Incomplete plugin"
+
         # This should raise TypeError for abstract class
         with pytest.raises(TypeError, match="abstract"):
-
-            class BadPlugin(ExtractionPlugin):
-                NAME = "bad-plugin"
-                VERSION = "1.0.0"
-                DESCRIPTION = "Incomplete plugin"
-
-            BadPlugin()  # Should fail because abstract methods not implemented
+            BadPlugin()
 
     def test_plugin_inherits_from_inkwell_plugin(self) -> None:
         """Test that ExtractionPlugin inherits from InkwellPlugin."""

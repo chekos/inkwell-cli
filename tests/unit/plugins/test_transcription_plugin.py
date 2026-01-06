@@ -1,7 +1,6 @@
 """Unit tests for TranscriptionPlugin base class and integration."""
 
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -57,15 +56,16 @@ class TestTranscriptionPluginBase:
 
     def test_plugin_requires_abstract_methods(self) -> None:
         """Test that plugins must implement abstract methods."""
+
+        # Define incomplete plugin class
+        class BadPlugin(TranscriptionPlugin):
+            NAME = "bad-plugin"
+            VERSION = "1.0.0"
+            DESCRIPTION = "Incomplete plugin"
+
         # This should raise TypeError for abstract class
         with pytest.raises(TypeError, match="abstract"):
-
-            class BadPlugin(TranscriptionPlugin):
-                NAME = "bad-plugin"
-                VERSION = "1.0.0"
-                DESCRIPTION = "Incomplete plugin"
-
-            BadPlugin()  # Should fail because abstract methods not implemented
+            BadPlugin()
 
     def test_plugin_inherits_from_inkwell_plugin(self) -> None:
         """Test that TranscriptionPlugin inherits from InkwellPlugin."""

@@ -87,6 +87,7 @@ class ExtractionEngine:
         default_provider: str = "gemini",
         cost_tracker: "CostTracker | None" = None,
         use_plugin_registry: bool = True,
+        extractor_override: str | None = None,
     ) -> None:
         """Initialize extraction engine.
 
@@ -98,13 +99,16 @@ class ExtractionEngine:
             default_provider: Default provider ("claude" or "gemini") [deprecated]
             cost_tracker: Cost tracker for recording API usage (optional, for DI)
             use_plugin_registry: Whether to load extractors from plugin registry (default: True)
+            extractor_override: Force a specific extractor plugin (e.g., "claude", "gemini").
+                               Takes precedence over INKWELL_EXTRACTOR env var.
 
         Note:
             Prefer passing `config` over individual parameters. Individual parameters
             are maintained for backward compatibility but will be deprecated in v2.0.
 
             Plugin Selection:
-            - Set INKWELL_EXTRACTOR env var to force a specific extractor
+            - extractor_override parameter (explicit override, takes precedence)
+            - INKWELL_EXTRACTOR env var (environment override)
             - Otherwise, the highest priority available extractor is used
         """
         # Warn if using deprecated individual parameters
@@ -150,6 +154,9 @@ class ExtractionEngine:
         self._registry: PluginRegistry[ExtractionPlugin] = PluginRegistry(ExtractionPlugin)
         self._use_plugin_registry = use_plugin_registry
         self._plugins_loaded = False
+
+        # Store extractor override (takes precedence over INKWELL_EXTRACTOR env var)
+        self._extractor_override = extractor_override
 
     def _load_extraction_plugins(self) -> None:
         """Load extraction plugins from entry points into registry.
@@ -702,11 +709,12 @@ class ExtractionEngine:
         """Select appropriate extractor for template.
 
         Selection priority:
-        1. INKWELL_EXTRACTOR environment variable (explicit override)
-        2. Template's model_preference if specified
-        3. Heuristics based on template type
-        4. Default provider
-        5. Highest priority plugin from registry
+        1. extractor_override parameter (explicit override)
+        2. INKWELL_EXTRACTOR environment variable (environment override)
+        3. Template's model_preference if specified
+        4. Heuristics based on template type
+        5. Default provider
+        6. Highest priority plugin from registry
 
         Args:
             template: Extraction template
@@ -714,22 +722,22 @@ class ExtractionEngine:
         Returns:
             Extractor instance (Claude, Gemini, or plugin)
         """
-        # Check environment variable override first
-        env_override = os.environ.get("INKWELL_EXTRACTOR")
-        if env_override:
+        # Check for extractor override (parameter takes precedence over env var)
+        override = self._extractor_override or os.environ.get("INKWELL_EXTRACTOR")
+        if override:
             # Try plugin registry first
             if self._use_plugin_registry:
-                plugin = self.extraction_registry.get(env_override)
+                plugin = self.extraction_registry.get(override)
                 if plugin:
                     return plugin
             # Fall back to direct access for built-ins
-            if env_override == "claude":
+            if override == "claude":
                 return self.claude_extractor
-            elif env_override == "gemini":
+            elif override == "gemini":
                 return self.gemini_extractor
             else:
                 raise ValueError(
-                    f"Extractor '{env_override}' not found (set via INKWELL_EXTRACTOR). "
+                    f"Extractor '{override}' not found. "
                     f"Available: {', '.join(n for n, _ in self.extraction_registry.get_enabled())}"
                 )
 

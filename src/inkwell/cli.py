@@ -37,6 +37,17 @@ app = typer.Typer(
 console = Console()
 
 
+def _register_subcommands() -> None:
+    """Register subcommand apps (lazy import to avoid circular deps)."""
+    from inkwell.cli_plugins import app as plugins_app
+
+    app.add_typer(plugins_app, name="plugins")
+
+
+# Register subcommand apps
+_register_subcommands()
+
+
 @app.callback()
 def main(
     ctx: typer.Context,
@@ -735,6 +746,18 @@ def fetch_command(
     resume_session: str | None = typer.Option(
         None, "--resume-session", help="Resume specific interview session by ID"
     ),
+    extractor: str | None = typer.Option(
+        None,
+        "--extractor",
+        help="Force specific extraction plugin (e.g., claude, gemini)",
+        envvar="INKWELL_EXTRACTOR",
+    ),
+    transcriber: str | None = typer.Option(
+        None,
+        "--transcriber",
+        help="Force specific transcription plugin (e.g., youtube, gemini)",
+        envvar="INKWELL_TRANSCRIBER",
+    ),
 ) -> None:
     """Fetch and process a podcast episode.
 
@@ -756,6 +779,10 @@ def fetch_command(
         inkwell fetch https://... --interview  # With interactive interview
 
         inkwell fetch https://... --interview --interview-template analytical
+
+        inkwell fetch https://... --extractor claude  # Force Claude extractor
+
+        inkwell fetch https://... --transcriber gemini  # Force Gemini transcriber
     """
 
     async def run_fetch() -> None:
@@ -897,6 +924,8 @@ def fetch_command(
                     auth_password=auth_password,
                     episode_title=episode_title,
                     podcast_name=podcast_name or detected_podcast_name,
+                    extractor=extractor,
+                    transcriber=transcriber,
                 )
 
                 # Create orchestrator

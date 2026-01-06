@@ -175,6 +175,7 @@ class PipelineOrchestrator:
             auth_username=options.auth_username,
             auth_password=options.auth_password,
             progress_callback=transcription_progress,
+            transcriber_override=options.transcriber,
         )
 
         # Transcript is guaranteed to exist after successful _transcribe()
@@ -268,6 +269,7 @@ class PipelineOrchestrator:
             provider=options.provider,
             skip_cache=options.skip_cache,
             dry_run=options.dry_run,
+            extractor_override=options.extractor,
         )
 
         if progress_callback:
@@ -402,6 +404,7 @@ class PipelineOrchestrator:
         auth_username: str | None = None,
         auth_password: str | None = None,
         progress_callback: Callable[[str, dict], None] | None = None,
+        transcriber_override: str | None = None,
     ) -> "TranscriptionResult":
         """Transcribe episode from URL.
 
@@ -410,6 +413,7 @@ class PipelineOrchestrator:
             auth_username: Username for authenticated audio downloads (private feeds)
             auth_password: Password for authenticated audio downloads (private feeds)
             progress_callback: Optional callback for transcription sub-step progress
+            transcriber_override: Force a specific transcriber plugin (e.g., "youtube", "gemini")
 
         Returns:
             TranscriptionResult
@@ -427,6 +431,7 @@ class PipelineOrchestrator:
             auth_username=auth_username,
             auth_password=auth_password,
             progress_callback=progress_callback,
+            transcriber_override=transcriber_override,
         )
 
         if not result.success:
@@ -488,6 +493,7 @@ class PipelineOrchestrator:
         provider: str | None,
         skip_cache: bool,
         dry_run: bool,
+        extractor_override: str | None = None,
     ) -> tuple[list["ExtractionResult"], "ExtractionSummary", float]:
         """Extract content using templates and LLM.
 
@@ -495,9 +501,10 @@ class PipelineOrchestrator:
             templates: List of extraction templates
             transcript: Full transcript text
             metadata: Episode metadata
-            provider: LLM provider (claude, gemini, or auto)
+            provider: LLM provider (claude, gemini, or auto) [deprecated, use extractor_override]
             skip_cache: Whether to skip extraction cache
             dry_run: Whether to only estimate cost
+            extractor_override: Force a specific extractor plugin (e.g., "claude", "gemini")
 
         Returns:
             Tuple of (extraction_results, extraction_summary, total_cost)
@@ -512,6 +519,7 @@ class PipelineOrchestrator:
             config=self.config.extraction,
             gemini_api_key=shared_gemini_key,
             cost_tracker=self.cost_tracker,
+            extractor_override=extractor_override,
         )
 
         # Estimate cost

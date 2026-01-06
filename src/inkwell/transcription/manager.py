@@ -231,12 +231,13 @@ class TranscriptionManager:
         auth_username: str | None = None,
         auth_password: str | None = None,
         progress_callback: Callable[[str, dict], None] | None = None,
+        transcriber_override: str | None = None,
     ) -> TranscriptionResult:
         """Transcribe episode using multi-tier strategy.
 
         Strategy:
         1. Check cache (if use_cache=True)
-        2. Check for INKWELL_TRANSCRIBER env var override
+        2. Check for transcriber override (parameter or INKWELL_TRANSCRIBER env var)
         3. Try YouTube transcript (Tier 1, if not skip_youtube)
         4. Try audio download + Gemini (Tier 2)
         5. Cache result (if successful)
@@ -254,6 +255,8 @@ class TranscriptionManager:
                              - "downloading_audio": Downloading audio file
                              - "transcribing_gemini": Transcribing with Gemini API
                              - "caching_result": Caching successful result
+            transcriber_override: Force a specific transcriber plugin (e.g., "youtube", "gemini").
+                                 Falls back to INKWELL_TRANSCRIBER env var if not provided.
 
         Returns:
             TranscriptionResult with transcript and metadata
@@ -266,11 +269,11 @@ class TranscriptionManager:
             if progress_callback:
                 progress_callback(step, kwargs)
 
-        # Check for environment variable override
-        env_override = os.environ.get("INKWELL_TRANSCRIBER")
-        if env_override:
+        # Check for transcriber override (parameter takes precedence over env var)
+        override = transcriber_override or os.environ.get("INKWELL_TRANSCRIBER")
+        if override:
             return await self._transcribe_with_override(
-                env_override,
+                override,
                 episode_url,
                 use_cache,
                 auth_username,

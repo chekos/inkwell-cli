@@ -143,6 +143,8 @@ inkwell fetch <SOURCE> [OPTIONS]
 | `--max-questions` | | int | Config | Number of questions |
 | `--no-resume` | | flag | false | Don't resume previous session |
 | `--resume-session` | | string | | Resume specific interview session by ID |
+| `--extractor` | | string | Auto | Force specific extraction plugin (e.g., claude, gemini) |
+| `--transcriber` | | string | Auto | Force specific transcription plugin (e.g., youtube, gemini) |
 
 ### Examples
 
@@ -179,6 +181,121 @@ inkwell fetch URL --dry-run
 
 # Force provider
 inkwell fetch URL --provider gemini
+
+# Force specific plugins
+inkwell fetch URL --extractor claude --transcriber youtube
+
+# Using environment variable overrides
+INKWELL_EXTRACTOR=gemini inkwell fetch URL
+```
+
+---
+
+## inkwell plugins
+
+Manage Inkwell plugins.
+
+### inkwell plugins list
+
+List all installed plugins.
+
+```bash
+inkwell plugins list [OPTIONS]
+```
+
+**Options:**
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `--type` | string | All | Filter by type (extraction, transcription, output) |
+| `--all` | flag | false | Include disabled plugins |
+
+**Example Output:**
+
+```
+Extraction Plugins:
+  claude (built-in)     ✓ enabled   [priority: 100]  Claude API extractor
+  gemini (built-in)     ✓ enabled   [priority: 100]  Google Gemini extractor
+
+Transcription Plugins:
+  youtube (built-in)    ✓ enabled   [priority: 100]  YouTube transcript API
+  gemini (built-in)     ✓ enabled   [priority: 100]  Gemini audio transcription
+  whisper (installed)   ✓ enabled   [priority: 50]   Local Whisper transcription
+
+Output Plugins:
+  markdown (built-in)   ✓ enabled   [priority: 100]  Markdown file generation
+
+Broken Plugins:
+  broken-plugin         ✗ error     ImportError: No module named 'torch'
+                                    Recovery: pip install torch
+```
+
+**Examples:**
+
+```bash
+# List all plugins
+inkwell plugins list
+
+# List only extraction plugins
+inkwell plugins list --type extraction
+
+# Include disabled plugins
+inkwell plugins list --all
+```
+
+### inkwell plugins enable
+
+Enable a disabled plugin.
+
+```bash
+inkwell plugins enable <NAME>
+```
+
+**Note:** This only enables for the current session. For permanent changes, edit `~/.config/inkwell/config.yaml`.
+
+### inkwell plugins disable
+
+Disable a plugin.
+
+```bash
+inkwell plugins disable <NAME>
+```
+
+**Note:** This only disables for the current session. For permanent changes, edit `~/.config/inkwell/config.yaml`.
+
+### inkwell plugins validate
+
+Validate plugin configuration.
+
+```bash
+inkwell plugins validate [NAME]
+```
+
+| Argument | Required | Description |
+|----------|----------|-------------|
+| `NAME` | No | Plugin name (validates all if omitted) |
+
+**Examples:**
+
+```bash
+# Validate all plugins
+inkwell plugins validate
+
+# Validate specific plugin
+inkwell plugins validate whisper
+```
+
+**Example Output:**
+
+```
+Validating plugins...
+
+✓ claude: OK
+✓ gemini: OK
+✓ youtube: OK
+✗ whisper: FAILED
+  - openai-whisper not installed. Run: pip install openai-whisper
+  - ffmpeg not found in PATH
 ```
 
 ---

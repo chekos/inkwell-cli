@@ -10,6 +10,14 @@ from google import genai
 from google.genai import types
 from pydantic import BaseModel, Field
 
+from inkwell.transcription.chunking import (
+    CHUNK_DURATION_SECONDS,
+    OVERLAP_SECONDS,
+    cleanup_chunks,
+    get_audio_duration,
+    needs_chunking,
+    split_audio_into_chunks,
+)
 from inkwell.transcription.models import Transcript, TranscriptSegment
 from inkwell.utils.errors import APIError
 from inkwell.utils.rate_limiter import get_rate_limiter
@@ -163,6 +171,9 @@ class GeminiTranscriber:
     async def transcribe(self, audio_path: Path, episode_url: str | None = None) -> Transcript:
         """Transcribe audio file using Gemini.
 
+        For long audio files (>15 minutes), automatically uses chunking to avoid
+        hitting the 65,536 output token limit.
+
         Args:
             audio_path: Path to audio file
             episode_url: Optional URL of original episode (for metadata)
@@ -195,11 +206,17 @@ class GeminiTranscriber:
             )
 
         try:
-            # Upload file and generate transcript
-            response = await asyncio.to_thread(self._transcribe_sync, audio_path)
-
-            # Parse response to transcript
-            transcript = self._parse_response(response, audio_path, episode_url)
+            # Check if audio needs chunking (>15 minutes)
+            if needs_chunking(audio_path):
+                duration = get_audio_duration(audio_path)
+                logger.info(
+                    f"Audio is {duration/60:.1f} minutes - using chunked transcription"
+                )
+                transcript = await self._transcribe_chunked(audio_path, episode_url)
+            else:
+                # Short audio - single-pass transcription
+                response = await asyncio.to_thread(self._transcribe_sync, audio_path)
+                transcript = self._parse_response(response, audio_path, episode_url)
 
             # Add cost metadata
             transcript.cost_usd = estimate.estimated_cost_usd
@@ -212,6 +229,192 @@ class GeminiTranscriber:
                 f"This may be due to API errors, network issues, or file format problems. "
                 f"Error: {e}"
             ) from e
+
+    async def _transcribe_chunked(
+        self, audio_path: Path, episode_url: str | None = None
+    ) -> Transcript:
+        """Transcribe long audio using chunking strategy.
+
+        Splits audio into 10-minute chunks with 30-second overlap,
+        transcribes each chunk, then merges the results.
+
+        Args:
+            audio_path: Path to audio file
+            episode_url: Optional URL of original episode
+
+        Returns:
+            Merged transcript from all chunks
+        """
+        chunk_paths: list[Path] = []
+
+        try:
+            # Split audio into overlapping chunks
+            chunk_paths = split_audio_into_chunks(
+                audio_path,
+                chunk_duration=CHUNK_DURATION_SECONDS,
+                overlap=OVERLAP_SECONDS,
+            )
+
+            logger.info(f"Processing {len(chunk_paths)} chunks...")
+
+            # Transcribe each chunk
+            chunk_transcripts: list[Transcript] = []
+            for i, chunk_path in enumerate(chunk_paths):
+                logger.info(f"Transcribing chunk {i + 1}/{len(chunk_paths)}...")
+
+                # Transcribe single chunk
+                response = await asyncio.to_thread(
+                    self._transcribe_chunk_sync, chunk_path, i
+                )
+                chunk_transcript = self._parse_response(response, chunk_path, episode_url)
+                chunk_transcripts.append(chunk_transcript)
+
+            # Merge all chunk transcripts
+            merged = self._merge_chunk_transcripts(
+                chunk_transcripts,
+                chunk_duration=CHUNK_DURATION_SECONDS,
+                overlap=OVERLAP_SECONDS,
+            )
+
+            # Set proper source and episode URL
+            merged.source = "gemini"
+            merged.episode_url = episode_url or str(audio_path)
+
+            return merged
+
+        finally:
+            # Clean up temporary chunk files
+            if chunk_paths:
+                cleanup_chunks(chunk_paths)
+
+    def _transcribe_chunk_sync(
+        self, chunk_path: Path, chunk_index: int
+    ) -> types.GenerateContentResponse:
+        """Transcribe a single chunk synchronously.
+
+        Args:
+            chunk_path: Path to chunk audio file
+            chunk_index: Index of this chunk (for time offset calculation)
+
+        Returns:
+            Gemini API response
+        """
+        # Apply rate limiting before API call
+        limiter = get_rate_limiter("gemini")
+        limiter.acquire()
+
+        # Upload chunk file
+        audio_file = self.client.files.upload(file=chunk_path)
+
+        # Calculate time offset for this chunk
+        time_offset = chunk_index * (CHUNK_DURATION_SECONDS - OVERLAP_SECONDS)
+        hours = int(time_offset // 3600)
+        minutes = int((time_offset % 3600) // 60)
+        seconds = int(time_offset % 60)
+
+        # Prompt with time offset context
+        prompt = (
+            f"Transcribe this audio segment in plain text format.\n\n"
+            f"IMPORTANT: This is chunk {chunk_index + 1} starting at "
+            f"{hours:02d}:{minutes:02d}:{seconds:02d} in the full recording.\n\n"
+            f"FORMAT REQUIREMENTS:\n"
+            f"1. Use timestamps relative to THIS chunk (starting at 00:00)\n"
+            f"2. Use this exact format for each segment:\n"
+            f"   [MM:SS] Speaker Name: What they said...\n"
+            f"3. Identify speakers by name when possible, "
+            f"otherwise use 'Speaker 1', 'Speaker 2', etc.\n"
+            f"4. Capture all spoken words verbatim with proper punctuation\n"
+            f"5. Do NOT include a summary - just the transcript\n\n"
+            f"Example output:\n"
+            f"[00:00] Host: Welcome back. As I was saying...\n"
+            f"[00:15] Guest: Right, and that's exactly why...\n"
+        )
+
+        response = self.client.models.generate_content(
+            model=self.model_name,
+            contents=[audio_file, prompt],
+            config=types.GenerateContentConfig(
+                response_mime_type="text/plain",
+                max_output_tokens=65536,
+            ),
+        )
+
+        # Check if output was truncated
+        if (
+            response.candidates
+            and response.candidates[0].finish_reason
+            and response.candidates[0].finish_reason.name == "MAX_TOKENS"
+        ):
+            logger.warning(
+                f"Chunk {chunk_index + 1} may be incomplete - hit token limit"
+            )
+
+        return response
+
+    def _merge_chunk_transcripts(
+        self,
+        chunks: list[Transcript],
+        chunk_duration: int = CHUNK_DURATION_SECONDS,
+        overlap: int = OVERLAP_SECONDS,
+    ) -> Transcript:
+        """Merge transcripts from overlapping chunks into a single transcript.
+
+        Args:
+            chunks: List of transcripts from each chunk
+            chunk_duration: Duration of each chunk in seconds
+            overlap: Overlap between chunks in seconds
+
+        Returns:
+            Merged transcript with adjusted timestamps
+        """
+        if not chunks:
+            return Transcript(segments=[], source="gemini", language="en", episode_url="")
+
+        if len(chunks) == 1:
+            return chunks[0]
+
+        merged_segments: list[TranscriptSegment] = []
+        step = chunk_duration - overlap  # Time step between chunk starts
+
+        for chunk_idx, chunk in enumerate(chunks):
+            # Calculate time offset for this chunk
+            time_offset = chunk_idx * step
+
+            # For each segment in this chunk, adjust timestamps
+            for segment in chunk.segments:
+                # Skip segments in the overlap zone (except for first/last chunk)
+                # For middle chunks, skip first `overlap` seconds (covered by previous chunk)
+                if chunk_idx > 0 and segment.start < overlap:
+                    continue
+
+                # Adjust timestamp to global time
+                adjusted_segment = TranscriptSegment(
+                    text=segment.text,
+                    start=segment.start + time_offset,
+                    duration=segment.duration,
+                )
+                merged_segments.append(adjusted_segment)
+
+        # Sort by start time and remove potential duplicates
+        merged_segments.sort(key=lambda s: s.start)
+
+        # Recalculate durations
+        for i in range(len(merged_segments) - 1):
+            merged_segments[i].duration = (
+                merged_segments[i + 1].start - merged_segments[i].start
+            )
+
+        # Combine summaries if present
+        summaries = [c.summary for c in chunks if c.summary]
+        combined_summary = " ".join(summaries) if summaries else ""
+
+        return Transcript(
+            segments=merged_segments,
+            source="gemini",
+            language="en",
+            episode_url="",  # Will be set by caller
+            summary=combined_summary,
+        )
 
     def _transcribe_sync(self, audio_path: Path) -> types.GenerateContentResponse:
         """Synchronous transcription for thread pool execution.

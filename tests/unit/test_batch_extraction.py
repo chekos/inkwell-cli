@@ -98,9 +98,11 @@ class TestBatchedExtraction:
             patch("inkwell.extraction.engine.GeminiExtractor"),
         ):
             # Pass API key directly so engine knows gemini is available
+            # Disable plugin registry to use mocked extractors
             engine = ExtractionEngine(
                 cache=temp_cache,
                 gemini_api_key="AIzaSyD" + "X" * 32,
+                use_plugin_registry=False,
             )
 
             # Mock extractor response
@@ -165,7 +167,7 @@ class TestBatchedExtraction:
             mock_gemini.return_value.extract = AsyncMock(return_value=batch_response)
             mock_gemini.return_value.estimate_cost = Mock(return_value=0.01)
 
-            engine = ExtractionEngine(cache=temp_cache)
+            engine = ExtractionEngine(cache=temp_cache, use_plugin_registry=False)
             mock_gemini_instance = engine.gemini_extractor
 
             transcript = "Test transcript"
@@ -217,7 +219,7 @@ class TestBatchedExtraction:
             patch("inkwell.extraction.engine.ClaudeExtractor"),
             patch("inkwell.extraction.engine.GeminiExtractor"),
         ):
-            engine = ExtractionEngine(cache=temp_cache)
+            engine = ExtractionEngine(cache=temp_cache, use_plugin_registry=False)
 
             transcript = "Test transcript"
             metadata = {"episode_url": "https://example.com/ep1"}
@@ -285,7 +287,7 @@ class TestBatchedExtraction:
             mock_gemini.return_value.extract = mock_extract_fn
             mock_gemini.return_value.estimate_cost = Mock(return_value=0.01)
 
-            engine = ExtractionEngine(cache=temp_cache)
+            engine = ExtractionEngine(cache=temp_cache, use_plugin_registry=False)
 
             # Execute batch extraction
             results = await engine.extract_all_batched(
@@ -310,7 +312,7 @@ class TestBatchedExtraction:
             patch("inkwell.extraction.engine.ClaudeExtractor"),
             patch("inkwell.extraction.engine.GeminiExtractor"),
         ):
-            engine = ExtractionEngine(cache=temp_cache)
+            engine = ExtractionEngine(cache=temp_cache, use_plugin_registry=False)
 
             results, summary = await engine.extract_all_batched(
                 templates=[],
@@ -340,6 +342,7 @@ class TestBatchedExtraction:
             engine = ExtractionEngine(
                 cache=temp_cache,
                 gemini_api_key="AIzaSyD" + "X" * 32,
+                use_plugin_registry=False,
             )
 
             # Response only includes summary, missing quotes
@@ -379,7 +382,7 @@ class TestBatchPromptCreation:
             patch("inkwell.extraction.engine.ClaudeExtractor"),
             patch("inkwell.extraction.engine.GeminiExtractor"),
         ):
-            engine = ExtractionEngine(gemini_api_key="AIzaSyD" + "X" * 32)
+            engine = ExtractionEngine(gemini_api_key="AIzaSyD" + "X" * 32, use_plugin_registry=False)
 
             prompt = engine._create_batch_prompt(
                 templates=[summary_template, quotes_template],
@@ -421,7 +424,7 @@ class TestBatchResponseParsing:
             patch("inkwell.extraction.engine.ClaudeExtractor"),
             patch("inkwell.extraction.engine.GeminiExtractor"),
         ):
-            engine = ExtractionEngine()
+            engine = ExtractionEngine(use_plugin_registry=False)
 
             response = json.dumps(
                 {
@@ -465,7 +468,7 @@ class TestBatchResponseParsing:
             patch("inkwell.extraction.engine.ClaudeExtractor"),
             patch("inkwell.extraction.engine.GeminiExtractor"),
         ):
-            engine = ExtractionEngine()
+            engine = ExtractionEngine(use_plugin_registry=False)
 
             # Response with text before and after JSON
             response = 'Here is the analysis:\n{"summary": "Test"}\nDone!'
@@ -489,7 +492,7 @@ class TestBatchResponseParsing:
             patch("inkwell.extraction.engine.ClaudeExtractor"),
             patch("inkwell.extraction.engine.GeminiExtractor"),
         ):
-            engine = ExtractionEngine()
+            engine = ExtractionEngine(use_plugin_registry=False)
 
             response = "not valid json at all"
 
@@ -530,7 +533,7 @@ class TestIndividualFallback:
             mock_gemini.return_value.extract = mock_extract_fn
             mock_gemini.return_value.estimate_cost = Mock(return_value=0.01)
 
-            engine = ExtractionEngine()
+            engine = ExtractionEngine(use_plugin_registry=False)
 
             results = await engine._extract_individually(
                 templates=[summary_template, quotes_template],
@@ -570,7 +573,7 @@ class TestIndividualFallback:
             mock_gemini.return_value.extract = mock_extract_fn
             mock_gemini.return_value.estimate_cost = Mock(return_value=0.01)
 
-            engine = ExtractionEngine()
+            engine = ExtractionEngine(use_plugin_registry=False)
 
             results = await engine._extract_individually(
                 templates=[summary_template, quotes_template],
@@ -612,6 +615,7 @@ class TestCostTracking:
                 cache=temp_cache,
                 cost_tracker=cost_tracker,
                 gemini_api_key="AIzaSyD" + "X" * 32,
+                use_plugin_registry=False,
             )
 
             batch_response = json.dumps({"summary": "Test", "quotes": ["Quote"]})

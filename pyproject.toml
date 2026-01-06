@@ -73,6 +73,21 @@ dev = [
 [project.scripts]
 inkwell = "inkwell.cli:app"
 
+# Plugin entry points - built-in plugins registered here
+# Third-party plugins can register their own entry points
+[project.entry-points."inkwell.plugins.extraction"]
+claude = "inkwell.extraction.extractors.claude:ClaudeExtractor"
+gemini = "inkwell.extraction.extractors.gemini:GeminiExtractor"
+
+[project.entry-points."inkwell.plugins.transcription"]
+# Transcription plugins will be added in Phase 3
+# youtube = "inkwell.transcription.youtube:YouTubeTranscriber"
+# gemini = "inkwell.transcription.gemini:GeminiTranscriber"
+
+[project.entry-points."inkwell.plugins.output"]
+# Output plugins will be added in Phase 4
+# markdown = "inkwell.output.markdown:MarkdownOutput"
+
 [build-system]
 requires = ["setuptools>=61.0", "wheel", "setuptools-scm>=8.0"]
 build-backend = "setuptools.build_meta"

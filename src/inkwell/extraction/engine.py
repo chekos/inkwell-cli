@@ -4,6 +4,7 @@ Coordinates template selection, provider selection, caching, and result parsing.
 """
 
 import logging
+import os
 import re
 import time
 import warnings
@@ -13,6 +14,8 @@ from typing import TYPE_CHECKING, Any
 
 from ..config.precedence import resolve_config_value
 from ..config.schema import ExtractionConfig
+from ..plugins import ExtractionPlugin, PluginRegistry
+from ..plugins.discovery import discover_plugins, get_entry_point_group
 from ..utils.errors import ValidationError
 from ..utils.json_utils import JSONParsingError, safe_json_loads
 from .cache import ExtractionCache
@@ -83,6 +86,7 @@ class ExtractionEngine:
         cache: ExtractionCache | None = None,
         default_provider: str = "gemini",
         cost_tracker: "CostTracker | None" = None,
+        use_plugin_registry: bool = True,
     ) -> None:
         """Initialize extraction engine.
 
@@ -93,10 +97,15 @@ class ExtractionEngine:
             cache: Cache instance (defaults to new ExtractionCache)
             default_provider: Default provider ("claude" or "gemini") [deprecated]
             cost_tracker: Cost tracker for recording API usage (optional, for DI)
+            use_plugin_registry: Whether to load extractors from plugin registry (default: True)
 
         Note:
             Prefer passing `config` over individual parameters. Individual parameters
             are maintained for backward compatibility but will be deprecated in v2.0.
+
+            Plugin Selection:
+            - Set INKWELL_EXTRACTOR env var to force a specific extractor
+            - Otherwise, the highest priority available extractor is used
         """
         # Warn if using deprecated individual parameters
         deprecated_params = []
@@ -137,16 +146,96 @@ class ExtractionEngine:
         self.default_provider = effective_provider
         self.cost_tracker = cost_tracker
 
+        # Initialize plugin registry
+        self._registry: PluginRegistry[ExtractionPlugin] = PluginRegistry(ExtractionPlugin)
+        self._use_plugin_registry = use_plugin_registry
+        self._plugins_loaded = False
+
+    def _load_extraction_plugins(self) -> None:
+        """Load extraction plugins from entry points into registry.
+
+        This is called lazily when plugins are first needed. Plugins are
+        configured with any available API keys and cost tracker.
+        """
+        if self._plugins_loaded:
+            return
+
+        group = get_entry_point_group("extraction")
+
+        for result in discover_plugins(group):
+            if result.success and result.plugin is not None:
+                # Configure the plugin
+                plugin_config: dict[str, Any] = {}
+
+                # Provide API key based on plugin name
+                if result.name == "claude" and self._claude_api_key:
+                    plugin_config["api_key"] = self._claude_api_key
+                elif result.name == "gemini" and self._gemini_api_key:
+                    plugin_config["api_key"] = self._gemini_api_key
+
+                try:
+                    result.plugin.configure(plugin_config, self.cost_tracker)
+                    result.plugin.validate()
+
+                    # Register with built-in priority
+                    self._registry.register(
+                        name=result.name,
+                        plugin=result.plugin,  # type: ignore[arg-type]
+                        priority=PluginRegistry.PRIORITY_BUILTIN,
+                        source=result.source,
+                    )
+                    logger.debug(f"Registered extraction plugin: {result.name}")
+                except Exception as e:
+                    # Register as broken plugin
+                    self._registry.register(
+                        name=result.name,
+                        plugin=None,
+                        priority=0,
+                        source=result.source,
+                        error=str(e),
+                    )
+                    logger.warning(f"Failed to configure extraction plugin {result.name}: {e}")
+            else:
+                # Register broken plugin for visibility
+                self._registry.register(
+                    name=result.name,
+                    plugin=None,
+                    priority=0,
+                    source=result.source,
+                    error=result.error,
+                    recovery_hint=result.recovery_hint,
+                )
+
+        self._plugins_loaded = True
+
+    @property
+    def extraction_registry(self) -> PluginRegistry[ExtractionPlugin]:
+        """Get the extraction plugin registry.
+
+        Lazily loads plugins on first access.
+        """
+        if self._use_plugin_registry and not self._plugins_loaded:
+            self._load_extraction_plugins()
+        return self._registry
+
     @property
     def claude_extractor(self) -> ClaudeExtractor:
-        """Lazily initialize Claude extractor."""
+        """Lazily initialize Claude extractor.
+
+        Note: For new code, prefer using the plugin registry via
+        extraction_registry.get("claude") instead.
+        """
         if self._claude_extractor is None:
             self._claude_extractor = ClaudeExtractor(api_key=self._claude_api_key)
         return self._claude_extractor
 
     @property
     def gemini_extractor(self) -> GeminiExtractor:
-        """Lazily initialize Gemini extractor."""
+        """Lazily initialize Gemini extractor.
+
+        Note: For new code, prefer using the plugin registry via
+        extraction_registry.get("gemini") instead.
+        """
         if self._gemini_extractor is None:
             self._gemini_extractor = GeminiExtractor(api_key=self._gemini_api_key)
         return self._gemini_extractor
@@ -612,7 +701,92 @@ class ExtractionEngine:
     def _select_extractor(self, template: ExtractionTemplate) -> BaseExtractor:
         """Select appropriate extractor for template.
 
-        Uses template's model_preference if specified, otherwise uses heuristics.
+        Selection priority:
+        1. INKWELL_EXTRACTOR environment variable (explicit override)
+        2. Template's model_preference if specified
+        3. Heuristics based on template type
+        4. Default provider
+        5. Highest priority plugin from registry
+
+        Args:
+            template: Extraction template
+
+        Returns:
+            Extractor instance (Claude, Gemini, or plugin)
+        """
+        # Check environment variable override first
+        env_override = os.environ.get("INKWELL_EXTRACTOR")
+        if env_override:
+            # Try plugin registry first
+            if self._use_plugin_registry:
+                plugin = self.extraction_registry.get(env_override)
+                if plugin:
+                    return plugin
+            # Fall back to direct access for built-ins
+            if env_override == "claude":
+                return self.claude_extractor
+            elif env_override == "gemini":
+                return self.gemini_extractor
+            else:
+                raise ValueError(
+                    f"Extractor '{env_override}' not found (set via INKWELL_EXTRACTOR). "
+                    f"Available: {', '.join(n for n, _ in self.extraction_registry.get_enabled())}"
+                )
+
+        # Try to use plugin registry if enabled
+        if self._use_plugin_registry:
+            return self._select_extractor_from_registry(template)
+
+        # Fall back to legacy behavior
+        return self._select_extractor_legacy(template)
+
+    def _select_extractor_from_registry(self, template: ExtractionTemplate) -> BaseExtractor:
+        """Select extractor using plugin registry.
+
+        Args:
+            template: Extraction template
+
+        Returns:
+            Extractor instance from registry
+        """
+        # Template's explicit preference
+        if template.model_preference:
+            plugin = self.extraction_registry.get(template.model_preference)
+            if plugin:
+                return plugin
+
+        # Get all available plugins
+        enabled_plugins = self.extraction_registry.get_enabled()
+
+        if not enabled_plugins:
+            # No plugins loaded, fall back to legacy
+            return self._select_extractor_legacy(template)
+
+        # Heuristics for auto-selection
+        # Use Claude for quote extraction (precision critical)
+        if "quote" in template.name.lower():
+            claude_plugin = self.extraction_registry.get("claude")
+            if claude_plugin:
+                return claude_plugin
+
+        # Use Claude for complex structured data
+        if template.expected_format == "json" and template.output_schema:
+            required_fields = template.output_schema.get("required", [])
+            if len(required_fields) > 5:
+                claude_plugin = self.extraction_registry.get("claude")
+                if claude_plugin:
+                    return claude_plugin
+
+        # Default provider preference
+        default_plugin = self.extraction_registry.get(self.default_provider)
+        if default_plugin:
+            return default_plugin
+
+        # Use highest priority available plugin
+        return enabled_plugins[0][1]
+
+    def _select_extractor_legacy(self, template: ExtractionTemplate) -> BaseExtractor:
+        """Select extractor using legacy (non-registry) approach.
 
         Args:
             template: Extraction template

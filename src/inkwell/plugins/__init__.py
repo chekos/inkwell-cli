@@ -65,6 +65,9 @@ from .registry import (
     PluginRegistry,
 )
 
+# Plugin type base classes
+from .types import ExtractionPlugin
+
 __all__ = [
     # Constants
     "PLUGIN_API_VERSION",
@@ -72,6 +75,7 @@ __all__ = [
     # Base classes
     "InkwellPlugin",
     "BrokenPlugin",
+    "ExtractionPlugin",
     # Exceptions
     "PluginValidationError",
     "PluginConflictError",

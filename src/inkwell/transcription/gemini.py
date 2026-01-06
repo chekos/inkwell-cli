@@ -209,9 +209,7 @@ class GeminiTranscriber:
             # Check if audio needs chunking (>15 minutes)
             if needs_chunking(audio_path):
                 duration = get_audio_duration(audio_path)
-                logger.info(
-                    f"Audio is {duration/60:.1f} minutes - using chunked transcription"
-                )
+                logger.info(f"Audio is {duration / 60:.1f} minutes - using chunked transcription")
                 transcript = await self._transcribe_chunked(audio_path, episode_url)
             else:
                 # Short audio - single-pass transcription
@@ -263,9 +261,7 @@ class GeminiTranscriber:
                 logger.info(f"Transcribing chunk {i + 1}/{len(chunk_paths)}...")
 
                 # Transcribe single chunk
-                response = await asyncio.to_thread(
-                    self._transcribe_chunk_sync, chunk_path, i
-                )
+                response = await asyncio.to_thread(self._transcribe_chunk_sync, chunk_path, i)
                 chunk_transcript = self._parse_response(response, chunk_path, episode_url)
                 chunk_transcripts.append(chunk_transcript)
 
@@ -345,9 +341,7 @@ class GeminiTranscriber:
             and response.candidates[0].finish_reason
             and response.candidates[0].finish_reason.name == "MAX_TOKENS"
         ):
-            logger.warning(
-                f"Chunk {chunk_index + 1} may be incomplete - hit token limit"
-            )
+            logger.warning(f"Chunk {chunk_index + 1} may be incomplete - hit token limit")
 
         return response
 
@@ -400,9 +394,7 @@ class GeminiTranscriber:
 
         # Recalculate durations
         for i in range(len(merged_segments) - 1):
-            merged_segments[i].duration = (
-                merged_segments[i + 1].start - merged_segments[i].start
-            )
+            merged_segments[i].duration = merged_segments[i + 1].start - merged_segments[i].start
 
         # Combine summaries if present
         summaries = [c.summary for c in chunks if c.summary]

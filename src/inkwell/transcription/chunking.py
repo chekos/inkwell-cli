@@ -33,9 +33,12 @@ def get_audio_duration(audio_path: Path) -> float:
         result = subprocess.run(
             [
                 "ffprobe",
-                "-v", "error",
-                "-show_entries", "format=duration",
-                "-of", "default=noprint_wrappers=1:nokey=1",
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration",
+                "-of",
+                "default=noprint_wrappers=1:nokey=1",
                 str(audio_path),
             ],
             capture_output=True,
@@ -102,11 +105,16 @@ def split_audio_into_chunks(
             [
                 "ffmpeg",
                 "-y",  # Overwrite output
-                "-ss", str(start),  # Start time
-                "-i", str(audio_path),  # Input file
-                "-t", str(actual_duration),  # Duration
-                "-c", "copy",  # Copy codec (fast, no re-encoding)
-                "-avoid_negative_ts", "make_zero",  # Fix timestamp issues
+                "-ss",
+                str(start),  # Start time
+                "-i",
+                str(audio_path),  # Input file
+                "-t",
+                str(actual_duration),  # Duration
+                "-c",
+                "copy",  # Copy codec (fast, no re-encoding)
+                "-avoid_negative_ts",
+                "make_zero",  # Fix timestamp issues
                 str(chunk_path),
             ],
             capture_output=True,

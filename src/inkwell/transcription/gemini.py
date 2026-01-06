@@ -261,7 +261,11 @@ class GeminiTranscriber:
         )
 
         # Check if output was truncated due to token limit
-        if response.candidates and response.candidates[0].finish_reason.name == "MAX_TOKENS":
+        if (
+            response.candidates
+            and response.candidates[0].finish_reason
+            and response.candidates[0].finish_reason.name == "MAX_TOKENS"
+        ):
             logger.warning(
                 "Transcript may be incomplete - output hit token limit. "
                 "Consider processing shorter audio segments."

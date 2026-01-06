@@ -80,9 +80,8 @@ claude = "inkwell.extraction.extractors.claude:ClaudeExtractor"
 gemini = "inkwell.extraction.extractors.gemini:GeminiExtractor"
 
 [project.entry-points."inkwell.plugins.transcription"]
-# Transcription plugins will be added in Phase 3
-# youtube = "inkwell.transcription.youtube:YouTubeTranscriber"
-# gemini = "inkwell.transcription.gemini:GeminiTranscriber"
+youtube = "inkwell.transcription.youtube:YouTubeTranscriber"
+gemini = "inkwell.transcription.gemini:GeminiTranscriber"
 
 [project.entry-points."inkwell.plugins.output"]
 # Output plugins will be added in Phase 4

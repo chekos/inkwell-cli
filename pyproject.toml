@@ -84,8 +84,7 @@ youtube = "inkwell.transcription.youtube:YouTubeTranscriber"
 gemini = "inkwell.transcription.gemini:GeminiTranscriber"
 
 [project.entry-points."inkwell.plugins.output"]
-# Output plugins will be added in Phase 4
-# markdown = "inkwell.output.markdown:MarkdownOutput"
+markdown = "inkwell.output.markdown:MarkdownOutput"
 
 [build-system]
 requires = ["setuptools>=61.0", "wheel", "setuptools-scm>=8.0"]

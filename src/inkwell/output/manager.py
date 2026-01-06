@@ -3,19 +3,25 @@
 Handles directory creation, atomic file writes, and metadata generation.
 """
 
+from __future__ import annotations
+
 import logging
 import os
 import shutil
 import tempfile
+import warnings
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import yaml
 
 from ..extraction.models import ExtractionResult
 from ..utils.errors import SecurityError
-from .markdown import MarkdownGenerator
+from .markdown import MarkdownGenerator, MarkdownOutput
 from .models import EpisodeMetadata, EpisodeOutput, OutputFile
+
+if TYPE_CHECKING:
+    from inkwell.plugins.types.output import OutputPlugin
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +36,9 @@ class OutputManager:
     - File conflict resolution
     - Schema versioning and migrations
 
+    The OutputManager accepts an OutputPlugin for rendering extraction results.
+    By default, it uses MarkdownOutput (the built-in markdown plugin).
+
     Example:
         >>> manager = OutputManager(output_dir=Path("./output"))
         >>> output = manager.write_episode(
@@ -38,22 +47,68 @@ class OutputManager:
         ... )
         >>> print(output.directory)
         ./output/podcast-name-2025-11-07-episode-title/
+
+        # Use a custom output plugin:
+        >>> from inkwell.output.markdown import MarkdownOutput
+        >>> renderer = MarkdownOutput()
+        >>> renderer.configure({})
+        >>> manager = OutputManager(output_dir=Path("./output"), renderer=renderer)
     """
 
     CURRENT_METADATA_SCHEMA_VERSION = 1
 
-    def __init__(self, output_dir: Path, markdown_generator: MarkdownGenerator | None = None):
+    def __init__(
+        self,
+        output_dir: Path,
+        renderer: OutputPlugin | MarkdownOutput | None = None,
+        markdown_generator: MarkdownGenerator | None = None,
+    ):
         """Initialize output manager.
 
         Args:
             output_dir: Base output directory
-            markdown_generator: MarkdownGenerator instance (creates one if None)
+            renderer: OutputPlugin instance for rendering (creates MarkdownOutput if None)
+            markdown_generator: Deprecated. Use `renderer` instead.
+
+        .. deprecated:: 0.12.0
+            The `markdown_generator` parameter is deprecated. Use `renderer` instead.
         """
         self.output_dir = output_dir
-        self.markdown_generator = markdown_generator or MarkdownGenerator()
+
+        # Handle deprecated markdown_generator parameter
+        if markdown_generator is not None:
+            warnings.warn(
+                "The 'markdown_generator' parameter is deprecated. Use 'renderer' instead. "
+                "This parameter will be removed in v1.0.0.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            self._renderer = markdown_generator
+        else:
+            self._renderer = renderer or MarkdownOutput()
 
         # Ensure output directory exists
         self.output_dir.mkdir(parents=True, exist_ok=True)
+
+    @property
+    def renderer(self) -> OutputPlugin | MarkdownOutput:
+        """Get the output renderer plugin."""
+        return self._renderer
+
+    @property
+    def markdown_generator(self) -> MarkdownOutput:
+        """Get the markdown generator (backward compatibility).
+
+        .. deprecated:: 0.12.0
+            Use `renderer` property instead. This property will be removed in v1.0.0.
+        """
+        warnings.warn(
+            "The 'markdown_generator' property is deprecated. Use 'renderer' instead. "
+            "This property will be removed in v1.0.0.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self._renderer  # type: ignore[return-value]
 
     def write_episode(
         self,
@@ -95,8 +150,8 @@ class OutputManager:
             total_cost = 0.0
 
             for result in extraction_results:
-                # Generate markdown
-                markdown_content = self.markdown_generator.generate(
+                # Generate markdown using the renderer's sync method
+                markdown_content = self._renderer.generate(
                     result,
                     episode_metadata.model_dump(),
                     include_frontmatter=True,
@@ -208,8 +263,8 @@ class OutputManager:
 
         # Write new markdown files
         for result in new_extraction_results:
-            # Generate markdown
-            markdown_content = self.markdown_generator.generate(
+            # Generate markdown using the renderer's sync method
+            markdown_content = self._renderer.generate(
                 result,
                 existing_metadata.model_dump(),
                 include_frontmatter=True,

@@ -274,8 +274,7 @@ def enable_plugin(
     else:
         console.print(f"[green]v[/green] Plugin '{name}' enabled")
         console.print(
-            "[dim]Note: Plugin state is not persisted. "
-            "Use --persist to save to config file.[/dim]"
+            "[dim]Note: Plugin state is not persisted. Use --persist to save to config file.[/dim]"
         )
 
 
@@ -327,8 +326,7 @@ def disable_plugin(
     else:
         console.print(f"[green]v[/green] Plugin '{name}' disabled")
         console.print(
-            "[dim]Note: Plugin state is not persisted. "
-            "Use --persist to save to config file.[/dim]"
+            "[dim]Note: Plugin state is not persisted. Use --persist to save to config file.[/dim]"
         )
 
 

@@ -148,6 +148,7 @@ class TestExtractionEngineRegistry:
         # Should have discovered at least claude and gemini
         assert "claude" in registry or "gemini" in registry
 
+
 class TestExtractionPluginConfigure:
     """Tests for ExtractionPlugin configuration."""
 

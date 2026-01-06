@@ -603,9 +603,7 @@ class TestExtractionEngineMultipleExtractions:
             else:
                 return create_mock_extractor('{"quotes": []}', "ClaudeExtractor")
 
-        with patch.object(
-            engine, "_select_extractor", side_effect=select_extractor_side_effect
-        ):
+        with patch.object(engine, "_select_extractor", side_effect=select_extractor_side_effect):
             results, summary = await engine.extract_all(
                 templates=[text_template, json_template],
                 transcript="Test transcript",

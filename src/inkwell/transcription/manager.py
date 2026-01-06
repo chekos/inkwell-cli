@@ -515,9 +515,7 @@ class TranscriptionManager:
                 _progress("trying_youtube")
                 request = TranscriptionRequest(url=episode_url)
                 if not plugin.can_handle(request):
-                    raise APIError(
-                        f"Plugin '{transcriber_name}' cannot handle URL: {episode_url}"
-                    )
+                    raise APIError(f"Plugin '{transcriber_name}' cannot handle URL: {episode_url}")
                 transcript = await plugin.transcribe(request)
             # Gemini and other file-based plugins need audio download first
             else:

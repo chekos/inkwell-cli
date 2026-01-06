@@ -309,9 +309,7 @@ class TestExtractionEngineWithSummary:
         transcript = "Test transcript"
         metadata = {"episode_url": "https://example.com/ep1"}
 
-        with patch.object(
-            engine, "_select_extractor", side_effect=select_extractor_side_effect
-        ):
+        with patch.object(engine, "_select_extractor", side_effect=select_extractor_side_effect):
             # Extract
             results, summary = await engine.extract_all(
                 templates, transcript, metadata, use_cache=False
@@ -393,9 +391,7 @@ class TestExtractionEngineWithSummary:
 
         # Create mock extractor
         mock_extractor = Mock()
-        mock_extractor.extract = AsyncMock(
-            return_value='{"summary": "test", "quotes": []}'
-        )
+        mock_extractor.extract = AsyncMock(return_value='{"summary": "test", "quotes": []}')
         mock_extractor.estimate_cost = lambda t, l: 0.01
         mock_extractor.build_prompt = lambda t, tr, m: "prompt"
         mock_extractor.__class__.__name__ = "GeminiExtractor"
@@ -504,9 +500,7 @@ class TestExtractionEngineWithSummary:
         transcript = "Test transcript"
         metadata = {"episode_url": "https://example.com/ep1"}
 
-        with patch.object(
-            engine, "_select_extractor", side_effect=select_extractor_side_effect
-        ):
+        with patch.object(engine, "_select_extractor", side_effect=select_extractor_side_effect):
             # First extraction (fresh)
             results1, summary1 = await engine.extract_all(
                 templates, transcript, metadata, use_cache=True

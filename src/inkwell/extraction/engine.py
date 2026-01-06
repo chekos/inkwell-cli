@@ -8,8 +8,6 @@ import os
 import re
 import time
 import warnings
-
-# Type-only import to avoid circular dependency
 from typing import TYPE_CHECKING, Any
 
 from ..config.precedence import resolve_config_value
@@ -19,7 +17,7 @@ from ..plugins.discovery import discover_plugins, get_entry_point_group
 from ..utils.errors import ValidationError
 from ..utils.json_utils import JSONParsingError, safe_json_loads
 from .cache import ExtractionCache
-from .extractors import BaseExtractor, ClaudeExtractor, GeminiExtractor
+from .extractors import BaseExtractor
 from .models import (
     ExtractedContent,
     ExtractionAttempt,
@@ -31,6 +29,8 @@ from .models import (
 
 if TYPE_CHECKING:
     from ..utils.costs import CostTracker
+    from .extractors.claude import ClaudeExtractor
+    from .extractors.gemini import GeminiExtractor
 
 logger = logging.getLogger(__name__)
 
@@ -143,15 +143,17 @@ class ExtractionEngine:
         # Store API keys for lazy initialization
         self._claude_api_key = effective_claude_key
         self._gemini_api_key = effective_gemini_key
-        self._claude_extractor: ClaudeExtractor | None = None
-        self._gemini_extractor: GeminiExtractor | None = None
+        self._claude_extractor: "ClaudeExtractor | None" = None  # noqa: UP037
+        self._gemini_extractor: "GeminiExtractor | None" = None  # noqa: UP037
 
         self.cache = cache or ExtractionCache()
         self.default_provider = effective_provider
         self.cost_tracker = cost_tracker
 
         # Initialize plugin registry
-        self._registry: PluginRegistry[ExtractionPlugin] = PluginRegistry(ExtractionPlugin)
+        self._registry: PluginRegistry[ExtractionPlugin] = PluginRegistry(
+            ExtractionPlugin  # type: ignore[type-abstract]
+        )
         self._use_plugin_registry = use_plugin_registry
         self._plugins_loaded = False
 
@@ -226,24 +228,28 @@ class ExtractionEngine:
         return self._registry
 
     @property
-    def claude_extractor(self) -> ClaudeExtractor:
+    def claude_extractor(self) -> "ClaudeExtractor":
         """Lazily initialize Claude extractor.
 
         Note: For new code, prefer using the plugin registry via
         extraction_registry.get("claude") instead.
         """
         if self._claude_extractor is None:
+            from .extractors.claude import ClaudeExtractor
+
             self._claude_extractor = ClaudeExtractor(api_key=self._claude_api_key)
         return self._claude_extractor
 
     @property
-    def gemini_extractor(self) -> GeminiExtractor:
+    def gemini_extractor(self) -> "GeminiExtractor":
         """Lazily initialize Gemini extractor.
 
         Note: For new code, prefer using the plugin registry via
         extraction_registry.get("gemini") instead.
         """
         if self._gemini_extractor is None:
+            from .extractors.gemini import GeminiExtractor
+
             self._gemini_extractor = GeminiExtractor(api_key=self._gemini_api_key)
         return self._gemini_extractor
 

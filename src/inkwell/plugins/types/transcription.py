@@ -160,9 +160,9 @@ class TranscriptionPlugin(InkwellPlugin):
                 return any(pattern in request.url for pattern in self.HANDLES_URLS)
             return True
         elif request.source_type == "file":
-            return caps.get("supports_file", True)
+            return bool(caps.get("supports_file", True))
         else:  # bytes
-            return caps.get("supports_bytes", False)
+            return bool(caps.get("supports_bytes", False))
 
     def estimate_cost(self, duration_seconds: float) -> float:
         """Estimate cost for transcribing audio of given duration.

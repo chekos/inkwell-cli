@@ -73,7 +73,7 @@ def _load_all_registries() -> dict[str, PluginRegistry]:
 
     for plugin_type, results in all_plugins.items():
         plugin_class = plugin_classes[plugin_type]
-        registry = PluginRegistry(plugin_class)
+        registry: PluginRegistry = PluginRegistry(plugin_class)  # type: ignore[type-abstract]
 
         # Register each discovered plugin
         for result in results:

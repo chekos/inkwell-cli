@@ -4,6 +4,8 @@ This module defines the base class that all output plugins must implement.
 Output plugins convert extraction results into formatted output (markdown, HTML, etc.).
 """
 
+import asyncio
+import warnings
 from abc import abstractmethod
 from typing import TYPE_CHECKING, Any, ClassVar
 
@@ -94,6 +96,37 @@ class OutputPlugin(InkwellPlugin):
             ValueError: If result or metadata is invalid.
         """
         pass
+
+    def generate(
+        self,
+        result: "ExtractionResult",
+        episode_metadata: dict[str, Any],
+        include_frontmatter: bool = True,
+    ) -> str:
+        """Generate output from extraction result (sync wrapper).
+
+        This is a synchronous wrapper around :meth:`render` for backward
+        compatibility with code that doesn't use async/await.
+
+        .. deprecated:: 0.12.0
+            Use :meth:`render` instead. This method will be removed in v1.0.0.
+
+        Args:
+            result: ExtractionResult from extraction engine.
+            episode_metadata: Episode metadata (podcast name, title, etc.).
+            include_frontmatter: Whether to include metadata header.
+
+        Returns:
+            Formatted output string.
+        """
+        warnings.warn(
+            f"{self.__class__.__name__}.generate() is deprecated. "
+            "Use await render() instead. This method will be removed in v1.0.0.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        # Run async render() synchronously
+        return asyncio.run(self.render(result, episode_metadata, include_frontmatter))
 
     def get_filename(self, template_name: str) -> str:
         """Get the output filename for a template.

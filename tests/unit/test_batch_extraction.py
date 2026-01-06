@@ -94,8 +94,8 @@ class TestBatchedExtraction:
     ) -> None:
         """Test successful batched extraction of multiple templates."""
         with (
-            patch("inkwell.extraction.engine.ClaudeExtractor"),
-            patch("inkwell.extraction.engine.GeminiExtractor"),
+            patch("inkwell.extraction.extractors.claude.ClaudeExtractor"),
+            patch("inkwell.extraction.extractors.gemini.GeminiExtractor"),
         ):
             # Pass API key directly so engine knows gemini is available
             # Disable plugin registry to use mocked extractors
@@ -159,8 +159,8 @@ class TestBatchedExtraction:
     ) -> None:
         """Test that batched extraction uses cache for some templates."""
         with (
-            patch("inkwell.extraction.engine.ClaudeExtractor"),
-            patch("inkwell.extraction.engine.GeminiExtractor") as mock_gemini,
+            patch("inkwell.extraction.extractors.claude.ClaudeExtractor"),
+            patch("inkwell.extraction.extractors.gemini.GeminiExtractor") as mock_gemini,
         ):
             # Setup mock gemini extractor BEFORE creating engine
             batch_response = json.dumps({"quotes": ["Quote 1"]})
@@ -216,8 +216,8 @@ class TestBatchedExtraction:
     ) -> None:
         """Test that batched extraction returns early when all templates are cached."""
         with (
-            patch("inkwell.extraction.engine.ClaudeExtractor"),
-            patch("inkwell.extraction.engine.GeminiExtractor"),
+            patch("inkwell.extraction.extractors.claude.ClaudeExtractor"),
+            patch("inkwell.extraction.extractors.gemini.GeminiExtractor"),
         ):
             engine = ExtractionEngine(cache=temp_cache, use_plugin_registry=False)
 
@@ -265,8 +265,8 @@ class TestBatchedExtraction:
     ) -> None:
         """Test fallback to individual extraction when batch fails."""
         with (
-            patch("inkwell.extraction.engine.ClaudeExtractor"),
-            patch("inkwell.extraction.engine.GeminiExtractor") as mock_gemini,
+            patch("inkwell.extraction.extractors.claude.ClaudeExtractor"),
+            patch("inkwell.extraction.extractors.gemini.GeminiExtractor") as mock_gemini,
         ):
             # First call fails (batch), subsequent calls succeed (individual)
             call_count = {"count": 0}
@@ -309,8 +309,8 @@ class TestBatchedExtraction:
     ) -> None:
         """Test batched extraction with empty template list."""
         with (
-            patch("inkwell.extraction.engine.ClaudeExtractor"),
-            patch("inkwell.extraction.engine.GeminiExtractor"),
+            patch("inkwell.extraction.extractors.claude.ClaudeExtractor"),
+            patch("inkwell.extraction.extractors.gemini.GeminiExtractor"),
         ):
             engine = ExtractionEngine(cache=temp_cache, use_plugin_registry=False)
 
@@ -336,8 +336,8 @@ class TestBatchedExtraction:
     ) -> None:
         """Test handling when batch response is missing a template."""
         with (
-            patch("inkwell.extraction.engine.ClaudeExtractor"),
-            patch("inkwell.extraction.engine.GeminiExtractor"),
+            patch("inkwell.extraction.extractors.claude.ClaudeExtractor"),
+            patch("inkwell.extraction.extractors.gemini.GeminiExtractor"),
         ):
             engine = ExtractionEngine(
                 cache=temp_cache,
@@ -379,8 +379,8 @@ class TestBatchPromptCreation:
     ) -> None:
         """Test that batch prompt has correct structure."""
         with (
-            patch("inkwell.extraction.engine.ClaudeExtractor"),
-            patch("inkwell.extraction.engine.GeminiExtractor"),
+            patch("inkwell.extraction.extractors.claude.ClaudeExtractor"),
+            patch("inkwell.extraction.extractors.gemini.GeminiExtractor"),
         ):
             engine = ExtractionEngine(
                 gemini_api_key="AIzaSyD" + "X" * 32, use_plugin_registry=False
@@ -423,8 +423,8 @@ class TestBatchResponseParsing:
     ) -> None:
         """Test successful parsing of batch response."""
         with (
-            patch("inkwell.extraction.engine.ClaudeExtractor"),
-            patch("inkwell.extraction.engine.GeminiExtractor"),
+            patch("inkwell.extraction.extractors.claude.ClaudeExtractor"),
+            patch("inkwell.extraction.extractors.gemini.GeminiExtractor"),
         ):
             engine = ExtractionEngine(use_plugin_registry=False)
 
@@ -467,8 +467,8 @@ class TestBatchResponseParsing:
     ) -> None:
         """Test parsing when JSON is surrounded by other text."""
         with (
-            patch("inkwell.extraction.engine.ClaudeExtractor"),
-            patch("inkwell.extraction.engine.GeminiExtractor"),
+            patch("inkwell.extraction.extractors.claude.ClaudeExtractor"),
+            patch("inkwell.extraction.extractors.gemini.GeminiExtractor"),
         ):
             engine = ExtractionEngine(use_plugin_registry=False)
 
@@ -491,8 +491,8 @@ class TestBatchResponseParsing:
     ) -> None:
         """Test error handling for invalid JSON."""
         with (
-            patch("inkwell.extraction.engine.ClaudeExtractor"),
-            patch("inkwell.extraction.engine.GeminiExtractor"),
+            patch("inkwell.extraction.extractors.claude.ClaudeExtractor"),
+            patch("inkwell.extraction.extractors.gemini.GeminiExtractor"),
         ):
             engine = ExtractionEngine(use_plugin_registry=False)
 
@@ -521,8 +521,8 @@ class TestIndividualFallback:
     ) -> None:
         """Test individual extraction fallback."""
         with (
-            patch("inkwell.extraction.engine.ClaudeExtractor"),
-            patch("inkwell.extraction.engine.GeminiExtractor") as mock_gemini,
+            patch("inkwell.extraction.extractors.claude.ClaudeExtractor"),
+            patch("inkwell.extraction.extractors.gemini.GeminiExtractor") as mock_gemini,
         ):
             # Mock individual extractions
             async def mock_extract_fn(template, transcript, metadata):
@@ -558,8 +558,8 @@ class TestIndividualFallback:
     ) -> None:
         """Test individual extraction with partial failures."""
         with (
-            patch("inkwell.extraction.engine.ClaudeExtractor"),
-            patch("inkwell.extraction.engine.GeminiExtractor") as mock_gemini,
+            patch("inkwell.extraction.extractors.claude.ClaudeExtractor"),
+            patch("inkwell.extraction.extractors.gemini.GeminiExtractor") as mock_gemini,
         ):
             # Mock: first succeeds, second fails
             call_count = {"count": 0}
@@ -608,8 +608,8 @@ class TestCostTracking:
         from inkwell.utils.costs import CostTracker
 
         with (
-            patch("inkwell.extraction.engine.ClaudeExtractor"),
-            patch("inkwell.extraction.engine.GeminiExtractor"),
+            patch("inkwell.extraction.extractors.claude.ClaudeExtractor"),
+            patch("inkwell.extraction.extractors.gemini.GeminiExtractor"),
         ):
             # Create cost tracker with temp file
             cost_tracker = CostTracker(costs_file=tmp_path / "costs.json")

@@ -66,8 +66,8 @@ class TestExtractionEngineInit:
     def test_init_default(self, mock_api_keys: None) -> None:
         """Test initialization with default settings."""
         with (
-            patch("inkwell.extraction.engine.ClaudeExtractor"),
-            patch("inkwell.extraction.engine.GeminiExtractor"),
+            patch("inkwell.extraction.extractors.claude.ClaudeExtractor"),
+            patch("inkwell.extraction.extractors.gemini.GeminiExtractor"),
         ):
             engine = ExtractionEngine(
                 gemini_api_key="AIzaSyD" + "X" * 32,
@@ -79,8 +79,8 @@ class TestExtractionEngineInit:
     def test_init_custom_provider(self, mock_api_keys: None) -> None:
         """Test initialization with custom default provider."""
         with (
-            patch("inkwell.extraction.engine.ClaudeExtractor"),
-            patch("inkwell.extraction.engine.GeminiExtractor"),
+            patch("inkwell.extraction.extractors.claude.ClaudeExtractor"),
+            patch("inkwell.extraction.extractors.gemini.GeminiExtractor"),
         ):
             engine = ExtractionEngine(default_provider="claude")
             assert engine.default_provider == "claude"
@@ -88,8 +88,8 @@ class TestExtractionEngineInit:
     def test_init_custom_cache(self, mock_api_keys: None, temp_cache: ExtractionCache) -> None:
         """Test initialization with custom cache."""
         with (
-            patch("inkwell.extraction.engine.ClaudeExtractor"),
-            patch("inkwell.extraction.engine.GeminiExtractor"),
+            patch("inkwell.extraction.extractors.claude.ClaudeExtractor"),
+            patch("inkwell.extraction.extractors.gemini.GeminiExtractor"),
         ):
             engine = ExtractionEngine(
                 cache=temp_cache,
@@ -114,8 +114,8 @@ class TestExtractionEngineConfigInjection:
         )
 
         with (
-            patch("inkwell.extraction.engine.ClaudeExtractor") as mock_claude,
-            patch("inkwell.extraction.engine.GeminiExtractor") as mock_gemini,
+            patch("inkwell.extraction.extractors.claude.ClaudeExtractor") as mock_claude,
+            patch("inkwell.extraction.extractors.gemini.GeminiExtractor") as mock_gemini,
         ):
             engine = ExtractionEngine(config=config)
 
@@ -132,8 +132,8 @@ class TestExtractionEngineConfigInjection:
     def test_individual_params_only(self, mock_api_keys: None) -> None:
         """Using only individual params works (backward compatibility)."""
         with (
-            patch("inkwell.extraction.engine.ClaudeExtractor"),
-            patch("inkwell.extraction.engine.GeminiExtractor"),
+            patch("inkwell.extraction.extractors.claude.ClaudeExtractor"),
+            patch("inkwell.extraction.extractors.gemini.GeminiExtractor"),
         ):
             engine = ExtractionEngine(
                 claude_api_key="test-claude-1234567890123456789012345678901234567890123456789012345678901234567890",
@@ -155,8 +155,8 @@ class TestExtractionEngineConfigInjection:
         )
 
         with (
-            patch("inkwell.extraction.engine.ClaudeExtractor"),
-            patch("inkwell.extraction.engine.GeminiExtractor"),
+            patch("inkwell.extraction.extractors.claude.ClaudeExtractor"),
+            patch("inkwell.extraction.extractors.gemini.GeminiExtractor"),
         ):
             engine = ExtractionEngine(
                 config=config,
@@ -176,8 +176,8 @@ class TestExtractionEngineConfigInjection:
         )
 
         with (
-            patch("inkwell.extraction.engine.ClaudeExtractor"),
-            patch("inkwell.extraction.engine.GeminiExtractor"),
+            patch("inkwell.extraction.extractors.claude.ClaudeExtractor"),
+            patch("inkwell.extraction.extractors.gemini.GeminiExtractor"),
         ):
             engine = ExtractionEngine(
                 config=config,
@@ -192,8 +192,8 @@ class TestExtractionEngineConfigInjection:
         config = ExtractionConfig()  # All defaults
 
         with (
-            patch("inkwell.extraction.engine.ClaudeExtractor"),
-            patch("inkwell.extraction.engine.GeminiExtractor"),
+            patch("inkwell.extraction.extractors.claude.ClaudeExtractor"),
+            patch("inkwell.extraction.extractors.gemini.GeminiExtractor"),
         ):
             engine = ExtractionEngine(config=config)
 
@@ -208,8 +208,8 @@ class TestExtractionEngineConfigInjection:
         config = ExtractionConfig()
 
         with (
-            patch("inkwell.extraction.engine.ClaudeExtractor"),
-            patch("inkwell.extraction.engine.GeminiExtractor"),
+            patch("inkwell.extraction.extractors.claude.ClaudeExtractor"),
+            patch("inkwell.extraction.extractors.gemini.GeminiExtractor"),
         ):
             engine = ExtractionEngine(config=config, cost_tracker=tracker)
 
@@ -224,8 +224,8 @@ class TestExtractionEngineConfigInjection:
         tracker = CostTracker(costs_file=tmp_path / "costs.json")
 
         with (
-            patch("inkwell.extraction.engine.ClaudeExtractor"),
-            patch("inkwell.extraction.engine.GeminiExtractor"),
+            patch("inkwell.extraction.extractors.claude.ClaudeExtractor"),
+            patch("inkwell.extraction.extractors.gemini.GeminiExtractor"),
         ):
             engine = ExtractionEngine(
                 claude_api_key="test-key-1234567890123456789012345678901234567890123456789012345678901234567890",
@@ -243,8 +243,8 @@ class TestExtractionEngineConfigInjection:
         )
 
         with (
-            patch("inkwell.extraction.engine.ClaudeExtractor"),
-            patch("inkwell.extraction.engine.GeminiExtractor"),
+            patch("inkwell.extraction.extractors.claude.ClaudeExtractor"),
+            patch("inkwell.extraction.extractors.gemini.GeminiExtractor"),
         ):
             engine = ExtractionEngine(config=config)
 
@@ -253,8 +253,8 @@ class TestExtractionEngineConfigInjection:
     def test_multiple_initialization_paths(self, mock_api_keys: None) -> None:
         """Verify multiple initialization paths don't interfere."""
         with (
-            patch("inkwell.extraction.engine.ClaudeExtractor"),
-            patch("inkwell.extraction.engine.GeminiExtractor"),
+            patch("inkwell.extraction.extractors.claude.ClaudeExtractor"),
+            patch("inkwell.extraction.extractors.gemini.GeminiExtractor"),
         ):
             # Path 1: Config only
             config1 = ExtractionConfig(default_provider="claude")
@@ -285,8 +285,8 @@ class TestExtractionEngineExtract:
     ) -> None:
         """Test successful text extraction."""
         with (
-            patch("inkwell.extraction.engine.ClaudeExtractor"),
-            patch("inkwell.extraction.engine.GeminiExtractor"),
+            patch("inkwell.extraction.extractors.claude.ClaudeExtractor"),
+            patch("inkwell.extraction.extractors.gemini.GeminiExtractor"),
         ):
             engine = ExtractionEngine(
                 cache=temp_cache,
@@ -316,8 +316,8 @@ class TestExtractionEngineExtract:
     ) -> None:
         """Test successful JSON extraction."""
         with (
-            patch("inkwell.extraction.engine.ClaudeExtractor"),
-            patch("inkwell.extraction.engine.GeminiExtractor"),
+            patch("inkwell.extraction.extractors.claude.ClaudeExtractor"),
+            patch("inkwell.extraction.extractors.gemini.GeminiExtractor"),
         ):
             engine = ExtractionEngine(
                 cache=temp_cache,
@@ -350,8 +350,8 @@ class TestExtractionEngineExtract:
     ) -> None:
         """Test that extraction uses cache for repeated requests."""
         with (
-            patch("inkwell.extraction.engine.ClaudeExtractor"),
-            patch("inkwell.extraction.engine.GeminiExtractor"),
+            patch("inkwell.extraction.extractors.claude.ClaudeExtractor"),
+            patch("inkwell.extraction.extractors.gemini.GeminiExtractor"),
         ):
             engine = ExtractionEngine(
                 cache=temp_cache,
@@ -389,8 +389,8 @@ class TestExtractionEngineExtract:
     ) -> None:
         """Test extraction with cache bypass."""
         with (
-            patch("inkwell.extraction.engine.ClaudeExtractor"),
-            patch("inkwell.extraction.engine.GeminiExtractor"),
+            patch("inkwell.extraction.extractors.claude.ClaudeExtractor"),
+            patch("inkwell.extraction.extractors.gemini.GeminiExtractor"),
         ):
             engine = ExtractionEngine(
                 cache=temp_cache,
@@ -427,8 +427,8 @@ class TestExtractionEngineExtract:
     ) -> None:
         """Test extraction with invalid JSON returns failed result."""
         with (
-            patch("inkwell.extraction.engine.ClaudeExtractor"),
-            patch("inkwell.extraction.engine.GeminiExtractor"),
+            patch("inkwell.extraction.extractors.claude.ClaudeExtractor"),
+            patch("inkwell.extraction.extractors.gemini.GeminiExtractor"),
         ):
             engine = ExtractionEngine(
                 cache=temp_cache,
@@ -466,8 +466,8 @@ class TestExtractionEngineProviderSelection:
     ) -> None:
         """Test explicit Claude preference in template."""
         with (
-            patch("inkwell.extraction.engine.ClaudeExtractor"),
-            patch("inkwell.extraction.engine.GeminiExtractor"),
+            patch("inkwell.extraction.extractors.claude.ClaudeExtractor"),
+            patch("inkwell.extraction.extractors.gemini.GeminiExtractor"),
         ):
             engine = ExtractionEngine(
                 cache=temp_cache,
@@ -508,8 +508,8 @@ class TestExtractionEngineProviderSelection:
     ) -> None:
         """Test explicit Gemini preference in template."""
         with (
-            patch("inkwell.extraction.engine.ClaudeExtractor"),
-            patch("inkwell.extraction.engine.GeminiExtractor"),
+            patch("inkwell.extraction.extractors.claude.ClaudeExtractor"),
+            patch("inkwell.extraction.extractors.gemini.GeminiExtractor"),
         ):
             engine = ExtractionEngine(
                 cache=temp_cache,
@@ -546,8 +546,8 @@ class TestExtractionEngineProviderSelection:
     ) -> None:
         """Test that quote templates automatically use Claude."""
         with (
-            patch("inkwell.extraction.engine.ClaudeExtractor"),
-            patch("inkwell.extraction.engine.GeminiExtractor"),
+            patch("inkwell.extraction.extractors.claude.ClaudeExtractor"),
+            patch("inkwell.extraction.extractors.gemini.GeminiExtractor"),
         ):
             engine = ExtractionEngine(
                 cache=temp_cache,
@@ -594,8 +594,8 @@ class TestExtractionEngineProviderSelection:
     ) -> None:
         """Test that default provider is used when no preference specified."""
         with (
-            patch("inkwell.extraction.engine.ClaudeExtractor"),
-            patch("inkwell.extraction.engine.GeminiExtractor"),
+            patch("inkwell.extraction.extractors.claude.ClaudeExtractor"),
+            patch("inkwell.extraction.extractors.gemini.GeminiExtractor"),
         ):
             # Default to Claude
             engine = ExtractionEngine(
@@ -635,8 +635,8 @@ class TestExtractionEngineMultipleExtractions:
     ) -> None:
         """Test extracting multiple templates."""
         with (
-            patch("inkwell.extraction.engine.ClaudeExtractor"),
-            patch("inkwell.extraction.engine.GeminiExtractor"),
+            patch("inkwell.extraction.extractors.claude.ClaudeExtractor"),
+            patch("inkwell.extraction.extractors.gemini.GeminiExtractor"),
         ):
             engine = ExtractionEngine(
                 cache=temp_cache,
@@ -676,8 +676,8 @@ class TestExtractionEngineMultipleExtractions:
     ) -> None:
         """Test that extract_all continues on partial failures."""
         with (
-            patch("inkwell.extraction.engine.ClaudeExtractor"),
-            patch("inkwell.extraction.engine.GeminiExtractor"),
+            patch("inkwell.extraction.extractors.claude.ClaudeExtractor"),
+            patch("inkwell.extraction.extractors.gemini.GeminiExtractor"),
         ):
             engine = ExtractionEngine(
                 cache=temp_cache,
@@ -727,8 +727,8 @@ class TestExtractionEngineCostTracking:
         from inkwell.utils.costs import CostTracker
 
         with (
-            patch("inkwell.extraction.engine.ClaudeExtractor"),
-            patch("inkwell.extraction.engine.GeminiExtractor"),
+            patch("inkwell.extraction.extractors.claude.ClaudeExtractor"),
+            patch("inkwell.extraction.extractors.gemini.GeminiExtractor"),
         ):
             # Create cost tracker with temp file
             cost_tracker = CostTracker(costs_file=tmp_path / "costs.json")
@@ -779,8 +779,8 @@ class TestExtractionEngineCostTracking:
         from inkwell.utils.costs import CostTracker
 
         with (
-            patch("inkwell.extraction.engine.ClaudeExtractor"),
-            patch("inkwell.extraction.engine.GeminiExtractor"),
+            patch("inkwell.extraction.extractors.claude.ClaudeExtractor"),
+            patch("inkwell.extraction.extractors.gemini.GeminiExtractor"),
         ):
             cost_tracker = CostTracker(costs_file=tmp_path / "costs.json")
             engine = ExtractionEngine(
@@ -816,8 +816,8 @@ class TestExtractionEngineCostTracking:
     ) -> None:
         """Test estimating total cost for multiple templates."""
         with (
-            patch("inkwell.extraction.engine.ClaudeExtractor"),
-            patch("inkwell.extraction.engine.GeminiExtractor"),
+            patch("inkwell.extraction.extractors.claude.ClaudeExtractor"),
+            patch("inkwell.extraction.extractors.gemini.GeminiExtractor"),
         ):
             engine = ExtractionEngine(
                 gemini_api_key="AIzaSyD" + "X" * 32,
@@ -844,8 +844,8 @@ class TestExtractionEngineOutputParsing:
     ) -> None:
         """Test parsing text output."""
         with (
-            patch("inkwell.extraction.engine.ClaudeExtractor"),
-            patch("inkwell.extraction.engine.GeminiExtractor"),
+            patch("inkwell.extraction.extractors.claude.ClaudeExtractor"),
+            patch("inkwell.extraction.extractors.gemini.GeminiExtractor"),
         ):
             engine = ExtractionEngine(
                 gemini_api_key="AIzaSyD" + "X" * 32,
@@ -862,8 +862,8 @@ class TestExtractionEngineOutputParsing:
     ) -> None:
         """Test parsing JSON output."""
         with (
-            patch("inkwell.extraction.engine.ClaudeExtractor"),
-            patch("inkwell.extraction.engine.GeminiExtractor"),
+            patch("inkwell.extraction.extractors.claude.ClaudeExtractor"),
+            patch("inkwell.extraction.extractors.gemini.GeminiExtractor"),
         ):
             engine = ExtractionEngine(
                 gemini_api_key="AIzaSyD" + "X" * 32,
@@ -879,8 +879,8 @@ class TestExtractionEngineOutputParsing:
     def test_parse_markdown_output(self, mock_api_keys: None) -> None:
         """Test parsing markdown output."""
         with (
-            patch("inkwell.extraction.engine.ClaudeExtractor"),
-            patch("inkwell.extraction.engine.GeminiExtractor"),
+            patch("inkwell.extraction.extractors.claude.ClaudeExtractor"),
+            patch("inkwell.extraction.extractors.gemini.GeminiExtractor"),
         ):
             engine = ExtractionEngine(
                 gemini_api_key="AIzaSyD" + "X" * 32,
@@ -904,8 +904,8 @@ class TestExtractionEngineOutputParsing:
     def test_parse_yaml_output(self, mock_api_keys: None) -> None:
         """Test parsing YAML output."""
         with (
-            patch("inkwell.extraction.engine.ClaudeExtractor"),
-            patch("inkwell.extraction.engine.GeminiExtractor"),
+            patch("inkwell.extraction.extractors.claude.ClaudeExtractor"),
+            patch("inkwell.extraction.extractors.gemini.GeminiExtractor"),
         ):
             engine = ExtractionEngine(
                 gemini_api_key="AIzaSyD" + "X" * 32,
@@ -937,8 +937,8 @@ class TestExtractionEngineDeprecationWarnings:
             warnings.simplefilter("always")
 
             with (
-                patch("inkwell.extraction.engine.ClaudeExtractor"),
-                patch("inkwell.extraction.engine.GeminiExtractor"),
+                patch("inkwell.extraction.extractors.claude.ClaudeExtractor"),
+                patch("inkwell.extraction.extractors.gemini.GeminiExtractor"),
             ):
                 engine = ExtractionEngine(
                     claude_api_key="test-claude-key-1234567890123456789012345678901234567890",
@@ -961,8 +961,8 @@ class TestExtractionEngineDeprecationWarnings:
             warnings.simplefilter("always")
 
             with (
-                patch("inkwell.extraction.engine.ClaudeExtractor"),
-                patch("inkwell.extraction.engine.GeminiExtractor"),
+                patch("inkwell.extraction.extractors.claude.ClaudeExtractor"),
+                patch("inkwell.extraction.extractors.gemini.GeminiExtractor"),
             ):
                 engine = ExtractionEngine(
                     default_provider="claude"  # Non-default value
@@ -979,8 +979,8 @@ class TestExtractionEngineDeprecationWarnings:
             warnings.simplefilter("always")
 
             with (
-                patch("inkwell.extraction.engine.ClaudeExtractor"),
-                patch("inkwell.extraction.engine.GeminiExtractor"),
+                patch("inkwell.extraction.extractors.claude.ClaudeExtractor"),
+                patch("inkwell.extraction.extractors.gemini.GeminiExtractor"),
             ):
                 engine = ExtractionEngine(
                     default_provider="gemini"  # Default value
@@ -999,8 +999,8 @@ class TestExtractionEngineDeprecationWarnings:
             )
 
             with (
-                patch("inkwell.extraction.engine.ClaudeExtractor"),
-                patch("inkwell.extraction.engine.GeminiExtractor"),
+                patch("inkwell.extraction.extractors.claude.ClaudeExtractor"),
+                patch("inkwell.extraction.extractors.gemini.GeminiExtractor"),
             ):
                 engine = ExtractionEngine(config=config)
 
@@ -1013,8 +1013,8 @@ class TestExtractionEngineDeprecationWarnings:
             warnings.simplefilter("always")
 
             with (
-                patch("inkwell.extraction.engine.ClaudeExtractor"),
-                patch("inkwell.extraction.engine.GeminiExtractor"),
+                patch("inkwell.extraction.extractors.claude.ClaudeExtractor"),
+                patch("inkwell.extraction.extractors.gemini.GeminiExtractor"),
             ):
                 engine = ExtractionEngine(
                     claude_api_key="test-key-1234567890123456789012345678901234567890"
@@ -1031,8 +1031,8 @@ class TestExtractionEngineDeprecationWarnings:
             warnings.simplefilter("always")
 
             with (
-                patch("inkwell.extraction.engine.ClaudeExtractor"),
-                patch("inkwell.extraction.engine.GeminiExtractor"),
+                patch("inkwell.extraction.extractors.claude.ClaudeExtractor"),
+                patch("inkwell.extraction.extractors.gemini.GeminiExtractor"),
             ):
                 engine = ExtractionEngine(
                     gemini_api_key="test-key-1234567890123456789012345678901234567890"
@@ -1057,8 +1057,8 @@ class TestExtractionEngineDeprecationWarnings:
             )
 
             with (
-                patch("inkwell.extraction.engine.ClaudeExtractor"),
-                patch("inkwell.extraction.engine.GeminiExtractor"),
+                patch("inkwell.extraction.extractors.claude.ClaudeExtractor"),
+                patch("inkwell.extraction.extractors.gemini.GeminiExtractor"),
             ):
                 engine = ExtractionEngine(
                     config=config,
@@ -1076,8 +1076,8 @@ class TestExtractionEngineDeprecationWarnings:
             warnings.simplefilter("always")
 
             with (
-                patch("inkwell.extraction.engine.ClaudeExtractor"),
-                patch("inkwell.extraction.engine.GeminiExtractor"),
+                patch("inkwell.extraction.extractors.claude.ClaudeExtractor"),
+                patch("inkwell.extraction.extractors.gemini.GeminiExtractor"),
             ):
                 # Using ExtractionConfig avoids deprecation warning
                 config = ExtractionConfig(
@@ -1095,8 +1095,8 @@ class TestExtractionEngineDeprecationWarnings:
             warnings.simplefilter("always")
 
             with (
-                patch("inkwell.extraction.engine.ClaudeExtractor"),
-                patch("inkwell.extraction.engine.GeminiExtractor"),
+                patch("inkwell.extraction.extractors.claude.ClaudeExtractor"),
+                patch("inkwell.extraction.extractors.gemini.GeminiExtractor"),
             ):
                 engine = ExtractionEngine(
                     gemini_api_key="test-key-1234567890123456789012345678901234567890"
@@ -1114,8 +1114,8 @@ class TestExtractionEngineDeprecationWarnings:
             warnings.simplefilter("always")
 
             with (
-                patch("inkwell.extraction.engine.ClaudeExtractor"),
-                patch("inkwell.extraction.engine.GeminiExtractor"),
+                patch("inkwell.extraction.extractors.claude.ClaudeExtractor"),
+                patch("inkwell.extraction.extractors.gemini.GeminiExtractor"),
             ):
                 engine = ExtractionEngine(
                     claude_api_key="test-claude-1234567890123456789012345678901234567890",

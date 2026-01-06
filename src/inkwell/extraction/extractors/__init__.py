@@ -18,8 +18,10 @@ Note:
 """
 
 from .base import BaseExtractor
-from .claude import ClaudeExtractor
-from .gemini import GeminiExtractor
+
+# Lazy imports to avoid circular dependency with plugins.types.extraction
+# ClaudeExtractor and GeminiExtractor inherit from ExtractionPlugin,
+# which inherits from BaseExtractor (defined in this package)
 
 __all__ = [
     "BaseExtractor",
@@ -29,26 +31,36 @@ __all__ = [
 
 
 def __getattr__(name: str) -> type:
-    """Emit deprecation warnings for direct extractor access.
+    """Lazy load extractors to avoid circular imports.
 
-    This allows us to warn users while maintaining backward compatibility.
+    Also emits deprecation warnings for direct extractor access.
     """
     import warnings
 
-    if name in ("ClaudeExtractor", "GeminiExtractor"):
-        plugin_name = name.replace("Extractor", "").lower()
+    if name == "ClaudeExtractor":
+        from .claude import ClaudeExtractor
+
         warnings.warn(
             f"Direct import of {name} from inkwell.extraction.extractors is deprecated. "
-            f"Use ExtractionEngine.extraction_registry.get('{plugin_name}') "
+            "Use ExtractionEngine.extraction_registry.get('claude') "
             "or import from inkwell.plugins.types.extraction instead. "
             "This will be removed in v2.0.",
             DeprecationWarning,
             stacklevel=2,
         )
-        # Return the actual class
-        if name == "ClaudeExtractor":
-            return ClaudeExtractor
-        else:
-            return GeminiExtractor
+        return ClaudeExtractor
+
+    if name == "GeminiExtractor":
+        from .gemini import GeminiExtractor
+
+        warnings.warn(
+            f"Direct import of {name} from inkwell.extraction.extractors is deprecated. "
+            "Use ExtractionEngine.extraction_registry.get('gemini') "
+            "or import from inkwell.plugins.types.extraction instead. "
+            "This will be removed in v2.0.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return GeminiExtractor
 
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

@@ -74,6 +74,7 @@ class OutputManager:
             The `markdown_generator` parameter is deprecated. Use `renderer` instead.
         """
         self.output_dir = output_dir
+        self._renderer: OutputPlugin | MarkdownOutput
 
         # Handle deprecated markdown_generator parameter
         if markdown_generator is not None:

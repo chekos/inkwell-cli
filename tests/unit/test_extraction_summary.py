@@ -287,8 +287,8 @@ class TestExtractionEngineWithSummary:
     ) -> None:
         """Test extract_all returns tuple of (results, summary)."""
         with (
-            patch("inkwell.extraction.engine.ClaudeExtractor"),
-            patch("inkwell.extraction.engine.GeminiExtractor"),
+            patch("inkwell.extraction.extractors.claude.ClaudeExtractor"),
+            patch("inkwell.extraction.extractors.gemini.GeminiExtractor"),
         ):
             engine = ExtractionEngine(
                 gemini_api_key="AIzaSyD" + "X" * 32,
@@ -332,8 +332,8 @@ class TestExtractionEngineWithSummary:
     ) -> None:
         """Test extract_all properly tracks extraction failures."""
         with (
-            patch("inkwell.extraction.engine.ClaudeExtractor"),
-            patch("inkwell.extraction.engine.GeminiExtractor"),
+            patch("inkwell.extraction.extractors.claude.ClaudeExtractor"),
+            patch("inkwell.extraction.extractors.gemini.GeminiExtractor"),
         ):
             engine = ExtractionEngine(
                 gemini_api_key="AIzaSyD" + "X" * 32,
@@ -373,8 +373,8 @@ class TestExtractionEngineWithSummary:
     ) -> None:
         """Test extract_all_batched returns tuple of (results, summary)."""
         with (
-            patch("inkwell.extraction.engine.ClaudeExtractor"),
-            patch("inkwell.extraction.engine.GeminiExtractor"),
+            patch("inkwell.extraction.extractors.claude.ClaudeExtractor"),
+            patch("inkwell.extraction.extractors.gemini.GeminiExtractor"),
         ):
             engine = ExtractionEngine(
                 gemini_api_key="AIzaSyD" + "X" * 32,
@@ -408,8 +408,8 @@ class TestExtractionEngineWithSummary:
     async def test_extract_all_empty_templates(self, mock_api_keys: None) -> None:
         """Test extract_all with empty template list returns empty summary."""
         with (
-            patch("inkwell.extraction.engine.ClaudeExtractor"),
-            patch("inkwell.extraction.engine.GeminiExtractor"),
+            patch("inkwell.extraction.extractors.claude.ClaudeExtractor"),
+            patch("inkwell.extraction.extractors.gemini.GeminiExtractor"),
         ):
             engine = ExtractionEngine(
                 gemini_api_key="AIzaSyD" + "X" * 32,
@@ -433,8 +433,8 @@ class TestExtractionEngineWithSummary:
     async def test_extract_all_batched_empty_templates(self, mock_api_keys: None) -> None:
         """Test extract_all_batched with empty template list returns empty summary."""
         with (
-            patch("inkwell.extraction.engine.ClaudeExtractor"),
-            patch("inkwell.extraction.engine.GeminiExtractor"),
+            patch("inkwell.extraction.extractors.claude.ClaudeExtractor"),
+            patch("inkwell.extraction.extractors.gemini.GeminiExtractor"),
         ):
             engine = ExtractionEngine(
                 gemini_api_key="AIzaSyD" + "X" * 32,
@@ -466,8 +466,8 @@ class TestExtractionEngineWithSummary:
         from inkwell.extraction.cache import ExtractionCache
 
         with (
-            patch("inkwell.extraction.engine.ClaudeExtractor"),
-            patch("inkwell.extraction.engine.GeminiExtractor"),
+            patch("inkwell.extraction.extractors.claude.ClaudeExtractor"),
+            patch("inkwell.extraction.extractors.gemini.GeminiExtractor"),
         ):
             # Use temp cache to avoid cross-test contamination
             temp_cache = ExtractionCache(cache_dir=tmp_path / "cache")

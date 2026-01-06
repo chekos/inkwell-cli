@@ -94,7 +94,9 @@ class TranscriptionManager:
         self._cost_confirmation_callback = cost_confirmation_callback
 
         # Initialize plugin registry
-        self._registry: PluginRegistry[TranscriptionPlugin] = PluginRegistry(TranscriptionPlugin)
+        self._registry: PluginRegistry[TranscriptionPlugin] = PluginRegistry(
+            TranscriptionPlugin  # type: ignore[type-abstract]
+        )
         self._plugins_loaded = False
 
         # Extract config values with standardized precedence

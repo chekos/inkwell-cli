@@ -79,10 +79,19 @@ class InkwellPlugin(ABC):
     # Optional: Other plugin names this depends on (resolved via topological sort)
     DEPENDS_ON: ClassVar[list[str]] = []
 
-    def __init__(self) -> None:
+    def __init__(self, lazy_init: bool = False) -> None:
+        """Initialize the plugin.
+
+        Args:
+            lazy_init: If True, defer expensive initialization (like API client
+                creation) until configure() is called. Used by the plugin loader
+                to allow plugins to be discovered without requiring credentials.
+                Default False maintains backward compatibility.
+        """
         self._initialized = False
         self._config: BaseModel | dict[str, Any] = {}
         self._cost_tracker: CostTracker | None = None
+        self._lazy_init = lazy_init
 
     def configure(
         self,

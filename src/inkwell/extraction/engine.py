@@ -204,7 +204,12 @@ class ExtractionEngine:
                         source=result.source,
                         error=str(e),
                     )
-                    logger.warning(f"Failed to configure extraction plugin {result.name}: {e}")
+                    # Only warn for the default provider - others failing is expected
+                    # if user hasn't configured their API keys
+                    if result.name == self.default_provider:
+                        logger.warning(f"Failed to configure extraction plugin {result.name}: {e}")
+                    else:
+                        logger.debug(f"Extraction plugin {result.name} not configured: {e}")
             else:
                 # Register broken plugin for visibility
                 self._registry.register(

@@ -360,12 +360,16 @@ class GeminiTranscriber(TranscriptionPlugin):
 
         try:
             # Check if audio needs chunking (>15 minutes)
-            if needs_chunking(audio_path):
+            should_chunk = needs_chunking(audio_path)
+            logger.info(f"needs_chunking() returned {should_chunk} for {audio_path}")
+
+            if should_chunk:
                 duration = get_audio_duration(audio_path)
                 logger.info(f"Audio is {duration / 60:.1f} minutes - using chunked transcription")
                 transcript = await self._transcribe_chunked(audio_path, episode_url)
             else:
                 # Short audio - single-pass transcription
+                logger.info("Using single-pass transcription (audio under 15 minutes)")
                 response = await asyncio.to_thread(self._transcribe_sync, audio_path)
                 transcript = self._parse_response(response, audio_path, episode_url)
 
@@ -419,11 +423,16 @@ class GeminiTranscriber(TranscriptionPlugin):
                 chunk_transcripts.append(chunk_transcript)
 
             # Merge all chunk transcripts
+            logger.info(
+                f"Merging {len(chunk_transcripts)} chunk transcripts "
+                f"(total segments before merge: {sum(len(c.segments) for c in chunk_transcripts)})"
+            )
             merged = self._merge_chunk_transcripts(
                 chunk_transcripts,
                 chunk_duration=CHUNK_DURATION_SECONDS,
                 overlap=OVERLAP_SECONDS,
             )
+            logger.info(f"Merged transcript has {len(merged.segments)} segments")
 
             # Set proper source and episode URL
             merged.source = "gemini"
@@ -455,28 +464,24 @@ class GeminiTranscriber(TranscriptionPlugin):
         # Upload chunk file
         audio_file = self.client.files.upload(file=chunk_path)
 
-        # Calculate time offset for this chunk
-        time_offset = chunk_index * (CHUNK_DURATION_SECONDS - OVERLAP_SECONDS)
-        hours = int(time_offset // 3600)
-        minutes = int((time_offset % 3600) // 60)
-        seconds = int(time_offset % 60)
-
-        # Prompt with time offset context
+        # Prompt must be explicit about transcribing the FULL audio content
         prompt = (
-            f"Transcribe this audio segment in plain text format.\n\n"
-            f"IMPORTANT: This is chunk {chunk_index + 1} starting at "
-            f"{hours:02d}:{minutes:02d}:{seconds:02d} in the full recording.\n\n"
+            f"Transcribe this ENTIRE audio file in plain text format.\n\n"
+            f"CRITICAL: You MUST transcribe ALL speech in this audio from start to finish.\n"
+            f"This audio is approximately {CHUNK_DURATION_SECONDS // 60} minutes long.\n"
+            f"Do not stop early or summarize - transcribe every word spoken.\n\n"
             f"FORMAT REQUIREMENTS:\n"
-            f"1. Use timestamps relative to THIS chunk (starting at 00:00)\n"
+            f"1. Use timestamps starting at 00:00 for this audio segment\n"
             f"2. Use this exact format for each segment:\n"
             f"   [MM:SS] Speaker Name: What they said...\n"
             f"3. Identify speakers by name when possible, "
             f"otherwise use 'Speaker 1', 'Speaker 2', etc.\n"
             f"4. Capture all spoken words verbatim with proper punctuation\n"
-            f"5. Do NOT include a summary - just the transcript\n\n"
+            f"5. Do NOT include a summary - transcribe the full audio content\n\n"
             f"Example output:\n"
             f"[00:00] Host: Welcome back. As I was saying...\n"
             f"[00:15] Guest: Right, and that's exactly why...\n"
+            f"[01:30] Host: That's a great point. Let me add that...\n"
         )
 
         response = self.client.models.generate_content(

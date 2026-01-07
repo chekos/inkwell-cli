@@ -149,9 +149,18 @@ def needs_chunking(audio_path: Path, threshold: int = MIN_DURATION_FOR_CHUNKING)
     """
     try:
         duration = get_audio_duration(audio_path)
-        return duration > threshold
-    except RuntimeError:
-        # If we can't determine duration, don't chunk
+        needs_it = duration > threshold
+        logger.debug(
+            f"Audio duration: {duration:.1f}s ({duration/60:.1f} min), "
+            f"threshold: {threshold}s, needs_chunking: {needs_it}"
+        )
+        return needs_it
+    except RuntimeError as e:
+        # Log the failure - this can cause transcripts to be truncated!
+        logger.warning(
+            f"Failed to determine audio duration for {audio_path}: {e}. "
+            f"Skipping chunking - transcript may be incomplete for long audio."
+        )
         return False
 
 

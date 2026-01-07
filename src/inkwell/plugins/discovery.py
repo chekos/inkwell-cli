@@ -153,8 +153,14 @@ def discover_plugins(group: str) -> Iterator[PluginLoadResult]:
                 )
                 continue
 
-            # Instantiate the plugin
-            plugin = plugin_class()
+            # Instantiate the plugin with lazy_init=True to defer API client
+            # initialization until configure() is called with proper credentials.
+            # Fall back to no-arg instantiation for plugins that don't support it.
+            try:
+                plugin = plugin_class(lazy_init=True)
+            except TypeError:
+                # Plugin doesn't accept lazy_init parameter
+                plugin = plugin_class()
 
             logger.debug("Loaded plugin %s from %s", name, source)
             yield PluginLoadResult(

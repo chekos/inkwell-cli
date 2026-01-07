@@ -1020,10 +1020,21 @@ def fetch_command(
                         pipeline_progress.fail_stage("interview", step_data.get("error", ""))
 
                 # Execute pipeline with progress display
-                # Suppress INFO logs during progress display to avoid cluttering the UI
-                inkwell_logger = logging.getLogger("inkwell")
-                original_level = inkwell_logger.level
-                inkwell_logger.setLevel(logging.WARNING)
+                # Suppress logs during progress display to avoid interfering with
+                # Rich's cursor movement (logs between refreshes cause line duplication)
+                loggers_to_suppress = [
+                    "inkwell",
+                    "google",
+                    "google_genai",
+                    "httpx",
+                    "urllib3",
+                    "httpcore",
+                ]
+                original_levels: dict[str, int] = {}
+                for logger_name in loggers_to_suppress:
+                    logger = logging.getLogger(logger_name)
+                    original_levels[logger_name] = logger.level
+                    logger.setLevel(logging.ERROR)
 
                 try:
                     with pipeline_progress:
@@ -1032,8 +1043,9 @@ def fetch_command(
                             progress_callback=handle_progress,
                         )
                 finally:
-                    # Restore original log level
-                    inkwell_logger.setLevel(original_level)
+                    # Restore original log levels
+                    for logger_name, level in original_levels.items():
+                        logging.getLogger(logger_name).setLevel(level)
 
                 # Display summary
                 console.print("\n[bold green]✓ Complete![/bold green]")

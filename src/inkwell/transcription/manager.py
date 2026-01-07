@@ -11,7 +11,10 @@ from typing import TYPE_CHECKING
 from inkwell.audio import AudioDownloader
 from inkwell.config.precedence import resolve_config_value
 from inkwell.config.schema import TranscriptionConfig
-from inkwell.plugins import PluginRegistry, discover_plugins
+
+# Import from specific submodules to avoid potential circular imports
+from inkwell.plugins.discovery import discover_plugins
+from inkwell.plugins.registry import PluginRegistry
 from inkwell.plugins.types.transcription import TranscriptionPlugin, TranscriptionRequest
 from inkwell.transcription.cache import TranscriptCache
 from inkwell.transcription.gemini import CostEstimate, GeminiTranscriber

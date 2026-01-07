@@ -12,8 +12,13 @@ from typing import TYPE_CHECKING, Any
 
 from ..config.precedence import resolve_config_value
 from ..config.schema import ExtractionConfig
-from ..plugins import ExtractionPlugin, PluginRegistry
+
+# Import from specific submodules to avoid circular import with inkwell.plugins.__init__
+# (which imports ExtractionPlugin from .types.extraction, which imports BaseExtractor
+# from inkwell.extraction.extractors.base, which triggers inkwell.extraction.__init__)
 from ..plugins.discovery import discover_plugins, get_entry_point_group
+from ..plugins.registry import PluginRegistry
+from ..plugins.types.extraction import ExtractionPlugin
 from ..utils.errors import ValidationError
 from ..utils.json_utils import JSONParsingError, safe_json_loads
 from .cache import ExtractionCache

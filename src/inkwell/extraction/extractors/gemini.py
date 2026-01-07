@@ -6,15 +6,14 @@ from typing import Any
 from google import genai
 from google.genai import types
 
+from ...plugins.types.extraction import ExtractionPlugin
 from ...utils.api_keys import get_validated_api_key
 from ...utils.errors import APIError, ValidationError
-from ...utils.json_utils import JSONParsingError, safe_json_loads
 from ...utils.rate_limiter import get_rate_limiter
 from ..models import ExtractionTemplate
-from .base import BaseExtractor
 
 
-class GeminiExtractor(BaseExtractor):
+class GeminiExtractor(ExtractionPlugin):
     """Extractor using Gemini (Google AI) API.
 
     Supports Gemini 3 Pro with:
@@ -30,36 +29,79 @@ class GeminiExtractor(BaseExtractor):
     - Output: $18.00 per million tokens (>200K tokens)
     """
 
+    # Plugin metadata (required by InkwellPlugin)
+    NAME = "gemini"
+    VERSION = "1.0.0"
+    DESCRIPTION = "Google Gemini API extractor with long context support"
+
     # Model to use
     MODEL = "gemini-3-pro-preview"
 
     # Pricing per million tokens (USD)
     INPUT_PRICE_PER_M_SHORT = 2.00  # < 200K tokens
     INPUT_PRICE_PER_M_LONG = 4.00  # > 200K tokens
+    INPUT_PRICE_PER_M = 2.00  # Default for base class (short context)
     OUTPUT_PRICE_PER_M = 12.00  # < 200K tokens (using base rate)
     CONTEXT_THRESHOLD = 200_000  # Token threshold for pricing
 
-    def __init__(self, api_key: str | None = None) -> None:
+    def __init__(self, api_key: str | None = None, *, lazy_init: bool = False) -> None:
         """Initialize Gemini extractor.
 
         Args:
-            api_key: Google AI API key (defaults to GOOGLE_API_KEY env var)
+            api_key: Google AI API key (defaults to GOOGLE_API_KEY env var).
+                    Can also be provided via configure() for plugin lifecycle.
+            lazy_init: If True, defer client initialization until first use.
+                      Used internally by plugin system. Default False maintains
+                      backward compatibility.
 
         Raises:
-            APIKeyError: If API key not provided or invalid
+            APIKeyError: If API key not provided or invalid (unless lazy_init)
         """
-        # Validate API key
+        super().__init__()
+
+        # Store provided key for lazy initialization
+        self._provided_api_key = api_key
+        self._client: genai.Client | None = None
+
+        # Initialize immediately unless lazy_init requested (backward compat)
+        if not lazy_init:
+            self._init_client(api_key)
+
+    def _init_client(self, api_key: str | None = None) -> None:
+        """Initialize API client with the given or configured API key."""
         if api_key:
-            # If provided directly, still validate it
             from ...utils.api_keys import validate_api_key
 
             self.api_key = validate_api_key(api_key, "gemini", "GOOGLE_API_KEY")
         else:
-            # Get from environment and validate
             self.api_key = get_validated_api_key("GOOGLE_API_KEY", "gemini")
 
-        # Initialize client with new SDK
-        self.client = genai.Client(api_key=self.api_key)
+        self._client = genai.Client(api_key=self.api_key)
+
+    @property
+    def client(self) -> genai.Client:
+        """Get client, initializing if needed."""
+        if self._client is None:
+            self._init_client(self._provided_api_key)
+        return self._client  # type: ignore[return-value]
+
+    def configure(
+        self,
+        config: dict[str, Any],
+        cost_tracker: "Any | None" = None,
+    ) -> None:
+        """Configure the plugin with settings and cost tracker.
+
+        Args:
+            config: Plugin configuration. May include 'api_key'.
+            cost_tracker: Optional cost tracker for API usage tracking.
+        """
+        super().configure(config, cost_tracker)
+
+        # Initialize client with config API key if provided
+        api_key = config.get("api_key") or self._provided_api_key
+        if api_key or self._client is None:
+            self._init_client(api_key)
 
     async def extract(
         self,
@@ -197,29 +239,3 @@ class GeminiExtractor(BaseExtractor):
             True (Gemini supports JSON mode via response_mime_type)
         """
         return True
-
-    def _validate_json_output(self, output: str, schema: dict[str, Any]) -> None:
-        """Validate JSON output against schema.
-
-        Args:
-            output: JSON string from LLM
-            schema: JSON Schema to validate against
-
-        Raises:
-            ValidationError: If validation fails
-        """
-        try:
-            # Use safe JSON parsing with size/depth limits
-            # 5MB for extraction results, depth of 10 for structured data
-            data = safe_json_loads(output, max_size=5_000_000, max_depth=10)
-        except JSONParsingError as e:
-            raise ValidationError(f"Invalid JSON from Gemini: {str(e)}") from e
-
-        # Basic schema validation
-        if "required" in schema:
-            for field in schema["required"]:
-                if field not in data:
-                    raise ValidationError(
-                        f"Missing required field '{field}' in Gemini output",
-                        details={"schema": schema},
-                    )

@@ -26,6 +26,13 @@ All configuration options, file locations, and environment variables.
 
 ---
 
+## Extensibility
+
+### [Plugin Development](plugins/index.md)
+Extend Inkwell with custom plugins for extraction, transcription, and output formats. Create and publish your own plugins.
+
+---
+
 ## Quick Reference
 
 ### Common Commands

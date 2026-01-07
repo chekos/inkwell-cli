@@ -5,11 +5,13 @@ import logging
 import os
 from collections.abc import Callable
 from pathlib import Path
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from google import genai
 from google.genai import types
 from pydantic import BaseModel, Field
 
+from inkwell.plugins.types.transcription import TranscriptionPlugin, TranscriptionRequest
 from inkwell.transcription.chunking import (
     CHUNK_DURATION_SECONDS,
     OVERLAP_SECONDS,
@@ -21,6 +23,9 @@ from inkwell.transcription.chunking import (
 from inkwell.transcription.models import Transcript, TranscriptSegment
 from inkwell.utils.errors import APIError
 from inkwell.utils.rate_limiter import get_rate_limiter
+
+if TYPE_CHECKING:
+    from inkwell.utils.costs import CostTracker
 
 logger = logging.getLogger(__name__)
 
@@ -50,13 +55,42 @@ class CostEstimate(BaseModel):
         return f"${self.estimated_cost_usd:.2f}"
 
 
-class GeminiTranscriber:
+class GeminiTranscriber(TranscriptionPlugin):
     """Transcribe audio files using Google Gemini API.
 
     Uses Gemini 3 Flash for cost-effective audio transcription.
     Supports automatic file upload for large files (>10MB).
     Implements cost estimation per ADR-012.
+
+    Usage:
+        # Legacy interface
+        transcriber = GeminiTranscriber(api_key="...")
+        transcript = await transcriber.transcribe(audio_path)
+
+        # Plugin interface
+        request = TranscriptionRequest(file_path=Path("/tmp/audio.mp3"))
+        if transcriber.can_handle(request):
+            transcript = await transcriber.transcribe(request)
     """
+
+    # Plugin metadata (required by TranscriptionPlugin)
+    NAME: ClassVar[str] = "gemini"
+    VERSION: ClassVar[str] = "1.0.0"
+    DESCRIPTION: ClassVar[str] = "Google Gemini audio transcription"
+
+    # Model identifier
+    MODEL: ClassVar[str] = "gemini-3-flash-preview"
+
+    # Transcription-specific metadata
+    HANDLES_URLS: ClassVar[list[str]] = []  # Gemini handles files, not URLs
+    CAPABILITIES: ClassVar[dict[str, Any]] = {
+        "formats": ["mp3", "m4a", "wav", "aac", "ogg", "flac"],
+        "max_duration_hours": None,  # Handles long audio via chunking
+        "requires_internet": True,
+        "supports_file": True,
+        "supports_url": False,
+        "supports_bytes": False,
+    }
 
     def __init__(
         self,
@@ -64,14 +98,50 @@ class GeminiTranscriber:
         model_name: str = "gemini-3-flash-preview",
         cost_threshold_usd: float = 1.0,
         cost_confirmation_callback: Callable[[CostEstimate], bool] | None = None,
+        lazy_init: bool = False,
     ):
         """Initialize Gemini transcriber.
 
         Args:
             api_key: Google AI API key (default: GOOGLE_API_KEY env var)
-            model_name: Gemini model to use (default: gemini-2.5-flash)
+            model_name: Gemini model to use (default: gemini-3-flash-preview)
             cost_threshold_usd: Threshold for cost confirmation (default: $1.00)
             cost_confirmation_callback: Callback for cost confirmation (default: auto-approve)
+            lazy_init: If True, defer client initialization until configure() is called.
+                      Used by plugin system. Default: False for backward compatibility.
+        """
+        TranscriptionPlugin.__init__(self)
+
+        # Store initialization parameters
+        self._api_key_param = api_key
+        self._model_name_param = model_name
+        self._cost_threshold_param = cost_threshold_usd
+        self._cost_confirmation_callback = cost_confirmation_callback
+        self._lazy_init = lazy_init
+
+        if not lazy_init:
+            # Immediate initialization for backward compatibility
+            self._initialize_client(
+                api_key=api_key,
+                model_name=model_name,
+                cost_threshold_usd=cost_threshold_usd,
+                cost_confirmation_callback=cost_confirmation_callback,
+            )
+
+    def _initialize_client(
+        self,
+        api_key: str | None = None,
+        model_name: str = "gemini-3-flash-preview",
+        cost_threshold_usd: float = 1.0,
+        cost_confirmation_callback: Callable[[CostEstimate], bool] | None = None,
+    ) -> None:
+        """Initialize the Gemini client.
+
+        Args:
+            api_key: Google AI API key
+            model_name: Gemini model to use
+            cost_threshold_usd: Cost threshold for confirmation
+            cost_confirmation_callback: Callback for cost confirmation
         """
         # Get API key from parameter or environment
         # Try GOOGLE_API_KEY first (standard), then GOOGLE_AI_API_KEY (deprecated)
@@ -79,9 +149,6 @@ class GeminiTranscriber:
 
         # Warn if using deprecated env var
         if os.getenv("GOOGLE_AI_API_KEY") and not os.getenv("GOOGLE_API_KEY"):
-            import logging
-
-            logger = logging.getLogger(__name__)
             logger.warning(
                 "GOOGLE_AI_API_KEY is deprecated. Please use GOOGLE_API_KEY instead. "
                 "GOOGLE_AI_API_KEY will be removed in v2.0.0"
@@ -107,8 +174,32 @@ class GeminiTranscriber:
         self.cost_threshold_usd = cost_threshold_usd
         self.cost_confirmation_callback = cost_confirmation_callback
 
+    def configure(
+        self,
+        config: dict[str, Any],
+        cost_tracker: "CostTracker | None" = None,
+    ) -> None:
+        """Configure the plugin.
+
+        Args:
+            config: Plugin configuration (may include 'api_key', 'model_name', etc.)
+            cost_tracker: Optional cost tracker for API usage
+        """
+        super().configure(config, cost_tracker)
+
+        # Initialize client with config values or stored parameters
+        self._initialize_client(
+            api_key=config.get("api_key", self._api_key_param),
+            model_name=config.get("model_name", self._model_name_param),
+            cost_threshold_usd=config.get("cost_threshold_usd", self._cost_threshold_param),
+            cost_confirmation_callback=self._cost_confirmation_callback,
+        )
+
     async def can_transcribe(self, audio_path: Path) -> bool:
         """Check if this transcriber can handle the audio file.
+
+        This is the legacy interface. For new code, use can_handle() with
+        a TranscriptionRequest.
 
         Args:
             audio_path: Path to audio file
@@ -122,6 +213,46 @@ class GeminiTranscriber:
         # Gemini supports common audio formats
         supported_extensions = {".mp3", ".m4a", ".wav", ".aac", ".ogg", ".flac"}
         return audio_path.suffix.lower() in supported_extensions
+
+    def can_handle(self, request: TranscriptionRequest) -> bool:
+        """Check if this plugin can handle the given request.
+
+        Gemini transcriber handles local audio files only.
+
+        Args:
+            request: The transcription request to check
+
+        Returns:
+            True if this is a file request with a supported format
+        """
+        # Only handle file-based requests
+        if request.source_type != "file" or request.file_path is None:
+            return False
+
+        # Check file exists and has supported extension
+        if not request.file_path.exists():
+            return False
+
+        supported_extensions = {".mp3", ".m4a", ".wav", ".aac", ".ogg", ".flac"}
+        return request.file_path.suffix.lower() in supported_extensions
+
+    def estimate_cost(self, duration_seconds: float) -> float:
+        """Estimate transcription cost based on audio duration.
+
+        This is the plugin interface method. For file-based estimation,
+        use _estimate_cost() with a Path.
+
+        Args:
+            duration_seconds: Duration of audio in seconds
+
+        Returns:
+            Estimated cost in USD
+        """
+        # Rough estimate: assume average bitrate of 128kbps
+        # This gives approximately 1MB per minute of audio
+        estimated_mb = (duration_seconds / 60) * 1.0  # MB per minute
+        rate_per_mb = 0.000125  # Gemini pricing
+        return estimated_mb * rate_per_mb
 
     def _estimate_cost(self, audio_path: Path) -> CostEstimate:
         """Estimate transcription cost based on file size.
@@ -168,22 +299,44 @@ class GeminiTranscriber:
         # Default: auto-approve
         return True
 
-    async def transcribe(self, audio_path: Path, episode_url: str | None = None) -> Transcript:
+    async def transcribe(
+        self,
+        path_or_request: Path | TranscriptionRequest,
+        episode_url: str | None = None,
+    ) -> Transcript:
         """Transcribe audio file using Gemini.
+
+        Supports both the legacy interface (Path) and the new plugin
+        interface (TranscriptionRequest).
 
         For long audio files (>15 minutes), automatically uses chunking to avoid
         hitting the 65,536 output token limit.
 
         Args:
-            audio_path: Path to audio file
-            episode_url: Optional URL of original episode (for metadata)
+            path_or_request: Path to audio file (legacy) or TranscriptionRequest (plugin).
+                           The TranscriptionRequest form is preferred for new code.
+            episode_url: Optional URL of original episode (for metadata).
+                        Ignored when using TranscriptionRequest.
 
         Returns:
             Transcript object
 
         Raises:
-            TranscriptionError: If transcription fails
+            APIError: If transcription fails or file not found
         """
+        # Handle both interfaces
+        if isinstance(path_or_request, TranscriptionRequest):
+            if path_or_request.file_path is None:
+                raise APIError(
+                    "GeminiTranscriber requires a file path. "
+                    "Use TranscriptionRequest(file_path=Path('...')) for Gemini transcription."
+                )
+            audio_path = path_or_request.file_path
+            # Extract episode URL from request metadata if available (future extension)
+        else:
+            # Legacy Path interface
+            audio_path = path_or_request
+
         # Validate file exists
         if not audio_path.exists():
             raise APIError(f"Audio file not found: {audio_path}")

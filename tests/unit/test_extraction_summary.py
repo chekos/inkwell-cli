@@ -1,6 +1,6 @@
 """Unit tests for extraction summary and error handling."""
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
@@ -286,42 +286,43 @@ class TestExtractionEngineWithSummary:
         quotes_template: ExtractionTemplate,
     ) -> None:
         """Test extract_all returns tuple of (results, summary)."""
-        with (
-            patch("inkwell.extraction.engine.ClaudeExtractor"),
-            patch("inkwell.extraction.engine.GeminiExtractor"),
-        ):
-            engine = ExtractionEngine(
-                gemini_api_key="AIzaSyD" + "X" * 32,
-                claude_api_key="sk-ant-api03-" + "X" * 32,
-            )
+        engine = ExtractionEngine(
+            gemini_api_key="AIzaSyD" + "X" * 32,
+            claude_api_key="sk-ant-api03-" + "X" * 32,
+        )
 
-            # Setup mock extractors (summary uses Gemini, quotes uses Claude)
-            engine.gemini_extractor.extract = AsyncMock(return_value="Test output")
-            engine.gemini_extractor.estimate_cost = lambda t, l: 0.01
-            engine.claude_extractor.extract = AsyncMock(return_value='{"quotes": []}')
-            engine.claude_extractor.estimate_cost = lambda t, l: 0.10
+        # Track which template is being extracted
+        def create_mock_extractor(return_value: str, class_name: str) -> Mock:
+            mock = Mock()
+            mock.extract = AsyncMock(return_value=return_value)
+            mock.estimate_cost = lambda t, l: 0.01
+            mock.__class__.__name__ = class_name
+            return mock
 
-            # Fix class name for provider detection
-            engine.claude_extractor.__class__.__name__ = "ClaudeExtractor"
-            engine.gemini_extractor.__class__.__name__ = "GeminiExtractor"
+        def select_extractor_side_effect(template: ExtractionTemplate) -> Mock:
+            if template.name == "summary":
+                return create_mock_extractor("Test output", "GeminiExtractor")
+            else:
+                return create_mock_extractor('{"quotes": []}', "ClaudeExtractor")
 
-            templates = [summary_template, quotes_template]
-            transcript = "Test transcript"
-            metadata = {"episode_url": "https://example.com/ep1"}
+        templates = [summary_template, quotes_template]
+        transcript = "Test transcript"
+        metadata = {"episode_url": "https://example.com/ep1"}
 
+        with patch.object(engine, "_select_extractor", side_effect=select_extractor_side_effect):
             # Extract
             results, summary = await engine.extract_all(
                 templates, transcript, metadata, use_cache=False
             )
 
-            # Verify return types
-            assert isinstance(results, list)
-            assert isinstance(summary, ExtractionSummary)
+        # Verify return types
+        assert isinstance(results, list)
+        assert isinstance(summary, ExtractionSummary)
 
-            # Verify summary statistics
-            assert summary.total == 2
-            assert summary.successful == 2
-            assert summary.failed == 0
+        # Verify summary statistics
+        assert summary.total == 2
+        assert summary.successful == 2
+        assert summary.failed == 0
 
     @pytest.mark.asyncio
     async def test_extract_all_tracks_failures(
@@ -331,38 +332,49 @@ class TestExtractionEngineWithSummary:
         quotes_template: ExtractionTemplate,
     ) -> None:
         """Test extract_all properly tracks extraction failures."""
-        with (
-            patch("inkwell.extraction.engine.ClaudeExtractor"),
-            patch("inkwell.extraction.engine.GeminiExtractor"),
-        ):
-            engine = ExtractionEngine(
-                gemini_api_key="AIzaSyD" + "X" * 32,
-                claude_api_key="sk-ant-api03-" + "X" * 32,
-            )
+        engine = ExtractionEngine(
+            gemini_api_key="AIzaSyD" + "X" * 32,
+            claude_api_key="sk-ant-api03-" + "X" * 32,
+        )
 
-            # Setup mock - first succeeds, second fails
-            engine.gemini_extractor.extract = AsyncMock(
-                side_effect=["Success output", Exception("API Error")]
-            )
-            engine.gemini_extractor.estimate_cost = lambda t, l: 0.01
+        # Create mock extractor - first succeeds, second fails
+        call_count = {"count": 0}
 
-            templates = [summary_template, quotes_template]
-            transcript = "Test transcript"
-            metadata = {"episode_url": "https://example.com/ep1"}
+        def create_mock_extractor() -> Mock:
+            mock = Mock()
 
+            async def mock_extract_fn(template, transcript, metadata):
+                call_count["count"] += 1
+                if call_count["count"] == 1:
+                    return "Success output"
+                else:
+                    raise Exception("API Error")
+
+            mock.extract = mock_extract_fn
+            mock.estimate_cost = lambda t, l: 0.01
+            mock.__class__.__name__ = "GeminiExtractor"
+            return mock
+
+        mock_extractor = create_mock_extractor()
+
+        templates = [summary_template, quotes_template]
+        transcript = "Test transcript"
+        metadata = {"episode_url": "https://example.com/ep1"}
+
+        with patch.object(engine, "_select_extractor", return_value=mock_extractor):
             # Extract
             results, summary = await engine.extract_all(
                 templates, transcript, metadata, use_cache=False
             )
 
-            # Verify only successful result returned
-            assert len(results) == 1
+        # Verify only successful result returned
+        assert len(results) == 1
 
-            # Verify summary tracks both attempts
-            assert summary.total == 2
-            assert summary.successful == 1
-            assert summary.failed == 1
-            assert "quotes" in summary.failed_templates
+        # Verify summary tracks both attempts
+        assert summary.total == 2
+        assert summary.successful == 1
+        assert summary.failed == 1
+        assert "quotes" in summary.failed_templates
 
     @pytest.mark.asyncio
     async def test_extract_all_batched_returns_tuple(
@@ -372,44 +384,41 @@ class TestExtractionEngineWithSummary:
         quotes_template: ExtractionTemplate,
     ) -> None:
         """Test extract_all_batched returns tuple of (results, summary)."""
-        with (
-            patch("inkwell.extraction.engine.ClaudeExtractor"),
-            patch("inkwell.extraction.engine.GeminiExtractor"),
-        ):
-            engine = ExtractionEngine(
-                gemini_api_key="AIzaSyD" + "X" * 32,
-                claude_api_key="sk-ant-api03-" + "X" * 32,
-            )
+        engine = ExtractionEngine(
+            gemini_api_key="AIzaSyD" + "X" * 32,
+            claude_api_key="sk-ant-api03-" + "X" * 32,
+        )
 
-            # Setup mock
-            engine.gemini_extractor.extract = AsyncMock(
-                return_value='{"summary": "test", "quotes": []}'
-            )
-            engine.gemini_extractor.estimate_cost = lambda t, l: 0.01
-            engine.gemini_extractor.build_prompt = lambda t, tr, m: "prompt"
+        # Create mock extractor
+        mock_extractor = Mock()
+        mock_extractor.extract = AsyncMock(return_value='{"summary": "test", "quotes": []}')
+        mock_extractor.estimate_cost = lambda t, l: 0.01
+        mock_extractor.build_prompt = lambda t, tr, m: "prompt"
+        mock_extractor.__class__.__name__ = "GeminiExtractor"
 
-            templates = [summary_template, quotes_template]
-            transcript = "Test transcript"
-            metadata = {"episode_url": "https://example.com/ep1"}
+        templates = [summary_template, quotes_template]
+        transcript = "Test transcript"
+        metadata = {"episode_url": "https://example.com/ep1"}
 
+        with patch.object(engine, "_select_extractor", return_value=mock_extractor):
             # Extract
             results, summary = await engine.extract_all_batched(
                 templates, transcript, metadata, use_cache=False
             )
 
-            # Verify return types
-            assert isinstance(results, list)
-            assert isinstance(summary, ExtractionSummary)
+        # Verify return types
+        assert isinstance(results, list)
+        assert isinstance(summary, ExtractionSummary)
 
-            # Verify summary statistics
-            assert summary.total == 2
+        # Verify summary statistics
+        assert summary.total == 2
 
     @pytest.mark.asyncio
     async def test_extract_all_empty_templates(self, mock_api_keys: None) -> None:
         """Test extract_all with empty template list returns empty summary."""
         with (
-            patch("inkwell.extraction.engine.ClaudeExtractor"),
-            patch("inkwell.extraction.engine.GeminiExtractor"),
+            patch("inkwell.extraction.extractors.claude.ClaudeExtractor"),
+            patch("inkwell.extraction.extractors.gemini.GeminiExtractor"),
         ):
             engine = ExtractionEngine(
                 gemini_api_key="AIzaSyD" + "X" * 32,
@@ -433,8 +442,8 @@ class TestExtractionEngineWithSummary:
     async def test_extract_all_batched_empty_templates(self, mock_api_keys: None) -> None:
         """Test extract_all_batched with empty template list returns empty summary."""
         with (
-            patch("inkwell.extraction.engine.ClaudeExtractor"),
-            patch("inkwell.extraction.engine.GeminiExtractor"),
+            patch("inkwell.extraction.extractors.claude.ClaudeExtractor"),
+            patch("inkwell.extraction.extractors.gemini.GeminiExtractor"),
         ):
             engine = ExtractionEngine(
                 gemini_api_key="AIzaSyD" + "X" * 32,
@@ -465,32 +474,33 @@ class TestExtractionEngineWithSummary:
         """Test extract_all properly tracks cached vs fresh extractions."""
         from inkwell.extraction.cache import ExtractionCache
 
-        with (
-            patch("inkwell.extraction.engine.ClaudeExtractor"),
-            patch("inkwell.extraction.engine.GeminiExtractor"),
-        ):
-            # Use temp cache to avoid cross-test contamination
-            temp_cache = ExtractionCache(cache_dir=tmp_path / "cache")
-            engine = ExtractionEngine(
-                cache=temp_cache,
-                gemini_api_key="AIzaSyD" + "X" * 32,
-                claude_api_key="sk-ant-api03-" + "X" * 32,
-            )
+        # Use temp cache to avoid cross-test contamination
+        temp_cache = ExtractionCache(cache_dir=tmp_path / "cache")
+        engine = ExtractionEngine(
+            cache=temp_cache,
+            gemini_api_key="AIzaSyD" + "X" * 32,
+            claude_api_key="sk-ant-api03-" + "X" * 32,
+        )
 
-            # Setup mock extractors (summary uses Gemini, quotes uses Claude)
-            engine.gemini_extractor.extract = AsyncMock(return_value="Test output")
-            engine.gemini_extractor.estimate_cost = lambda t, l: 0.01
-            engine.claude_extractor.extract = AsyncMock(return_value='{"quotes": []}')
-            engine.claude_extractor.estimate_cost = lambda t, l: 0.10
+        # Track which template is being extracted
+        def create_mock_extractor(return_value: str, class_name: str) -> Mock:
+            mock = Mock()
+            mock.extract = AsyncMock(return_value=return_value)
+            mock.estimate_cost = lambda t, l: 0.01
+            mock.__class__.__name__ = class_name
+            return mock
 
-            # Fix class name for provider detection
-            engine.claude_extractor.__class__.__name__ = "ClaudeExtractor"
-            engine.gemini_extractor.__class__.__name__ = "GeminiExtractor"
+        def select_extractor_side_effect(template: ExtractionTemplate) -> Mock:
+            if template.name == "summary":
+                return create_mock_extractor("Test output", "GeminiExtractor")
+            else:
+                return create_mock_extractor('{"quotes": []}', "ClaudeExtractor")
 
-            templates = [summary_template, quotes_template]
-            transcript = "Test transcript"
-            metadata = {"episode_url": "https://example.com/ep1"}
+        templates = [summary_template, quotes_template]
+        transcript = "Test transcript"
+        metadata = {"episode_url": "https://example.com/ep1"}
 
+        with patch.object(engine, "_select_extractor", side_effect=select_extractor_side_effect):
             # First extraction (fresh)
             results1, summary1 = await engine.extract_all(
                 templates, transcript, metadata, use_cache=True

@@ -6,6 +6,8 @@ YouTube videos using the youtube-transcript-api library.
 
 import logging
 import re
+import warnings
+from typing import TYPE_CHECKING, Any, ClassVar
 from urllib.parse import parse_qs, urlparse
 
 from youtube_transcript_api import YouTubeTranscriptApi
@@ -16,8 +18,12 @@ from youtube_transcript_api._errors import (
     VideoUnavailable,
 )
 
+from inkwell.plugins.types.transcription import TranscriptionPlugin, TranscriptionRequest
 from inkwell.transcription.models import Transcript, TranscriptSegment
 from inkwell.utils.errors import APIError
+
+if TYPE_CHECKING:
+    from inkwell.utils.costs import CostTracker
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +34,7 @@ class TranscriptionError(APIError):
     pass
 
 
-class YouTubeTranscriber:
+class YouTubeTranscriber(TranscriptionPlugin):
     """Extract transcripts from YouTube videos.
 
     This is the primary (Tier 1) transcription method in our multi-tier
@@ -39,20 +45,81 @@ class YouTubeTranscriber:
         transcriber = YouTubeTranscriber()
         if await transcriber.can_transcribe(url):
             transcript = await transcriber.transcribe(url)
+
+        # Or via plugin system:
+        request = TranscriptionRequest(url="https://youtube.com/watch?v=abc123")
+        if transcriber.can_handle(request):
+            transcript = await transcriber.transcribe(request)
     """
 
-    def __init__(self, preferred_languages: list[str] | None = None):
+    # Plugin metadata (required by TranscriptionPlugin)
+    NAME: ClassVar[str] = "youtube"
+    VERSION: ClassVar[str] = "1.0.0"
+    DESCRIPTION: ClassVar[str] = "YouTube transcript extraction (free, fast)"
+
+    # Transcription-specific metadata
+    HANDLES_URLS: ClassVar[list[str]] = ["youtube.com", "youtu.be", "m.youtube.com"]
+    CAPABILITIES: ClassVar[dict[str, Any]] = {
+        "formats": [],  # YouTube handles its own formats
+        "max_duration_hours": None,
+        "requires_internet": True,
+        "supports_file": False,
+        "supports_url": True,
+        "supports_bytes": False,
+    }
+
+    def __init__(
+        self,
+        preferred_languages: list[str] | None = None,
+        lazy_init: bool = False,
+    ):
         """Initialize YouTube transcriber.
 
         Args:
             preferred_languages: List of language codes in preference order.
                                 Defaults to ["en"].
+            lazy_init: If True, defer API initialization until configure() is called.
+                      Used by plugin system. Default: False for backward compatibility.
+        """
+        TranscriptionPlugin.__init__(self)
+        self._preferred_languages_param = preferred_languages
+        self._lazy_init = lazy_init
+
+        if not lazy_init:
+            # Immediate initialization for backward compatibility
+            self._initialize_api(preferred_languages)
+
+    def _initialize_api(self, preferred_languages: list[str] | None = None) -> None:
+        """Initialize the YouTube API client.
+
+        Args:
+            preferred_languages: List of language codes in preference order.
         """
         self.preferred_languages = preferred_languages or ["en"]
         self.api = YouTubeTranscriptApi()
 
+    def configure(
+        self,
+        config: dict[str, Any],
+        cost_tracker: "CostTracker | None" = None,
+    ) -> None:
+        """Configure the plugin.
+
+        Args:
+            config: Plugin configuration (may include 'preferred_languages')
+            cost_tracker: Optional cost tracker (not used for YouTube)
+        """
+        super().configure(config, cost_tracker)
+
+        # Get preferred languages from config or use parameter/default
+        preferred_languages = config.get("preferred_languages", self._preferred_languages_param)
+        self._initialize_api(preferred_languages)
+
     async def can_transcribe(self, url: str) -> bool:
         """Check if URL is a YouTube video.
+
+        This is the legacy interface. For new code, use can_handle() with
+        a TranscriptionRequest.
 
         Args:
             url: Episode URL to check
@@ -61,6 +128,22 @@ class YouTubeTranscriber:
             True if URL is from YouTube, False otherwise
         """
         return self._is_youtube_url(url)
+
+    def can_handle(self, request: TranscriptionRequest) -> bool:
+        """Check if this plugin can handle the given request.
+
+        YouTube transcriber only handles URLs from YouTube domains.
+
+        Args:
+            request: The transcription request to check
+
+        Returns:
+            True if this is a YouTube URL
+        """
+        # Only handle URL-based requests
+        if request.source_type != "url" or request.url is None:
+            return False
+        return self._is_youtube_url(request.url)
 
     def _is_youtube_url(self, url: str) -> bool:
         """Detect if URL is from YouTube.
@@ -123,19 +206,47 @@ class YouTubeTranscriber:
 
         return None
 
-    async def transcribe(self, url: str, audio_path: str | None = None) -> Transcript:
+    async def transcribe(
+        self,
+        url_or_request: str | TranscriptionRequest,
+        audio_path: str | None = None,
+    ) -> Transcript:
         """Fetch transcript from YouTube.
 
+        Supports both the legacy interface (URL string) and the new plugin
+        interface (TranscriptionRequest).
+
         Args:
-            url: YouTube video URL
-            audio_path: Not used for YouTube transcription (required by interface)
+            url_or_request: YouTube video URL (str) or TranscriptionRequest.
+                           The TranscriptionRequest form is preferred for new code.
+            audio_path: Not used for YouTube transcription (deprecated, for compatibility)
 
         Returns:
             Transcript object with segments and metadata
 
         Raises:
             TranscriptionError: If transcript cannot be retrieved
+            APIError: If URL is invalid or video ID cannot be extracted
         """
+        # Handle both interfaces
+        if isinstance(url_or_request, TranscriptionRequest):
+            if url_or_request.url is None:
+                raise APIError(
+                    "YouTubeTranscriber requires a URL. "
+                    "Use TranscriptionRequest(url='...') for YouTube transcription."
+                )
+            url = url_or_request.url
+        else:
+            # Legacy string URL interface
+            url = url_or_request
+            if audio_path is not None:
+                warnings.warn(
+                    "audio_path parameter is deprecated and ignored for YouTube transcription. "
+                    "Use TranscriptionRequest(url='...') instead.",
+                    DeprecationWarning,
+                    stacklevel=2,
+                )
+
         # Extract video ID
         video_id = self._extract_video_id(url)
         if not video_id:

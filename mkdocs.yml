@@ -55,6 +55,14 @@ nav:
     - Interview Mode: user-guide/interview.md
     - Obsidian Integration: user-guide/obsidian.md
     - Configuration: user-guide/configuration.md
+    - Plugins:
+      - Overview: user-guide/plugins/index.md
+      - Creating Plugins: user-guide/plugins/creating-plugins.md
+      - Plugin Lifecycle: user-guide/plugins/lifecycle.md
+      - Configuration: user-guide/plugins/configuration.md
+      - Testing: user-guide/plugins/testing.md
+      - Publishing: user-guide/plugins/publishing.md
+      - Security: user-guide/plugins/security.md
 
   - Reference:
     - Overview: reference/index.md

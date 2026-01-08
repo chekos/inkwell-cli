@@ -18,3 +18,13 @@ repos:
   # Note: mypy is run via 'uv run mypy' in the pre-push hook and Claude Code
   # hooks to ensure it uses the same configuration and dependencies as CI.
   # Running mypy via mirrors-mypy in pre-commit causes config isolation issues.
+
+  # Pre-push hooks: Run full CI checks before pushing
+  - repo: local
+    hooks:
+      - id: pytest
+        name: pytest
+        entry: uv run pytest --tb=short -q
+        language: system
+        pass_filenames: false
+        stages: [pre-push]

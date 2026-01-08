@@ -34,11 +34,17 @@ See [docs/_internal/prd.md](./docs/_internal/prd.md) for complete product requir
 
 ## Development Setup
 
-Install dependencies:
+Install dependencies and hooks:
 ```bash
 # Install project dependencies
 uv sync --dev
+
+# REQUIRED: Install git hooks (prevents CI failures)
+uvx pre-commit install
+uvx pre-commit install --hook-type pre-push
 ```
+
+**The pre-push hook runs the full test suite before pushing.** This prevents CI failures.
 
 Run tests:
 ```bash
@@ -48,6 +54,11 @@ uv run pytest
 Run linter:
 ```bash
 uv run ruff check .
+```
+
+Run formatter:
+```bash
+uv run ruff format .
 ```
 
 ## Python Tooling

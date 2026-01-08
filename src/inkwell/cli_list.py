@@ -159,7 +159,7 @@ def list_episodes(
                                 "title": ep.title,
                                 "date": ep.published.strftime("%Y-%m-%d"),
                                 "duration": ep.duration_formatted if ep.duration_seconds else None,
-                                "url": ep.audio_url,
+                                "url": str(ep.url),
                             }
                         )
                     except Exception as e:

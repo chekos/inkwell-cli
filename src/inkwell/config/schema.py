@@ -31,10 +31,10 @@ class TranscriptionConfig(BaseModel):
     """Transcription service configuration."""
 
     model_name: str = Field(
-        default="gemini-2.5-flash",
+        default="gemini-3-flash-preview",
         min_length=1,
         max_length=100,
-        description="Gemini model name (e.g., gemini-2.5-flash)",
+        description="Gemini model name (e.g., gemini-3-flash-preview)",
     )
     api_key: str | None = Field(
         default=None,
@@ -74,6 +74,36 @@ class ExtractionConfig(BaseModel):
         min_length=20,
         max_length=500,
         description="Google AI API key (if None, uses environment variable)",
+    )
+
+
+class PluginConfig(BaseModel):
+    """Configuration for a single plugin.
+
+    Example YAML:
+        plugins:
+          whisper:
+            enabled: true
+            priority: 50
+            config:
+              model: base
+              device: cuda
+    """
+
+    enabled: bool = Field(
+        default=True,
+        description="Whether this plugin is enabled",
+    )
+    priority: int = Field(
+        default=50,
+        ge=0,
+        le=200,
+        description="Plugin selection priority (higher = preferred). "
+        "Standard ranges: 150 (user override), 100 (built-in), 50 (third-party), 0 (experimental)",
+    )
+    config: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Plugin-specific configuration passed to plugin.configure()",
     )
 
 
@@ -149,7 +179,7 @@ class GlobalConfig(BaseModel):
     """Global Inkwell configuration."""
 
     version: str = "1"
-    default_output_dir: Path = Field(default_factory=lambda: Path("~/podcasts"))
+    default_output_dir: Path = Field(default_factory=lambda: Path("~/inkwell-notes"))
     log_level: LogLevel = "INFO"
     default_templates: list[str] = Field(
         default_factory=lambda: ["summary", "quotes", "key-concepts"]
@@ -166,13 +196,19 @@ class GlobalConfig(BaseModel):
     extraction: ExtractionConfig = Field(default_factory=ExtractionConfig)
     interview: InterviewConfig = Field(default_factory=InterviewConfig)
 
+    # Plugin configurations (keyed by plugin name)
+    plugins: dict[str, PluginConfig] = Field(
+        default_factory=dict,
+        description="Per-plugin configuration. Keys are plugin names.",
+    )
+
     # Deprecated fields (for backward compatibility with existing configs)
     transcription_model: str | None = None
     interview_model: str | None = None
     youtube_check: bool | None = None
 
-    @model_validator(mode='after')
-    def expand_user_path(self) -> 'GlobalConfig':
+    @model_validator(mode="after")
+    def expand_user_path(self) -> "GlobalConfig":
         """Expand ~ in default_output_dir to user home directory."""
         self.default_output_dir = self.default_output_dir.expanduser()
         return self

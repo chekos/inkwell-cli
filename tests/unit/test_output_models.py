@@ -6,13 +6,12 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from inkwell.utils.datetime import now_utc
-
 from inkwell.output.models import (
     EpisodeMetadata,
     EpisodeOutput,
     OutputFile,
 )
+from inkwell.utils.datetime import now_utc
 
 
 class TestEpisodeMetadata:
@@ -106,6 +105,8 @@ class TestEpisodeMetadata:
 
     def test_date_slug_uses_processed_date(self) -> None:
         """Test date slug falls back to processed date."""
+        from datetime import datetime
+
         metadata = EpisodeMetadata(
             podcast_name="Test",
             episode_title="Test",
@@ -114,7 +115,8 @@ class TestEpisodeMetadata:
         )
 
         # Should use processed_date (today)
-        assert metadata.date_slug.startswith("2025-")
+        current_year = datetime.now().strftime("%Y-")
+        assert metadata.date_slug.startswith(current_year)
 
     def test_add_template(self) -> None:
         """Test adding template to applied list."""

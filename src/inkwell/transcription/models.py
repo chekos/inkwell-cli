@@ -74,12 +74,13 @@ class Transcript(BaseModel):
     )
 
     # Optional metadata
+    summary: str | None = Field(
+        None, description="Brief summary of the audio content (from Gemini structured output)"
+    )
     duration_seconds: float | None = Field(
         None, ge=0, description="Total duration of audio in seconds"
     )
-    word_count: int | None = Field(
-        None, ge=0, description="Total word count in transcript"
-    )
+    word_count: int | None = Field(None, ge=0, description="Total word count in transcript")
     cost_usd: float | None = Field(
         None, ge=0, description="Cost in USD for this transcription (if applicable)"
     )
@@ -202,9 +203,7 @@ class TranscriptionResult(BaseModel):
     """
 
     success: bool = Field(..., description="Whether transcription succeeded")
-    transcript: Transcript | None = Field(
-        None, description="The transcript if successful"
-    )
+    transcript: Transcript | None = Field(None, description="The transcript if successful")
     error: str | None = Field(None, description="Error message if failed")
     attempts: list[str] = Field(
         default_factory=list,
@@ -215,18 +214,12 @@ class TranscriptionResult(BaseModel):
     duration_seconds: float = Field(
         default=0.0, ge=0, description="Time taken for transcription operation"
     )
-    cost_usd: float = Field(
-        default=0.0, ge=0, description="Cost in USD for this operation"
-    )
-    from_cache: bool = Field(
-        default=False, description="Whether result came from cache"
-    )
+    cost_usd: float = Field(default=0.0, ge=0, description="Cost in USD for this operation")
+    from_cache: bool = Field(default=False, description="Whether result came from cache")
 
     @field_validator("transcript")
     @classmethod
-    def transcript_required_if_success(
-        cls, v: Transcript | None, info: Any
-    ) -> Transcript | None:
+    def transcript_required_if_success(cls, v: Transcript | None, info: Any) -> Transcript | None:
         """Validate that transcript is provided if success is True."""
         if info.data.get("success") and v is None:
             raise ValueError("transcript is required when success is True")

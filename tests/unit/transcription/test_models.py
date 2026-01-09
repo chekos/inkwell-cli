@@ -1,6 +1,6 @@
 """Tests for transcription data models."""
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 import pytest
 from pydantic import ValidationError

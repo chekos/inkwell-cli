@@ -201,12 +201,20 @@ class E2ETestResult(BaseModel):
     @property
     def cost_per_minute(self) -> float:
         """Calculate cost per minute of podcast."""
-        return self.total_cost_usd / self.test_case.duration_minutes if hasattr(self, 'test_case') else 0.0
+        return (
+            self.total_cost_usd / self.test_case.duration_minutes
+            if hasattr(self, "test_case")
+            else 0.0
+        )
 
     @property
     def processing_time_per_minute(self) -> float:
         """Calculate processing time per minute of podcast."""
-        return self.total_duration_seconds / (self.test_case.duration_minutes * 60) if hasattr(self, 'test_case') else 0.0
+        return (
+            self.total_duration_seconds / (self.test_case.duration_minutes * 60)
+            if hasattr(self, "test_case")
+            else 0.0
+        )
 
 
 class E2EBenchmark(BaseModel):
@@ -261,21 +269,21 @@ class E2EBenchmark(BaseModel):
             else 0.0,
             min_cost=min((r.total_cost_usd for r in results), default=0.0),
             max_cost=max((r.total_cost_usd for r in results), default=0.0),
-            avg_entities_extracted=sum(r.entities_extracted for r in successful)
-            / len(successful)
+            avg_entities_extracted=sum(r.entities_extracted for r in successful) / len(successful)
             if successful
             else 0.0,
             avg_tags_generated=sum(r.tags_generated for r in successful) / len(successful)
             if successful
             else 0.0,
-            avg_wikilinks_created=sum(r.wikilinks_created for r in successful)
-            / len(successful)
+            avg_wikilinks_created=sum(r.wikilinks_created for r in successful) / len(successful)
             if successful
             else 0.0,
         )
 
 
-def validate_e2e_output(output_dir: Path, test_case: PodcastTestCase) -> tuple[bool, list[str], list[str]]:
+def validate_e2e_output(
+    output_dir: Path, test_case: PodcastTestCase
+) -> tuple[bool, list[str], list[str]]:
     """Validate E2E test output meets quality standards.
 
     Args:

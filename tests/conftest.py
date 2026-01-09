@@ -27,7 +27,7 @@ def sample_config_dict() -> dict:
     """
     return {
         "version": "1",
-        "default_output_dir": "~/podcasts",
+        "default_output_dir": "~/inkwell-notes",
         "transcription_model": "gemini-2.0-flash-exp",
         "interview_model": "claude-sonnet-4-5",
         "youtube_check": True,

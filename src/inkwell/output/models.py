@@ -32,20 +32,15 @@ class EpisodeMetadata(BaseModel):
 
     # Schema versioning for forward/backward compatibility
     schema_version: int = Field(
-        default=1,
-        description="Metadata schema version for migration support"
+        default=1, description="Metadata schema version for migration support"
     )
 
     # Episode information
     podcast_name: str = Field(..., description="Name of the podcast")
     episode_title: str = Field(..., description="Episode title")
     episode_url: str = Field(..., description="Episode URL")
-    published_date: datetime | None = Field(
-        None, description="When episode was published"
-    )
-    duration_seconds: float | None = Field(
-        None, description="Episode duration in seconds", ge=0
-    )
+    published_date: datetime | None = Field(None, description="When episode was published")
+    duration_seconds: float | None = Field(None, description="Episode duration in seconds", ge=0)
 
     # Processing metadata
     processed_date: datetime = Field(
@@ -57,18 +52,18 @@ class EpisodeMetadata(BaseModel):
     templates_applied: list[str] = Field(
         default_factory=list, description="Templates used for extraction"
     )
+    templates_versions: dict[str, str] = Field(
+        default_factory=dict,
+        description="Map of template name to version (e.g., {'summary': '1.1'})",
+    )
 
     # Cost tracking
-    transcription_cost_usd: float = Field(
-        0.0, description="Cost of transcription", ge=0
-    )
+    transcription_cost_usd: float = Field(0.0, description="Cost of transcription", ge=0)
     extraction_cost_usd: float = Field(0.0, description="Cost of extraction", ge=0)
     total_cost_usd: float = Field(0.0, description="Total processing cost", ge=0)
 
     # Custom metadata
-    custom_fields: dict[str, Any] = Field(
-        default_factory=dict, description="Custom user metadata"
-    )
+    custom_fields: dict[str, Any] = Field(default_factory=dict, description="Custom user metadata")
 
     @property
     def duration_formatted(self) -> str:
@@ -92,19 +87,18 @@ class EpisodeMetadata(BaseModel):
         return date.strftime("%Y-%m-%d")
 
     @property
-    def directory_name(self) -> str:
-        """Get directory name for this episode.
-
-        Format: podcast-name-YYYY-MM-DD-episode-title/
-
-        Returns:
-            Filesystem-safe directory name
-        """
+    def podcast_slug(self) -> str:
+        """Get podcast name slug for directory structure."""
         import re
 
-        # Slugify podcast name
-        podcast_slug = re.sub(r"[^\w\s-]", "", self.podcast_name.lower())
-        podcast_slug = re.sub(r"[-\s]+", "-", podcast_slug).strip("-")
+        slug = re.sub(r"[^\w\s-]", "", self.podcast_name.lower())
+        slug = re.sub(r"[-\s]+", "-", slug).strip("-")
+        return slug
+
+    @property
+    def episode_slug(self) -> str:
+        """Get episode slug (date + title) for directory name."""
+        import re
 
         # Slugify episode title
         title_slug = re.sub(r"[^\w\s-]", "", self.episode_title.lower())
@@ -114,12 +108,24 @@ class EpisodeMetadata(BaseModel):
         if len(title_slug) > 50:
             title_slug = title_slug[:50].rstrip("-")
 
-        return f"{podcast_slug}-{self.date_slug}-{title_slug}"
+        return f"{self.date_slug}-{title_slug}"
 
-    def add_template(self, template_name: str) -> None:
-        """Add template to applied templates list."""
+    @property
+    def directory_name(self) -> str:
+        """Get full directory path for this episode.
+
+        Format: podcast-slug/YYYY-MM-DD-episode-title
+
+        Returns:
+            Filesystem-safe nested directory path
+        """
+        return f"{self.podcast_slug}/{self.episode_slug}"
+
+    def add_template(self, template_name: str, version: str = "unknown") -> None:
+        """Add template to applied templates list with version tracking."""
         if template_name not in self.templates_applied:
             self.templates_applied.append(template_name)
+        self.templates_versions[template_name] = version
 
     def add_cost(self, extraction_cost: float) -> None:
         """Add extraction cost to total."""
@@ -145,14 +151,10 @@ class OutputFile(BaseModel):
     filename: str = Field(..., description="Output filename (e.g., 'summary.md')")
     template_name: str = Field(..., description="Template that generated this file")
     content: str = Field(..., description="Markdown content")
-    frontmatter: dict[str, Any] = Field(
-        default_factory=dict, description="YAML frontmatter"
-    )
+    frontmatter: dict[str, Any] = Field(default_factory=dict, description="YAML frontmatter")
 
     # File metadata
-    created_at: datetime = Field(
-        default_factory=now_utc, description="When file was created"
-    )
+    created_at: datetime = Field(default_factory=now_utc, description="When file was created")
     size_bytes: int = Field(0, description="File size in bytes", ge=0)
 
     @property
@@ -173,9 +175,7 @@ class OutputFile(BaseModel):
         # Format frontmatter as YAML
         import yaml
 
-        frontmatter_yaml = yaml.dump(
-            self.frontmatter, default_flow_style=False, sort_keys=False
-        )
+        frontmatter_yaml = yaml.dump(self.frontmatter, default_flow_style=False, sort_keys=False)
         return f"---\n{frontmatter_yaml}---\n\n{self.content}"
 
     def update_size(self) -> None:
@@ -192,25 +192,21 @@ class EpisodeOutput(BaseModel):
     Example:
         >>> output = EpisodeOutput(
         ...     metadata=metadata,
-        ...     output_dir=Path("~/podcasts/ep123"),
+        ...     output_dir=Path("~/inkwell-notes/ep123"),
         ...     files=[summary_file, quotes_file]
         ... )
     """
 
     metadata: EpisodeMetadata = Field(..., description="Episode metadata")
     output_dir: Path = Field(..., description="Output directory path")
-    files: list[OutputFile] = Field(
-        default_factory=list, description="Generated output files"
-    )
+    files: list[OutputFile] = Field(default_factory=list, description="Generated output files")
 
     # Stats
     total_files: int = Field(0, description="Number of files generated", ge=0)
     total_size_bytes: int = Field(0, description="Total size of all files", ge=0)
 
     # Timestamps
-    created_at: datetime = Field(
-        default_factory=now_utc, description="When output was created"
-    )
+    created_at: datetime = Field(default_factory=now_utc, description="When output was created")
 
     def add_file(self, file: OutputFile) -> None:
         """Add output file and update stats."""
@@ -353,9 +349,14 @@ class EpisodeOutput(BaseModel):
         with metadata_file.open("r") as f:
             metadata_dict = yaml.safe_load(f)
 
+        # Handle schema migration: ensure templates_versions exists
+        if "templates_versions" not in metadata_dict:
+            # v1 schema - initialize empty, will be populated from frontmatter
+            metadata_dict["templates_versions"] = {}
+
         metadata = EpisodeMetadata(**metadata_dict)
 
-        # Load all markdown files
+        # Load all markdown files and extract template versions from frontmatter
         files: list[OutputFile] = []
         for md_file in sorted(output_dir.glob("*.md")):
             # Read file content
@@ -375,6 +376,12 @@ class EpisodeOutput(BaseModel):
 
             # Determine template name from filename (remove .md)
             template_name = md_file.stem
+
+            # Extract template version from frontmatter if available
+            # This populates templates_versions for v1 data migration
+            if template_name not in metadata.templates_versions:
+                version = frontmatter.get("template_version", "unknown")
+                metadata.templates_versions[template_name] = version
 
             # Create OutputFile
             output_file = OutputFile(

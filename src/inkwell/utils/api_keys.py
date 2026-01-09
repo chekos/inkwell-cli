@@ -15,6 +15,32 @@ class APIKeyError(ValueError):
     pass
 
 
+def _get_config_path(
+    provider: Literal["gemini", "claude", "youtube"],
+    key_name: str,
+) -> str:
+    """Map provider and env var name to inkwell config path.
+
+    Args:
+        provider: The API provider name
+        key_name: Environment variable name
+
+    Returns:
+        Config path for inkwell config set command
+    """
+    if provider == "claude":
+        return "extraction.claude_api_key"
+    elif provider == "gemini":
+        # Gemini is used for both transcription and extraction
+        # Check context from key_name to give best suggestion
+        if "transcription" in key_name.lower():
+            return "transcription.api_key"
+        return "extraction.gemini_api_key"
+    else:
+        # Default fallback
+        return f"{provider}.api_key"
+
+
 def validate_api_key(
     key: str | None,
     provider: Literal["gemini", "claude", "youtube"],
@@ -42,10 +68,11 @@ def validate_api_key(
     """
     # Check if key exists
     if key is None or not key.strip():
+        # Map provider to config path for helpful error message
+        config_path = _get_config_path(provider, key_name)
         raise APIKeyError(
             f"{provider.title()} API key is required.\n"
-            f"Set the {key_name} environment variable.\n"
-            f"Example: export {key_name}='your-api-key-here'"
+            f"Run: inkwell config set {config_path} YOUR_API_KEY"
         )
 
     # Check for common mistakes BEFORE stripping

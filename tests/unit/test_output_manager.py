@@ -1,10 +1,8 @@
 """Unit tests for output manager."""
 
-import logging
 import os
-from datetime import datetime
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 import yaml
@@ -96,9 +94,10 @@ class TestOutputManagerWriteEpisode:
 
         output = manager.write_episode(episode_metadata, extraction_results)
 
-        # Check directory created
+        # Check directory created (nested: output_dir/podcast-slug/episode-slug)
         assert output.directory.exists()
-        assert output.directory.parent == temp_output_dir
+        # Parent is podcast dir, grandparent is output_dir
+        assert output.directory.parent.parent == temp_output_dir
 
         # Check files created
         assert len(output.output_files) == 2
@@ -120,11 +119,15 @@ class TestOutputManagerWriteEpisode:
 
         output = manager.write_episode(episode_metadata, extraction_results)
 
-        # Directory should match pattern: podcast-name-YYYY-MM-DD-episode-title
-        dir_name = output.directory.name
-        assert "test-podcast" in dir_name.lower()
-        assert "episode-1" in dir_name.lower()
-        assert len(dir_name.split("-")) >= 5  # Has date components
+        # Directory structure: podcast-slug/YYYY-MM-DD-episode-title
+        episode_dir_name = output.directory.name
+        podcast_dir_name = output.directory.parent.name
+
+        # Podcast dir should be the podcast slug
+        assert podcast_dir_name == "test-podcast"
+        # Episode dir should have date and title (not podcast name)
+        assert "episode-1" in episode_dir_name.lower()
+        assert len(episode_dir_name.split("-")) >= 4  # Has date components
 
     def test_write_episode_markdown_content(
         self,
@@ -347,9 +350,7 @@ class TestOutputManagerAtomicWrites:
         assert "fsync" in call_order
         assert call_order.index("flush") < call_order.index("fsync")
 
-    def test_write_file_atomic_handles_directory_fsync_failure(
-        self, temp_output_dir: Path
-    ) -> None:
+    def test_write_file_atomic_handles_directory_fsync_failure(self, temp_output_dir: Path) -> None:
         """Test that directory fsync failure doesn't break write."""
         manager = OutputManager(output_dir=temp_output_dir)
 
@@ -633,9 +634,9 @@ class TestOutputManagerSecurityPathTraversal:
         manager = OutputManager(output_dir=temp_output_dir)
         output = manager.write_episode(episode_metadata, extraction_results)
 
-        # Directory should be created safely within output_dir
+        # Directory should be created safely within output_dir (nested structure)
         assert output.directory.exists()
-        assert output.directory.parent == temp_output_dir
+        assert output.directory.parent.parent == temp_output_dir
         # Path traversal should be sanitized (../ removed)
         assert ".." not in output.directory.name
 
@@ -652,9 +653,9 @@ class TestOutputManagerSecurityPathTraversal:
         manager = OutputManager(output_dir=temp_output_dir)
         output = manager.write_episode(episode_metadata, extraction_results)
 
-        # Should create directory safely
+        # Should create directory safely (nested structure)
         assert output.directory.exists()
-        assert output.directory.parent == temp_output_dir
+        assert output.directory.parent.parent == temp_output_dir
         # Slashes should be replaced with hyphens
         assert "/" not in output.directory.name
 
@@ -671,9 +672,9 @@ class TestOutputManagerSecurityPathTraversal:
         manager = OutputManager(output_dir=temp_output_dir)
         output = manager.write_episode(episode_metadata, extraction_results)
 
-        # Should create directory safely
+        # Should create directory safely (nested structure)
         assert output.directory.exists()
-        assert output.directory.parent == temp_output_dir
+        assert output.directory.parent.parent == temp_output_dir
         # Both .. and \ should be sanitized
         assert ".." not in output.directory.name
         assert "\\" not in output.directory.name
@@ -691,9 +692,9 @@ class TestOutputManagerSecurityPathTraversal:
         manager = OutputManager(output_dir=temp_output_dir)
         output = manager.write_episode(episode_metadata, extraction_results)
 
-        # Should create directory safely
+        # Should create directory safely (nested structure)
         assert output.directory.exists()
-        assert output.directory.parent == temp_output_dir
+        assert output.directory.parent.parent == temp_output_dir
 
     def test_path_traversal_with_null_bytes(
         self,
@@ -708,9 +709,9 @@ class TestOutputManagerSecurityPathTraversal:
         manager = OutputManager(output_dir=temp_output_dir)
         output = manager.write_episode(episode_metadata, extraction_results)
 
-        # Should create directory safely
+        # Should create directory safely (nested structure)
         assert output.directory.exists()
-        assert output.directory.parent == temp_output_dir
+        assert output.directory.parent.parent == temp_output_dir
         # Null bytes should be removed
         assert "\x00" not in output.directory.name
 
@@ -760,12 +761,14 @@ class TestOutputManagerSecuritySymlinkAttacks:
         target_dir = temp_output_dir.parent / "sensitive_data"
         target_dir.mkdir()
 
-        episode_dir_name = episode_metadata.directory_name
-        # Sanitize the name the same way the code does
-        episode_dir_name = episode_dir_name.replace("..", "").replace("/", "-").replace("\\", "-")
-        episode_dir_name = episode_dir_name.replace("\0", "")
+        # Get the nested path components
+        podcast_slug = episode_metadata.podcast_slug
+        episode_slug = episode_metadata.episode_slug
 
-        symlink_path = temp_output_dir / episode_dir_name
+        # Create podcast directory, then symlink at episode level
+        podcast_dir = temp_output_dir / podcast_slug
+        podcast_dir.mkdir()
+        symlink_path = podcast_dir / episode_slug
         symlink_path.symlink_to(target_dir, target_is_directory=True)
 
         # Should raise SecurityError
@@ -794,7 +797,6 @@ class TestOutputManagerSecuritySymlinkAttacks:
 class TestOutputManagerSecurityEdgeCases:
     """Tests for security-related edge cases."""
 
-
     def test_only_path_separators_in_title(
         self,
         temp_output_dir: Path,
@@ -822,12 +824,13 @@ class TestOutputManagerSecurityEdgeCases:
         manager = OutputManager(output_dir=temp_output_dir)
 
         # Create a directory without metadata (could be user data)
-        episode_dir_name = episode_metadata.directory_name
-        # Sanitize the same way the code does
-        episode_dir_name = episode_dir_name.replace("..", "").replace("/", "-").replace("\\", "-")
-        episode_dir_name = episode_dir_name.replace("\0", "")
+        # With nested structure: output_dir/podcast-slug/episode-slug
+        podcast_slug = episode_metadata.podcast_slug
+        episode_slug = episode_metadata.episode_slug
 
-        fake_dir = temp_output_dir / episode_dir_name
+        podcast_dir = temp_output_dir / podcast_slug
+        podcast_dir.mkdir()
+        fake_dir = podcast_dir / episode_slug
         fake_dir.mkdir()
         (fake_dir / "important_data.txt").write_text("Don't delete me!")
 
@@ -922,7 +925,7 @@ class TestOutputManagerSecurityEdgeCases:
                 raise OSError("Disk full")
             original_write(path, content)
 
-        with patch.object(manager, '_write_file_atomic', failing_write):
+        with patch.object(manager, "_write_file_atomic", failing_write):
             # Should raise OSError and restore backup
             with pytest.raises(OSError, match="Disk full"):
                 manager.write_episode(episode_metadata, extraction_results, overwrite=True)
@@ -940,7 +943,7 @@ class TestOutputManagerSecurityEdgeCases:
         assert restored_metadata == original_metadata_content
 
         # Backup directory should not be left behind
-        backup_dir = original_dir.with_suffix('.backup')
+        backup_dir = original_dir.with_suffix(".backup")
         assert not backup_dir.exists()
 
     def test_overwrite_restores_backup_on_metadata_write_failure(
@@ -961,7 +964,7 @@ class TestOutputManagerSecurityEdgeCases:
         def failing_write_metadata(metadata_file, episode_metadata):
             raise OSError("Permission denied")
 
-        with patch.object(manager, '_write_metadata', failing_write_metadata):
+        with patch.object(manager, "_write_metadata", failing_write_metadata):
             # Should raise OSError and restore backup
             with pytest.raises(OSError, match="Permission denied"):
                 manager.write_episode(episode_metadata, extraction_results, overwrite=True)
@@ -973,7 +976,7 @@ class TestOutputManagerSecurityEdgeCases:
         assert restored_content == original_metadata_content
 
         # Backup directory should not be left behind
-        backup_dir = original_dir.with_suffix('.backup')
+        backup_dir = original_dir.with_suffix(".backup")
         assert not backup_dir.exists()
 
     def test_overwrite_removes_backup_on_success(
@@ -997,7 +1000,7 @@ class TestOutputManagerSecurityEdgeCases:
         assert output2.directory == original_dir
 
         # Backup should be removed
-        backup_dir = original_dir.with_suffix('.backup')
+        backup_dir = original_dir.with_suffix(".backup")
         assert not backup_dir.exists()
 
     def test_multiple_path_traversal_techniques_combined(
@@ -1014,8 +1017,9 @@ class TestOutputManagerSecurityEdgeCases:
         output = manager.write_episode(episode_metadata, extraction_results)
 
         # Should create directory safely
+        # With nested structure: output_dir/podcast-slug/episode-slug
         assert output.directory.exists()
-        assert output.directory.parent == temp_output_dir
+        assert output.directory.parent.parent == temp_output_dir
         # All attack vectors should be neutralized
         assert ".." not in output.directory.name
         assert "/" not in output.directory.name
@@ -1276,7 +1280,7 @@ class TestOutputManagerSchemaVersioning:
     def test_load_metadata_newer_version_warns(
         self,
         temp_output_dir: Path,
-        caplog,
+        capsys,
     ) -> None:
         """Test that loading newer schema version logs warning."""
         manager = OutputManager(output_dir=temp_output_dir)
@@ -1302,12 +1306,12 @@ class TestOutputManagerSchemaVersioning:
         metadata_file.write_text(yaml.dump(v2_metadata))
 
         # Load should warn about newer version
-        with caplog.at_level(logging.WARNING):
-            loaded_metadata = manager.load_episode_metadata(episode_dir)
+        loaded_metadata = manager.load_episode_metadata(episode_dir)
 
-        # Should load but log warning
+        # Should load but log warning (warning goes to stderr via rich)
+        captured = capsys.readouterr()
         assert loaded_metadata.schema_version == 2
-        assert "newer than supported" in caplog.text.lower()
+        assert "newer than supported" in captured.err.lower()
 
     def test_migrate_metadata_v0_to_v1_preserves_data(
         self,

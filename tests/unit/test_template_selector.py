@@ -22,6 +22,7 @@ def mock_loader() -> Mock:
 def sample_episode() -> Episode:
     """Create sample episode."""
     from datetime import datetime
+
     return Episode(
         title="Test Episode",
         url="https://example.com/ep1",
@@ -59,9 +60,7 @@ class TestTemplateSelector:
         selector = TemplateSelector(template_loader=mock_loader)
         assert selector.loader == mock_loader
 
-    def test_select_default_templates(
-        self, mock_loader: Mock, sample_episode: Episode
-    ) -> None:
+    def test_select_default_templates(self, mock_loader: Mock, sample_episode: Episode) -> None:
         """Test selecting default templates."""
         # Setup mock to return default templates
         summary = create_template("summary", priority=0)
@@ -93,9 +92,7 @@ class TestTemplateSelector:
         assert "quotes" in template_names
         assert "key-concepts" in template_names
 
-    def test_templates_sorted_by_priority(
-        self, mock_loader: Mock, sample_episode: Episode
-    ) -> None:
+    def test_templates_sorted_by_priority(self, mock_loader: Mock, sample_episode: Episode) -> None:
         """Test that templates are sorted by priority."""
         summary = create_template("summary", priority=0)
         quotes = create_template("quotes", priority=10)
@@ -144,9 +141,7 @@ class TestTemplateSelector:
 
         mock_loader.load_template = Mock(side_effect=mock_load)
         mock_loader.list_templates = Mock(
-            side_effect=lambda category=None: (
-                ["tools-mentioned"] if category == "tech" else []
-            )
+            side_effect=lambda category=None: (["tools-mentioned"] if category == "tech" else [])
         )
 
         selector = TemplateSelector(template_loader=mock_loader)
@@ -164,9 +159,7 @@ class TestTemplateSelector:
         assert "key-concepts" in template_names
         assert "tools-mentioned" in template_names
 
-    def test_select_with_custom_templates(
-        self, mock_loader: Mock, sample_episode: Episode
-    ) -> None:
+    def test_select_with_custom_templates(self, mock_loader: Mock, sample_episode: Episode) -> None:
         """Test selecting with custom template names."""
         summary = create_template("summary")
         custom = create_template("custom-analysis")
@@ -264,14 +257,14 @@ class TestTemplateSelector:
 
         mock_loader.load_template = Mock(side_effect=mock_load)
         mock_loader.list_templates = Mock(
-            side_effect=lambda category=None: (
-                ["tools-mentioned"] if category == "tech" else []
-            )
+            side_effect=lambda category=None: (["tools-mentioned"] if category == "tech" else [])
         )
 
         selector = TemplateSelector(template_loader=mock_loader)
 
-        tech_transcript = "We discuss Python programming, API development, and software framework extensively."
+        tech_transcript = (
+            "We discuss Python programming, API development, and software framework extensively."
+        )
 
         templates = selector.select_templates(
             episode=sample_episode,
@@ -284,9 +277,7 @@ class TestTemplateSelector:
         # Should auto-detect tech and include tools-mentioned
         assert "tools-mentioned" in template_names
 
-    def test_no_duplicate_templates(
-        self, mock_loader: Mock, sample_episode: Episode
-    ) -> None:
+    def test_no_duplicate_templates(self, mock_loader: Mock, sample_episode: Episode) -> None:
         """Test that same template is not included twice."""
         summary = create_template("summary")
 
@@ -346,6 +337,7 @@ class TestTemplateSelector:
         self, mock_loader: Mock, sample_episode: Episode
     ) -> None:
         """Test that empty transcript doesn't crash category detection."""
+
         def mock_load(name: str) -> ExtractionTemplate:
             return create_template(name)
 
@@ -364,9 +356,7 @@ class TestTemplateSelector:
         # Should still return default templates
         assert len(templates) >= 3
 
-    def test_case_insensitive_category_detection(
-        self, mock_loader: Mock
-    ) -> None:
+    def test_case_insensitive_category_detection(self, mock_loader: Mock) -> None:
         """Test that category detection is case-insensitive."""
         selector = TemplateSelector(template_loader=mock_loader)
 
@@ -374,9 +364,7 @@ class TestTemplateSelector:
         category = selector.detect_category(transcript)
         assert category == "tech"
 
-    def test_applies_to_filtering(
-        self, mock_loader: Mock, sample_episode: Episode
-    ) -> None:
+    def test_applies_to_filtering(self, mock_loader: Mock, sample_episode: Episode) -> None:
         """Test that templates with applies_to are properly filtered."""
         summary = create_template("summary", applies_to=["all"])
         tools = create_template(
@@ -384,9 +372,7 @@ class TestTemplateSelector:
             category="tech",
             applies_to=["tech", "programming"],
         )
-        books = create_template(
-            "books-mentioned", category="interview", applies_to=["interview"]
-        )
+        books = create_template("books-mentioned", category="interview", applies_to=["interview"])
 
         def mock_load(name: str) -> ExtractionTemplate:
             templates = {
@@ -421,7 +407,9 @@ class TestTemplateSelector:
         assert "tools-mentioned" in template_names
         assert "books-mentioned" not in template_names
 
-    def test_default_templates_always_included(self, mock_loader: Mock, sample_episode: Episode) -> None:
+    def test_default_templates_always_included(
+        self, mock_loader: Mock, sample_episode: Episode
+    ) -> None:
         """Test that default templates are always included."""
         summary = create_template("summary")
         quotes = create_template("quotes")
@@ -450,9 +438,7 @@ class TestTemplateSelector:
         assert "quotes" in template_names
         assert "key-concepts" in template_names
 
-    def test_mixed_priority_sorting(
-        self, mock_loader: Mock, sample_episode: Episode
-    ) -> None:
+    def test_mixed_priority_sorting(self, mock_loader: Mock, sample_episode: Episode) -> None:
         """Test sorting with negative and positive priorities."""
         high = create_template("high-priority", priority=-10)
         normal = create_template("normal", priority=0)

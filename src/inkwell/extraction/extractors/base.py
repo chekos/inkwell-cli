@@ -29,6 +29,8 @@ class BaseExtractor(ABC):
         template: ExtractionTemplate,
         transcript: str,
         metadata: dict[str, Any],
+        force_json: bool = False,
+        max_tokens_override: int | None = None,
     ) -> str:
         """Extract content using template and transcript.
 
@@ -36,6 +38,8 @@ class BaseExtractor(ABC):
             template: Extraction template configuration
             transcript: Full transcript text
             metadata: Episode metadata (podcast name, title, etc.)
+            force_json: Force JSON response mode (for batch extraction)
+            max_tokens_override: Override template's max_tokens (for batch extraction)
 
         Returns:
             Raw LLM response string

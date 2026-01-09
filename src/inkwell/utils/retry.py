@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 
 # Error classification: Which errors should trigger retries?
 
+
 class RetryableError(Exception):
     """Base class for errors that should trigger retries."""
 
@@ -77,6 +78,7 @@ class QuotaExceededError(NonRetryableError):
 
 
 # Retry configuration
+
 
 class RetryConfig:
     """Configuration for retry behavior."""
@@ -210,6 +212,7 @@ def with_retry(
 
 
 # Specialized retry decorators for common scenarios
+
 
 def with_api_retry(max_attempts: int = 3, config: RetryConfig | None = None) -> Callable:
     """Retry decorator for API calls (rate limits, timeouts, server errors).

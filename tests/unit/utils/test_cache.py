@@ -2,12 +2,12 @@
 
 import json
 import time
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 
 import pytest
 
-from inkwell.utils.cache import CacheError, FileCache
+from inkwell.utils.cache import FileCache
 
 
 @pytest.fixture

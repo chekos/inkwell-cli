@@ -1,7 +1,5 @@
 """Tests for API key validation."""
 
-import os
-
 import pytest
 
 from inkwell.utils.api_keys import APIKeyError, get_validated_api_key, validate_api_key
@@ -121,17 +119,17 @@ class TestValidateAPIKey:
         with pytest.raises(APIKeyError, match="Claude"):
             validate_api_key(None, "claude", "ANTHROPIC_API_KEY")
 
-    def test_error_message_includes_env_var(self):
-        """Test that error messages include environment variable name."""
-        with pytest.raises(APIKeyError, match="GOOGLE_API_KEY"):
+    def test_error_message_includes_config_path(self):
+        """Test that error messages include inkwell config command."""
+        with pytest.raises(APIKeyError, match="extraction.gemini_api_key"):
             validate_api_key(None, "gemini", "GOOGLE_API_KEY")
 
-        with pytest.raises(APIKeyError, match="ANTHROPIC_API_KEY"):
+        with pytest.raises(APIKeyError, match="extraction.claude_api_key"):
             validate_api_key(None, "claude", "ANTHROPIC_API_KEY")
 
     def test_error_message_includes_setup_instructions(self):
         """Test that error messages include setup instructions."""
-        with pytest.raises(APIKeyError, match="export"):
+        with pytest.raises(APIKeyError, match="inkwell config set"):
             validate_api_key(None, "gemini", "GOOGLE_API_KEY")
 
 
@@ -187,9 +185,8 @@ class TestAPIKeyErrorMessages:
 
         error_msg = str(exc_info.value)
         assert "Gemini" in error_msg
-        assert "GOOGLE_API_KEY" in error_msg
-        assert "export" in error_msg
-        assert "your-api-key-here" in error_msg
+        assert "inkwell config set" in error_msg
+        assert "extraction.gemini_api_key" in error_msg
 
     def test_short_key_error_is_generic(self):
         """Test that short key error does not reveal length details (security fix)."""
@@ -371,7 +368,9 @@ class TestErrorMessageSanitization:
 
             # SECURITY: Error should NOT reveal:
             # 1. Actual key value
-            assert key not in error_msg or len(key) < 10  # Short test strings might appear in generic messages
+            assert (
+                key not in error_msg or len(key) < 10
+            )  # Short test strings might appear in generic messages
 
             # 2. Specific length requirements
             assert "20" not in error_msg

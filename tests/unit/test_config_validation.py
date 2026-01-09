@@ -19,7 +19,7 @@ class TestConfigValidationErrors:
             """
 version: "1"
 log_level: INVALID_LEVEL
-default_output_dir: ~/podcasts
+default_output_dir: ~/inkwell-notes
 """
         )
 
@@ -81,9 +81,7 @@ feeds:
         error_msg = str(exc_info.value)
         assert "auth" in error_msg or "type" in error_msg
 
-    def test_yaml_syntax_error_shows_friendly_message(
-        self, tmp_path: Path
-    ) -> None:
+    def test_yaml_syntax_error_shows_friendly_message(self, tmp_path: Path) -> None:
         """Test that YAML syntax errors show friendly message."""
         config_file = tmp_path / "config.yaml"
         config_file.write_text(
@@ -105,9 +103,7 @@ invalid yaml syntax here: [unclosed bracket
         # Should provide guidance
         assert "inkwell config edit" in error_msg
 
-    def test_missing_required_field_shows_friendly_error(
-        self, tmp_path: Path
-    ) -> None:
+    def test_missing_required_field_shows_friendly_error(self, tmp_path: Path) -> None:
         """Test that missing required fields show friendly error."""
         feeds_file = tmp_path / "feeds.yaml"
         feeds_file.write_text(

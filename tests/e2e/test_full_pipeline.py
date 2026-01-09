@@ -71,9 +71,7 @@ class TestE2ESimulation:
         start_time = time.time()
 
         # 1. Simulate transcription (YouTube API - free)
-        transcript = self._simulate_transcription(
-            test_case, tmp_path / "transcript.txt"
-        )
+        transcript = self._simulate_transcription(test_case, tmp_path / "transcript.txt")
         transcription_time = time.time() - start_time
 
         # 2. Simulate extraction
@@ -135,9 +133,7 @@ class TestE2ESimulation:
         start_time = time.time()
 
         # Simulate pipeline (Gemini transcription - costly)
-        transcript = self._simulate_transcription(
-            test_case, tmp_path / "transcript.txt"
-        )
+        transcript = self._simulate_transcription(test_case, tmp_path / "transcript.txt")
         transcription_time = time.time() - start_time
 
         extraction_start = time.time()
@@ -290,7 +286,9 @@ class TestE2ESimulation:
 
         transcript_lines = []
         for i in range(lines):
-            line = f"This is simulated transcript line {i + 1} with approximately twelve words here."
+            line = (
+                f"This is simulated transcript line {i + 1} with approximately twelve words here."
+            )
             transcript_lines.append(line)
 
         transcript = "\n".join(transcript_lines)
@@ -311,7 +309,12 @@ class TestE2ESimulation:
             content = {
                 "title": section.replace("-", " ").title(),
                 "content": f"Simulated {section} content based on transcript analysis.",
-                "entities": [f"Entity{i}" for i in range(test_case.expected_entity_count // len(test_case.expected_sections))],
+                "entities": [
+                    f"Entity{i}"
+                    for i in range(
+                        test_case.expected_entity_count // len(test_case.expected_sections)
+                    )
+                ],
             }
             results[section] = content
 
@@ -321,7 +324,9 @@ class TestE2ESimulation:
 
         return results
 
-    def _simulate_output_generation(self, test_case, extraction_results: dict, output_dir: Path) -> Path:
+    def _simulate_output_generation(
+        self, test_case, extraction_results: dict, output_dir: Path
+    ) -> Path:
         """Simulate markdown output generation."""
         output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -343,7 +348,7 @@ class TestE2ESimulation:
 
             # Create content with frontmatter, wikilinks, and tags
             frontmatter = f"""---
-title: {content['title']}
+title: {content["title"]}
 podcast: {test_case.podcast_name}
 episode: {test_case.episode_title}
 template: {section}
@@ -354,9 +359,9 @@ tags: [podcast, {test_case.content_type}]
             body = f"# {content['title']}\n\n{content['content']}\n\n"
 
             # Add wikilinks for entities
-            if content['entities']:
+            if content["entities"]:
                 body += "## Related\n\n"
-                for entity in content['entities']:
+                for entity in content["entities"]:
                     body += f"- [[{entity}]]\n"
 
             md_content = frontmatter + body

@@ -134,20 +134,14 @@ class SimpleInterviewer:
         try:
             for i in range(max_questions):
                 # Generate question
-                self.console.print(
-                    f"\n[dim]Generating question {i + 1}/{max_questions}...[/dim]"
-                )
+                self.console.print(f"\n[dim]Generating question {i + 1}/{max_questions}...[/dim]")
                 question = await self._generate_question(context, exchanges)
 
                 # Display question
-                self.console.print(
-                    f"\n[bold blue]Question {i + 1}:[/bold blue] {question}"
-                )
+                self.console.print(f"\n[bold blue]Question {i + 1}:[/bold blue] {question}")
 
                 # Get user response
-                self.console.print(
-                    "[dim]Type your response (or 'quit' to end early):[/dim]"
-                )
+                self.console.print("[dim]Type your response (or 'quit' to end early):[/dim]")
                 response = Prompt.ask("[green]>>[/green]", default="")
 
                 # Handle early exit
@@ -157,9 +151,7 @@ class SimpleInterviewer:
 
                 # Skip empty responses
                 if not response.strip():
-                    self.console.print(
-                        "[yellow]Skipping empty response.[/yellow]"
-                    )
+                    self.console.print("[yellow]Skipping empty response.[/yellow]")
                     continue
 
                 # Record exchange
@@ -225,9 +217,7 @@ class SimpleInterviewer:
 
         return "\n".join(parts)
 
-    async def _generate_question(
-        self, context: str, exchanges: list[dict[str, str]]
-    ) -> str:
+    async def _generate_question(self, context: str, exchanges: list[dict[str, str]]) -> str:
         """Generate next interview question using Claude.
 
         Args:
@@ -238,7 +228,8 @@ class SimpleInterviewer:
             Generated question text
         """
         # Build system prompt (reflective template, hardcoded)
-        system_prompt = """You are conducting a thoughtful interview to help someone reflect on a podcast episode they listened to.
+        system_prompt = """You are conducting a thoughtful interview to help someone \
+reflect on a podcast episode they listened to.
 
 Your role:
 - Ask open-ended questions that encourage deep reflection
@@ -263,8 +254,7 @@ Guidelines:
                 user_parts.append("")
 
         user_parts.append(
-            "Generate the next thought-provoking question. "
-            "Ask ONE question only, no preamble."
+            "Generate the next thought-provoking question. Ask ONE question only, no preamble."
         )
 
         user_prompt = "\n".join(user_parts)
@@ -284,9 +274,7 @@ Guidelines:
         self.total_tokens += input_tokens + output_tokens
 
         # Calculate cost (Claude Sonnet 4.5 pricing)
-        cost = (input_tokens / 1_000_000 * 3.00) + (
-            output_tokens / 1_000_000 * 15.00
-        )
+        cost = (input_tokens / 1_000_000 * 3.00) + (output_tokens / 1_000_000 * 15.00)
         self.total_cost += cost
 
         # Track in CostTracker if available
@@ -299,7 +287,9 @@ Guidelines:
                 output_tokens=output_tokens,
             )
 
-        return response.content[0].text.strip()
+        # Response content is always TextBlock for non-tool calls (Anthropic SDK union type)
+        first_block = response.content[0]
+        return first_block.text.strip()  # type: ignore[union-attr]
 
     def _format_markdown(
         self,
@@ -334,9 +324,7 @@ Guidelines:
 
         return "\n".join(lines)
 
-    def _display_welcome(
-        self, episode_title: str, podcast_name: str, max_questions: int
-    ) -> None:
+    def _display_welcome(self, episode_title: str, podcast_name: str, max_questions: int) -> None:
         """Display welcome message.
 
         Args:
@@ -347,13 +335,9 @@ Guidelines:
         self.console.print("\n[bold cyan]Interview Mode[/bold cyan]")
         self.console.print(f"[dim]Podcast:[/dim] {podcast_name}")
         self.console.print(f"[dim]Episode:[/dim] {episode_title}")
-        self.console.print(
-            f"[dim]I'll ask up to {max_questions} reflection questions.[/dim]\n"
-        )
+        self.console.print(f"[dim]I'll ask up to {max_questions} reflection questions.[/dim]\n")
 
-    def _display_completion(
-        self, questions_answered: int, max_questions: int
-    ) -> None:
+    def _display_completion(self, questions_answered: int, max_questions: int) -> None:
         """Display completion message.
 
         Args:
@@ -365,8 +349,7 @@ Guidelines:
             f"({questions_answered}/{max_questions} questions)"
         )
         self.console.print(
-            f"[dim]Total cost: ${self.total_cost:.4f} "
-            f"({self.total_tokens:,} tokens)[/dim]"
+            f"[dim]Total cost: ${self.total_cost:.4f} ({self.total_tokens:,} tokens)[/dim]"
         )
 
 
@@ -426,9 +409,7 @@ async def conduct_interview_from_output(
         ]
 
     # Conduct interview
-    interviewer = SimpleInterviewer(
-        api_key=api_key, cost_tracker=cost_tracker
-    )
+    interviewer = SimpleInterviewer(api_key=api_key, cost_tracker=cost_tracker)
     return await interviewer.conduct_interview(
         episode_title=episode_title,
         podcast_name=podcast_name,

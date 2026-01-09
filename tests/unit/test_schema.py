@@ -97,7 +97,7 @@ class TestGlobalConfig:
         config = GlobalConfig()
         assert config.version == "1"
         # Default output dir should be expanded (validator auto-expands ~)
-        assert config.default_output_dir == Path("~/podcasts").expanduser()
+        assert config.default_output_dir == Path("~/inkwell-notes").expanduser()
         assert config.log_level == "INFO"
         assert "summary" in config.default_templates
         assert "quotes" in config.default_templates
@@ -106,7 +106,7 @@ class TestGlobalConfig:
         assert "interview" in config.template_categories
 
         # New nested config structure
-        assert config.transcription.model_name == "gemini-2.5-flash"
+        assert config.transcription.model_name == "gemini-3-flash-preview"
         assert config.transcription.youtube_check is True
         assert config.transcription.cost_threshold_usd == 1.0
         assert config.interview.model == "claude-sonnet-4-5"
@@ -157,7 +157,7 @@ class TestGlobalConfig:
         """
         config = GlobalConfig(
             transcription_model="gemini-1.5-flash",  # Old/deprecated
-            transcription=TranscriptionConfig(model_name="gemini-2.5-flash")  # Explicit new
+            transcription=TranscriptionConfig(model_name="gemini-2.5-flash"),  # Explicit new
         )
 
         # User's explicit choice should win
@@ -167,7 +167,7 @@ class TestGlobalConfig:
         """When user explicitly sets interview.model, don't override with deprecated."""
         config = GlobalConfig(
             interview_model="claude-opus-4",  # Old/deprecated
-            interview=InterviewConfig(model="claude-sonnet-4-5")  # Explicit new
+            interview=InterviewConfig(model="claude-sonnet-4-5"),  # Explicit new
         )
 
         # User's explicit choice should win
@@ -177,7 +177,7 @@ class TestGlobalConfig:
         """When user explicitly sets youtube_check in new config, respect it."""
         config = GlobalConfig(
             youtube_check=False,  # Deprecated
-            transcription=TranscriptionConfig(youtube_check=True)  # Explicit new
+            transcription=TranscriptionConfig(youtube_check=True),  # Explicit new
         )
 
         # User's explicit choice should win
@@ -221,12 +221,12 @@ class TestGlobalConfig:
         """
         config = GlobalConfig(
             transcription_model="gemini-1.5-flash",
-            transcription=TranscriptionConfig()  # Explicit, even if default values
+            transcription=TranscriptionConfig(),  # Explicit, even if default values
         )
 
         # Should NOT migrate because user explicitly provided transcription config
         # This is the new intended behavior - explicit config wins, even if empty
-        assert config.transcription.model_name == "gemini-2.5-flash"  # Default, not migrated
+        assert config.transcription.model_name == "gemini-3-flash-preview"  # Default, not migrated
 
     def test_global_config_new_fields_only(self) -> None:
         """Using only new nested structure works correctly.
@@ -234,9 +234,7 @@ class TestGlobalConfig:
         This test validates the preferred approach where users only use
         the new nested config structure without any deprecated fields.
         """
-        config = GlobalConfig(
-            transcription=TranscriptionConfig(model_name="gemini-2.5-flash")
-        )
+        config = GlobalConfig(transcription=TranscriptionConfig(model_name="gemini-2.5-flash"))
 
         assert config.transcription.model_name == "gemini-2.5-flash"
         # Deprecated field should not be set

@@ -228,9 +228,7 @@ class TestTranscriptionManager:
         gemini_transcript = sample_transcript.model_copy(update={"source": "gemini"})
         mock_gemini.transcribe.return_value = gemini_transcript
 
-        result = await manager.transcribe(
-            "https://youtube.com/watch?v=test", skip_youtube=True
-        )
+        result = await manager.transcribe("https://youtube.com/watch?v=test", skip_youtube=True)
 
         assert result.success is True
         assert result.transcript.source == "gemini"
@@ -251,9 +249,7 @@ class TestTranscriptionManager:
         """Test disabling cache."""
         mock_youtube.transcribe.return_value = sample_transcript
 
-        result = await manager.transcribe(
-            "https://youtube.com/watch?v=test", use_cache=False
-        )
+        result = await manager.transcribe("https://youtube.com/watch?v=test", use_cache=False)
 
         assert result.success is True
 
@@ -283,7 +279,9 @@ class TestTranscriptionManager:
 
         assert result.success is False
         assert result.error is not None
-        assert "gemini api key not configured" in result.error.lower()
+        # Check for helpful error message with API key configuration instructions
+        assert "api key not configured" in result.error.lower()
+        assert "inkwell config set" in result.error.lower()
 
     @pytest.mark.asyncio
     async def test_get_transcript_success(
@@ -337,27 +335,21 @@ class TestTranscriptionManager:
         # Cache should not have been checked
         mock_cache.get.assert_not_called()
 
-    def test_clear_cache(
-        self, manager: TranscriptionManager, mock_cache: Mock
-    ) -> None:
+    def test_clear_cache(self, manager: TranscriptionManager, mock_cache: Mock) -> None:
         """Test clear_cache delegates to cache."""
         count = manager.clear_cache()
 
         assert count == 5
         mock_cache.clear.assert_called_once()
 
-    def test_clear_expired_cache(
-        self, manager: TranscriptionManager, mock_cache: Mock
-    ) -> None:
+    def test_clear_expired_cache(self, manager: TranscriptionManager, mock_cache: Mock) -> None:
         """Test clear_expired_cache delegates to cache."""
         count = manager.clear_expired_cache()
 
         assert count == 2
         mock_cache.clear_expired.assert_called_once()
 
-    def test_cache_stats(
-        self, manager: TranscriptionManager, mock_cache: Mock
-    ) -> None:
+    def test_cache_stats(self, manager: TranscriptionManager, mock_cache: Mock) -> None:
         """Test cache_stats delegates to cache."""
         stats = manager.cache_stats()
 

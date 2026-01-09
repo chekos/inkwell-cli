@@ -22,7 +22,7 @@ class TestTranscriptionManagerConfigInjection:
         config = TranscriptionConfig(
             model_name="gemini-2.5-flash",
             api_key="test-key-from-config-1234567890",
-            cost_threshold_usd=2.0
+            cost_threshold_usd=2.0,
         )
 
         manager = TranscriptionManager(config=config)
@@ -34,8 +34,7 @@ class TestTranscriptionManagerConfigInjection:
     def test_individual_params_only(self) -> None:
         """Using only individual params works (backward compatibility)."""
         manager = TranscriptionManager(
-            gemini_api_key="test-key-individual-1234567890",
-            model_name="gemini-1.5-flash"
+            gemini_api_key="test-key-individual-1234567890", model_name="gemini-1.5-flash"
         )
 
         assert manager.gemini_transcriber is not None
@@ -48,14 +47,13 @@ class TestTranscriptionManagerConfigInjection:
         and individual params are provided, config should win.
         """
         config = TranscriptionConfig(
-            model_name="gemini-2.5-flash",
-            api_key="config-key-1234567890123456"
+            model_name="gemini-2.5-flash", api_key="config-key-1234567890123456"
         )
 
         manager = TranscriptionManager(
             config=config,
             gemini_api_key="deprecated-key-1234567890",
-            model_name="gemini-1.5-flash"  # Should be ignored
+            model_name="gemini-1.5-flash",  # Should be ignored
         )
 
         # Config values should win
@@ -67,12 +65,11 @@ class TestTranscriptionManagerConfigInjection:
         """When config has None values, falls back to individual params."""
         config = TranscriptionConfig(
             api_key=None,  # Explicit None
-            model_name="gemini-2.5-flash"
+            model_name="gemini-2.5-flash",
         )
 
         manager = TranscriptionManager(
-            config=config,
-            gemini_api_key="fallback-key-123456789012345678901234567890"
+            config=config, gemini_api_key="fallback-key-123456789012345678901234567890"
         )
 
         # Should use config model_name but fallback api_key
@@ -89,12 +86,10 @@ class TestTranscriptionManagerConfigInjection:
 
         # Should use defaults from TranscriptionConfig
         assert manager.gemini_transcriber is not None
-        assert manager.gemini_transcriber.model_name == "gemini-2.5-flash"
+        assert manager.gemini_transcriber.model_name == "gemini-3-flash-preview"
         assert manager.gemini_transcriber.cost_threshold_usd == 1.0
 
-    def test_no_config_no_params_tries_environment(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_no_config_no_params_tries_environment(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """With no config and no params, tries environment variables."""
         # Clear environment variable to ensure predictable behavior
         monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
@@ -120,18 +115,15 @@ class TestTranscriptionManagerConfigInjection:
         """Injected transcriber instance overrides config."""
         custom_transcriber = GeminiTranscriber(
             api_key="injected-key-12345678901234567890123456789012345678901234567890",
-            model_name="gemini-1.5-flash"
+            model_name="gemini-1.5-flash",
         )
 
         config = TranscriptionConfig(
             model_name="gemini-2.5-flash",
-            api_key="config-key-123456789012345678901234567890123456789012345678901234567890"
+            api_key="config-key-123456789012345678901234567890123456789012345678901234567890",
         )
 
-        manager = TranscriptionManager(
-            config=config,
-            gemini_transcriber=custom_transcriber
-        )
+        manager = TranscriptionManager(config=config, gemini_transcriber=custom_transcriber)
 
         # Injected instance should be used directly
         assert manager.gemini_transcriber is custom_transcriber
@@ -143,7 +135,7 @@ class TestTranscriptionManagerConfigInjection:
             model_name="gemini-2.5-flash",
             api_key="full-config-key-123456789012345678901234567890123456789012345678901234567890",
             cost_threshold_usd=5.0,
-            youtube_check=False
+            youtube_check=False,
         )
 
         manager = TranscriptionManager(config=config)
@@ -163,10 +155,7 @@ class TestTranscriptionManagerCostTracker:
             api_key="test-key-123456789012345678901234567890123456789012345678901234567890"
         )
 
-        manager = TranscriptionManager(
-            config=config,
-            cost_tracker=tracker
-        )
+        manager = TranscriptionManager(config=config, cost_tracker=tracker)
 
         assert manager.cost_tracker is tracker
 
@@ -180,15 +169,13 @@ class TestTranscriptionManagerCostTracker:
 
         assert manager.cost_tracker is None
 
-    def test_cost_tracker_without_config(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_cost_tracker_without_config(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Cost tracker works with individual params (backward compat)."""
         tracker = CostTracker()
 
         manager = TranscriptionManager(
             gemini_api_key="test-key-123456789012345678901234567890123456789012345678901234567890",
-            cost_tracker=tracker
+            cost_tracker=tracker,
         )
 
         assert manager.cost_tracker is tracker
@@ -202,12 +189,12 @@ class TestTranscriptionManagerEdgeCases:
         """Config overrides only model_name, uses param for api_key."""
         config = TranscriptionConfig(
             model_name="gemini-2.5-flash",
-            api_key=None  # Explicitly None
+            api_key=None,  # Explicitly None
         )
 
         manager = TranscriptionManager(
             config=config,
-            gemini_api_key="param-key-1234567890123456789012345678901234567890123456789012345678901234567890"
+            gemini_api_key="param-key-1234567890123456789012345678901234567890123456789012345678901234567890",
         )
 
         assert manager.gemini_transcriber is not None
@@ -217,12 +204,12 @@ class TestTranscriptionManagerEdgeCases:
         """Config overrides only api_key, uses param for model_name."""
         config = TranscriptionConfig(
             model_name="gemini-2.5-flash",  # Default, but explicit
-            api_key="config-key-12345678901234567890123456789012345678901234567890123456789012345678901234567890"
+            api_key="config-key-12345678901234567890123456789012345678901234567890123456789012345678901234567890",
         )
 
         manager = TranscriptionManager(
             config=config,
-            model_name="gemini-1.5-flash"  # Should be overridden
+            model_name="gemini-1.5-flash",  # Should be overridden
         )
 
         assert manager.gemini_transcriber is not None
@@ -234,7 +221,7 @@ class TestTranscriptionManagerEdgeCases:
         # Path 1: Config only
         config1 = TranscriptionConfig(
             api_key="config1-key-1234567890123456789012345678901234567890123456789012345678901234567890",
-            model_name="gemini-2.5-flash"
+            model_name="gemini-2.5-flash",
         )
         manager1 = TranscriptionManager(config=config1)
         assert manager1.gemini_transcriber is not None
@@ -243,7 +230,7 @@ class TestTranscriptionManagerEdgeCases:
         # Path 2: Params only
         manager2 = TranscriptionManager(
             gemini_api_key="params-key-123456789012345678901234567890123456789012345678901234567890",
-            model_name="gemini-1.5-flash"
+            model_name="gemini-1.5-flash",
         )
         assert manager2.gemini_transcriber is not None
         assert manager2.gemini_transcriber.model_name == "gemini-1.5-flash"
@@ -251,12 +238,12 @@ class TestTranscriptionManagerEdgeCases:
         # Path 3: Both (config wins)
         config3 = TranscriptionConfig(
             api_key="config3-key-1234567890123456789012345678901234567890123456789012345678901234567890",
-            model_name="gemini-2.5-flash"
+            model_name="gemini-2.5-flash",
         )
         manager3 = TranscriptionManager(
             config=config3,
             gemini_api_key="params-key-123456789012345678901234567890123456789012345678901234567890",
-            model_name="gemini-1.5-flash"
+            model_name="gemini-1.5-flash",
         )
         assert manager3.gemini_transcriber is not None
         assert manager3.gemini_transcriber.model_name == "gemini-2.5-flash"
@@ -276,7 +263,7 @@ class TestTranscriptionManagerDeprecationWarnings:
 
             manager = TranscriptionManager(
                 gemini_api_key="test-key-1234567890123456789012345678901234567890",
-                model_name="gemini-1.5-flash"
+                model_name="gemini-1.5-flash",
             )
 
             # Should have triggered exactly one warning
@@ -318,9 +305,7 @@ class TestTranscriptionManagerDeprecationWarnings:
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
 
-            manager = TranscriptionManager(
-                model_name="gemini-1.5-flash"
-            )
+            manager = TranscriptionManager(model_name="gemini-1.5-flash")
 
             # Should have triggered warning
             assert len(w) == 1
@@ -340,16 +325,13 @@ class TestTranscriptionManagerDeprecationWarnings:
                 api_key="config-key-1234567890123456789012345678901234567890"
             )
             manager = TranscriptionManager(
-                config=config,
-                gemini_api_key="param-key-1234567890123456789012345678901234567890"
+                config=config, gemini_api_key="param-key-1234567890123456789012345678901234567890"
             )
 
             # Should have no warnings (config is provided)
             assert len(w) == 0
 
-    def test_no_params_no_warning(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_no_params_no_warning(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Using no params should not trigger warning."""
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")

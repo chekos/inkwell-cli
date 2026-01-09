@@ -201,16 +201,16 @@ class TestSafeJsonLoads:
 
     def test_array_at_root(self):
         """Test that arrays at root level are parsed correctly."""
-        json_str = '[1, 2, 3]'
+        json_str = "[1, 2, 3]"
         result = safe_json_loads(json_str)
         assert result == [1, 2, 3]
 
     def test_primitive_at_root(self):
         """Test that primitives at root level are parsed correctly."""
         assert safe_json_loads('"string"') == "string"
-        assert safe_json_loads('42') == 42
-        assert safe_json_loads('true') is True
-        assert safe_json_loads('null') is None
+        assert safe_json_loads("42") == 42
+        assert safe_json_loads("true") is True
+        assert safe_json_loads("null") is None
 
 
 class TestExtractJsonFromText:
@@ -345,10 +345,7 @@ class TestSecurityScenarios:
     def test_reasonable_limits_for_tags(self):
         """Test that reasonable tag responses work within limits."""
         # Simulate realistic tag response (100 tags)
-        tags = [
-            {"name": f"tag-{i}", "category": "topic", "confidence": 0.8}
-            for i in range(100)
-        ]
+        tags = [{"name": f"tag-{i}", "category": "topic", "confidence": 0.8} for i in range(100)]
         data = {"tags": tags}
         json_str = json.dumps(data)
 

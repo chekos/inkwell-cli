@@ -1,7 +1,8 @@
 """Tests for datetime utilities."""
 
+from datetime import datetime, timedelta, timezone
+
 import pytest
-from datetime import datetime, timezone, timedelta
 
 from inkwell.utils.datetime import format_duration, now_utc, validate_timezone_aware
 

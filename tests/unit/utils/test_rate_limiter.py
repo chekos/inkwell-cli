@@ -3,8 +3,6 @@
 import time
 from threading import Thread
 
-import pytest
-
 from inkwell.utils.rate_limiter import RateLimiter, get_rate_limiter, reset_all_rate_limiters
 
 

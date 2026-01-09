@@ -106,9 +106,7 @@ class TestTranscriptCache:
         assert cache._is_expired(just_before) is False
 
     @pytest.mark.asyncio
-    async def test_set_and_get(
-        self, cache: TranscriptCache, sample_transcript: Transcript
-    ) -> None:
+    async def test_set_and_get(self, cache: TranscriptCache, sample_transcript: Transcript) -> None:
         """Test caching and retrieval."""
         url = "https://example.com/episode"
 
@@ -157,9 +155,7 @@ class TestTranscriptCache:
         assert not cache_path.exists()
 
     @pytest.mark.asyncio
-    async def test_get_corrupted_file(
-        self, cache: TranscriptCache, temp_cache_dir: Path
-    ) -> None:
+    async def test_get_corrupted_file(self, cache: TranscriptCache, temp_cache_dir: Path) -> None:
         """Test retrieval with corrupted cache file."""
         url = "https://example.com/episode"
         cache_path = cache._get_cache_path(url)
@@ -234,9 +230,7 @@ class TestTranscriptCache:
         assert result is False
 
     @pytest.mark.asyncio
-    async def test_clear(
-        self, cache: TranscriptCache, sample_transcript: Transcript
-    ) -> None:
+    async def test_clear(self, cache: TranscriptCache, sample_transcript: Transcript) -> None:
         """Test clearing all cache entries."""
         # Add multiple entries
         await cache.set("https://example.com/episode1", sample_transcript)
@@ -346,9 +340,7 @@ class TestTranscriptCache:
         assert stats["sources"]["gemini"] == 1
 
     @pytest.mark.asyncio
-    async def test_stats_with_corrupted(
-        self, cache: TranscriptCache, temp_cache_dir: Path
-    ) -> None:
+    async def test_stats_with_corrupted(self, cache: TranscriptCache, temp_cache_dir: Path) -> None:
         """Test that stats counts but skips processing corrupted files."""
         # Create corrupted file
         corrupted_path = temp_cache_dir / "corrupted.json"
@@ -380,7 +372,9 @@ class TestTranscriptCache:
         assert not temp_path.exists()
 
     @pytest.mark.asyncio
-    async def test_cache_different_ttl(self, temp_cache_dir: Path, sample_transcript: Transcript) -> None:
+    async def test_cache_different_ttl(
+        self, temp_cache_dir: Path, sample_transcript: Transcript
+    ) -> None:
         """Test cache with different TTL."""
         cache = TranscriptCache(cache_dir=temp_cache_dir, ttl_days=7)
 

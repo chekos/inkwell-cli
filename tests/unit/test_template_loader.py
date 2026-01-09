@@ -3,11 +3,11 @@
 from pathlib import Path
 
 import pytest
-from pydantic import ValidationError
 
 from inkwell.extraction.models import ExtractionTemplate
 from inkwell.extraction.templates import TemplateLoader
-from inkwell.utils.errors import NotFoundError, ValidationError as InkwellValidationError
+from inkwell.utils.errors import NotFoundError
+from inkwell.utils.errors import ValidationError as InkwellValidationError
 
 
 @pytest.fixture
@@ -87,9 +87,7 @@ class TestTemplateLoader:
         assert template.max_tokens == 1000
         assert template.temperature == 0.2
 
-    def test_load_template_caching(
-        self, temp_template_dir: Path, valid_template_yaml: str
-    ) -> None:
+    def test_load_template_caching(self, temp_template_dir: Path, valid_template_yaml: str) -> None:
         """Test that templates are cached after first load."""
         template_file = temp_template_dir / "test-template.yaml"
         template_file.write_text(valid_template_yaml)
@@ -145,9 +143,7 @@ class TestTemplateLoader:
 
         assert "not found" in str(exc_info.value).lower()
 
-    def test_load_invalid_yaml(
-        self, temp_template_dir: Path, invalid_template_yaml: str
-    ) -> None:
+    def test_load_invalid_yaml(self, temp_template_dir: Path, invalid_template_yaml: str) -> None:
         """Test loading invalid YAML raises validation error."""
         template_file = temp_template_dir / "invalid.yaml"
         template_file.write_text(invalid_template_yaml)
@@ -157,7 +153,7 @@ class TestTemplateLoader:
             template_dirs=[],
         )
 
-        with pytest.raises(ValidationError):
+        with pytest.raises(InkwellValidationError):
             loader.load_template("invalid")
 
     def test_load_malformed_yaml(self, temp_template_dir: Path) -> None:
@@ -184,9 +180,7 @@ class TestTemplateLoader:
         # Should list built-in templates even when user dir is empty
         assert len(templates) >= 5  # At least the 5 built-in templates
 
-    def test_list_templates_multiple(
-        self, tmp_path: Path, valid_template_yaml: str
-    ) -> None:
+    def test_list_templates_multiple(self, tmp_path: Path, valid_template_yaml: str) -> None:
         """Test listing multiple templates."""
         template_dir = tmp_path / "templates"
         template_dir.mkdir()
@@ -209,9 +203,7 @@ class TestTemplateLoader:
         assert "quotes" in templates
         assert "concepts" in templates
 
-    def test_list_templates_deduplicated(
-        self, tmp_path: Path, valid_template_yaml: str
-    ) -> None:
+    def test_list_templates_deduplicated(self, tmp_path: Path, valid_template_yaml: str) -> None:
         """Test that duplicate template names are deduplicated."""
         user_dir = tmp_path / "user"
         builtin_dir = tmp_path / "builtin"
@@ -306,9 +298,7 @@ expected_format: json
         assert template.name == "tools-mentioned"
         assert template.category == "tech"
 
-    def test_clear_cache(
-        self, temp_template_dir: Path, valid_template_yaml: str
-    ) -> None:
+    def test_clear_cache(self, temp_template_dir: Path, valid_template_yaml: str) -> None:
         """Test clearing template cache."""
         template_file = temp_template_dir / "test-template.yaml"
         template_file.write_text(valid_template_yaml)
@@ -338,7 +328,7 @@ expected_format: json
 
         quotes = loader.load_template("quotes")
         assert quotes.name == "quotes"
-        assert quotes.expected_format == "json"
+        assert quotes.expected_format == "markdown"
 
         concepts = loader.load_template("key-concepts")
         assert concepts.name == "key-concepts"
@@ -388,7 +378,7 @@ expected_format: json
             template_dirs=[],
         )
 
-        with pytest.raises(ValidationError) as exc_info:
+        with pytest.raises(InkwellValidationError) as exc_info:
             loader.load_template("invalid")
 
         assert "alphanumeric" in str(exc_info.value).lower()
@@ -411,7 +401,25 @@ expected_format: json
             template_dirs=[],
         )
 
-        with pytest.raises(ValidationError) as exc_info:
+        with pytest.raises(InkwellValidationError) as exc_info:
             loader.load_template("test")
 
         assert "jinja2" in str(exc_info.value).lower()
+
+    def test_load_tutorial_template(self) -> None:
+        """Test loading tutorial category template."""
+        loader = TemplateLoader()
+
+        template = loader.load_template("step-by-step-plan")
+        assert template.name == "step-by-step-plan"
+        assert template.category == "tutorial"
+        assert template.expected_format == "markdown"
+        assert template.temperature == 0.2
+        assert template.max_tokens == 16000
+
+    def test_list_templates_includes_tutorial(self) -> None:
+        """Test that tutorial template appears in template list."""
+        loader = TemplateLoader()
+        templates = loader.list_templates()
+
+        assert "step-by-step-plan" in templates

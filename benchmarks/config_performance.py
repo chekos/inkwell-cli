@@ -8,20 +8,19 @@ Usage:
     python benchmarks/config_performance.py
 """
 
-import timeit
 import sys
+import timeit
 from pathlib import Path
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from inkwell.config.schema import (
-    GlobalConfig,
-    TranscriptionConfig,
     ExtractionConfig,
+    GlobalConfig,
     InterviewConfig,
+    TranscriptionConfig,
 )
-from inkwell.config.precedence import resolve_config_value
 
 
 def benchmark_config_validation():
@@ -286,9 +285,7 @@ def benchmark_memory_usage():
             size += sum([get_deep_size(k, seen) for k in obj.keys()])
         elif hasattr(obj, "__dict__"):
             size += get_deep_size(obj.__dict__, seen)
-        elif hasattr(obj, "__iter__") and not isinstance(
-            obj, (str, bytes, bytearray)
-        ):
+        elif hasattr(obj, "__iter__") and not isinstance(obj, (str, bytes, bytearray)):
             try:
                 size += sum([get_deep_size(i, seen) for i in obj])
             except TypeError:
@@ -321,16 +318,16 @@ def benchmark_memory_usage():
     }
     dict_size = get_deep_size(simple_dict)
     print(f"Equivalent dict (TranscriptionConfig): {dict_size} bytes")
-    print(f"Overhead:                          {tc_size - dict_size} bytes ({((tc_size - dict_size) / dict_size * 100):.1f}%)")
+    print(
+        f"Overhead:                          {tc_size - dict_size} bytes ({((tc_size - dict_size) / dict_size * 100):.1f}%)"
+    )
     print()
 
     # Application-level context
     print("Application Context:")
-    print(f"  Typical app memory:              ~1GB (1,073,741,824 bytes)")
+    print("  Typical app memory:              ~1GB (1,073,741,824 bytes)")
     print(f"  Config overhead:                 {gc_size} bytes")
-    print(
-        f"  Percentage of total:             {(gc_size / 1073741824 * 100):.6f}%"
-    )
+    print(f"  Percentage of total:             {(gc_size / 1073741824 * 100):.6f}%")
     print()
 
     print("✅ Target: Total config memory should be < 10KB")
@@ -388,7 +385,9 @@ def benchmark_migration_path():
 
     print()
     overhead = time_with_migration - time_no_migration
-    print(f"Migration overhead:                {overhead * 1000:.3f}ms ({(overhead / time_no_migration * 100):.1f}%)")
+    print(
+        f"Migration overhead:                {overhead * 1000:.3f}ms ({(overhead / time_no_migration * 100):.1f}%)"
+    )
     print()
     print("✅ Target: Migration overhead should be < 0.1ms")
     if overhead < 0.0001:

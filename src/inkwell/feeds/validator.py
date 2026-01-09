@@ -1,12 +1,12 @@
 """Feed URL and authentication validator."""
 
-
 import httpx
 from pydantic import HttpUrl, ValidationError
 
 from inkwell.config.schema import AuthConfig
 from inkwell.utils.errors import APIError, SecurityError
 from inkwell.utils.errors import ValidationError as InkwellValidationError
+from inkwell.utils.retry import AuthenticationError
 
 
 class FeedValidator:
@@ -20,9 +20,7 @@ class FeedValidator:
         """
         self.timeout = timeout
 
-    async def validate_feed_url(
-        self, url: str, auth: AuthConfig | None = None
-    ) -> bool:
+    async def validate_feed_url(self, url: str, auth: AuthConfig | None = None) -> bool:
         """Check if URL is valid and accessible.
 
         Args:
@@ -47,16 +45,12 @@ class FeedValidator:
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 headers = self._build_auth_headers(auth)
-                response = await client.head(
-                    url, headers=headers, follow_redirects=True
-                )
+                response = await client.head(url, headers=headers, follow_redirects=True)
 
                 # Handle 405 Method Not Allowed (some servers don't support HEAD)
                 if response.status_code == 405:
                     # Try GET instead
-                    response = await client.get(
-                        url, headers=headers, follow_redirects=True
-                    )
+                    response = await client.get(url, headers=headers, follow_redirects=True)
 
                 if response.status_code == 401:
                     raise SecurityError(
@@ -71,15 +65,11 @@ class FeedValidator:
             raise APIError(f"Timeout connecting to {url}") from e
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 401:
-                raise AuthenticationError(
-                    f"Authentication failed for {url}"
-                ) from e
+                raise AuthenticationError(f"Authentication failed for {url}") from e
             elif e.response.status_code == 404:
                 raise APIError(f"Feed not found: {url} (404)") from e
             else:
-                raise APIError(
-                    f"HTTP error accessing {url}: {e.response.status_code}"
-                ) from e
+                raise APIError(f"HTTP error accessing {url}: {e.response.status_code}") from e
         except httpx.RequestError as e:
             raise APIError(f"Network error accessing {url}: {e}") from e
 
@@ -104,21 +94,14 @@ class FeedValidator:
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 headers = self._build_auth_headers(auth)
-                response = await client.head(
-                    url, headers=headers, follow_redirects=True
-                )
+                response = await client.head(url, headers=headers, follow_redirects=True)
 
                 # Handle 405 Method Not Allowed
                 if response.status_code == 405:
-                    response = await client.get(
-                        url, headers=headers, follow_redirects=True
-                    )
+                    response = await client.get(url, headers=headers, follow_redirects=True)
 
                 if response.status_code == 401:
-                    raise SecurityError(
-                        f"Authentication failed for {url}. "
-                        "Check your credentials."
-                    )
+                    raise SecurityError(f"Authentication failed for {url}. Check your credentials.")
 
                 response.raise_for_status()
                 return True
@@ -127,16 +110,12 @@ class FeedValidator:
             raise APIError(f"Timeout connecting to {url}") from e
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 401:
-                raise AuthenticationError(
-                    f"Invalid credentials for {url}"
-                ) from e
+                raise AuthenticationError(f"Invalid credentials for {url}") from e
             raise APIError(f"HTTP error: {e.response.status_code}") from e
         except httpx.RequestError as e:
             raise APIError(f"Network error: {e}") from e
 
-    def _build_auth_headers(
-        self, auth: AuthConfig | None = None
-    ) -> dict[str, str]:
+    def _build_auth_headers(self, auth: AuthConfig | None = None) -> dict[str, str]:
         """Build HTTP headers for authentication.
 
         Args:

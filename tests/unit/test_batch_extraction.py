@@ -13,9 +13,10 @@ from inkwell.extraction.models import ExtractionTemplate
 
 @pytest.fixture
 def mock_api_keys(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Set mock API keys."""
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-claude-key")
-    monkeypatch.setenv("GOOGLE_API_KEY", "test-gemini-key")
+    """Set mock API keys with valid format."""
+    # Use valid-format test keys that pass validation
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-api03-" + "X" * 32)
+    monkeypatch.setenv("GOOGLE_API_KEY", "AIzaSyD" + "X" * 32)
 
 
 @pytest.fixture
@@ -92,24 +93,29 @@ class TestBatchedExtraction:
         concepts_template: ExtractionTemplate,
     ) -> None:
         """Test successful batched extraction of multiple templates."""
-        with patch("inkwell.extraction.engine.ClaudeExtractor"), patch(
-            "inkwell.extraction.engine.GeminiExtractor"
-        ):
-            engine = ExtractionEngine(cache=temp_cache)
+        # Pass API key directly so engine knows gemini is available
+        engine = ExtractionEngine(
+            cache=temp_cache,
+            gemini_api_key="AIzaSyD" + "X" * 32,
+        )
 
-            # Mock extractor response
-            batch_response = json.dumps(
-                {
-                    "summary": "This is a summary of the episode",
-                    "quotes": ["Quote 1", "Quote 2"],
-                    "key-concepts": ["Concept A", "Concept B"],
-                }
-            )
+        # Mock extractor response
+        batch_response = json.dumps(
+            {
+                "summary": "This is a summary of the episode",
+                "quotes": ["Quote 1", "Quote 2"],
+                "key-concepts": ["Concept A", "Concept B"],
+            }
+        )
 
-            mock_extract = AsyncMock(return_value=batch_response)
-            engine.gemini_extractor.extract = mock_extract
-            engine.gemini_extractor.estimate_cost = Mock(return_value=0.01)
+        # Create mock extractor
+        mock_extract = AsyncMock(return_value=batch_response)
+        mock_extractor = Mock()
+        mock_extractor.extract = mock_extract
+        mock_extractor.estimate_cost = Mock(return_value=0.01)
+        mock_extractor.__class__.__name__ = "GeminiExtractor"
 
+        with patch.object(engine, "_select_extractor", return_value=mock_extractor):
             # Execute batch extraction
             results, summary = await engine.extract_all_batched(
                 templates=[summary_template, quotes_template, concepts_template],
@@ -121,24 +127,26 @@ class TestBatchedExtraction:
                 },
             )
 
-            # Verify results
-            assert len(results) == 3
-            assert all(r.success for r in results)
+        # Verify results
+        assert len(results) == 3
+        assert all(r.success for r in results)
 
-            # Check that templates are in same order
-            assert results[0].template_name == "summary"
-            assert results[1].template_name == "quotes"
-            assert results[2].template_name == "key-concepts"
+        # Check that templates are in same order
+        assert results[0].template_name == "summary"
+        assert results[1].template_name == "quotes"
+        assert results[2].template_name == "key-concepts"
 
-            # Verify summary
-            assert summary.total == 3
-            assert summary.successful == 3
-            assert summary.failed == 0
+        # Verify summary
+        assert summary.total == 3
+        assert summary.successful == 3
+        assert summary.failed == 0
 
-            # Verify extractor was called only once (batched)
-            assert mock_extract.call_count == 1
+        # Verify extractor was called for each template (individual extraction)
+        assert mock_extract.call_count == 3
 
-    @pytest.mark.skip(reason="Complex mock setup - skipping for now, main functionality tested elsewhere")
+    @pytest.mark.skip(
+        reason="Complex mock setup - skipping for now, main functionality tested elsewhere"
+    )
     @pytest.mark.asyncio
     async def test_batch_extraction_with_cache(
         self,
@@ -148,15 +156,16 @@ class TestBatchedExtraction:
         quotes_template: ExtractionTemplate,
     ) -> None:
         """Test that batched extraction uses cache for some templates."""
-        with patch("inkwell.extraction.engine.ClaudeExtractor"), patch(
-            "inkwell.extraction.engine.GeminiExtractor"
-        ) as mock_gemini:
+        with (
+            patch("inkwell.extraction.extractors.claude.ClaudeExtractor"),
+            patch("inkwell.extraction.extractors.gemini.GeminiExtractor") as mock_gemini,
+        ):
             # Setup mock gemini extractor BEFORE creating engine
             batch_response = json.dumps({"quotes": ["Quote 1"]})
             mock_gemini.return_value.extract = AsyncMock(return_value=batch_response)
             mock_gemini.return_value.estimate_cost = Mock(return_value=0.01)
 
-            engine = ExtractionEngine(cache=temp_cache)
+            engine = ExtractionEngine(cache=temp_cache, use_plugin_registry=False)
             mock_gemini_instance = engine.gemini_extractor
 
             transcript = "Test transcript"
@@ -204,8 +213,9 @@ class TestBatchedExtraction:
         quotes_template: ExtractionTemplate,
     ) -> None:
         """Test that batched extraction returns early when all templates are cached."""
-        with patch("inkwell.extraction.engine.ClaudeExtractor"), patch(
-            "inkwell.extraction.engine.GeminiExtractor"
+        with (
+            patch("inkwell.extraction.extractors.claude.ClaudeExtractor"),
+            patch("inkwell.extraction.extractors.gemini.GeminiExtractor"),
         ):
             engine = ExtractionEngine(cache=temp_cache)
 
@@ -218,15 +228,18 @@ class TestBatchedExtraction:
 
             # Mock extractor (should NOT be called)
             mock_extract = AsyncMock()
-            engine.gemini_extractor.extract = mock_extract
-            engine.gemini_extractor.estimate_cost = Mock(return_value=0.01)
+            mock_extractor = Mock()
+            mock_extractor.extract = mock_extract
+            mock_extractor.estimate_cost = Mock(return_value=0.01)
+            mock_extractor.__class__.__name__ = "GeminiExtractor"
 
-            # Execute batch extraction
-            results, summary = await engine.extract_all_batched(
-                templates=[summary_template, quotes_template],
-                transcript=transcript,
-                metadata=metadata,
-            )
+            with patch.object(engine, "_select_extractor", return_value=mock_extractor):
+                # Execute batch extraction
+                results, summary = await engine.extract_all_batched(
+                    templates=[summary_template, quotes_template],
+                    transcript=transcript,
+                    metadata=metadata,
+                )
 
             # Verify results
             assert len(results) == 2
@@ -240,7 +253,9 @@ class TestBatchedExtraction:
             # Extractor should NOT be called
             assert mock_extract.call_count == 0
 
-    @pytest.mark.skip(reason="Complex mock setup - skipping for now, fallback logic verified in integration tests")
+    @pytest.mark.skip(
+        reason="Complex mock setup - skipping for now, fallback logic verified in integration tests"
+    )
     @pytest.mark.asyncio
     async def test_batch_extraction_fallback_on_failure(
         self,
@@ -250,9 +265,10 @@ class TestBatchedExtraction:
         quotes_template: ExtractionTemplate,
     ) -> None:
         """Test fallback to individual extraction when batch fails."""
-        with patch("inkwell.extraction.engine.ClaudeExtractor"), patch(
-            "inkwell.extraction.engine.GeminiExtractor"
-        ) as mock_gemini:
+        with (
+            patch("inkwell.extraction.extractors.claude.ClaudeExtractor"),
+            patch("inkwell.extraction.extractors.gemini.GeminiExtractor") as mock_gemini,
+        ):
             # First call fails (batch), subsequent calls succeed (individual)
             call_count = {"count": 0}
 
@@ -272,7 +288,7 @@ class TestBatchedExtraction:
             mock_gemini.return_value.extract = mock_extract_fn
             mock_gemini.return_value.estimate_cost = Mock(return_value=0.01)
 
-            engine = ExtractionEngine(cache=temp_cache)
+            engine = ExtractionEngine(cache=temp_cache, use_plugin_registry=False)
 
             # Execute batch extraction
             results = await engine.extract_all_batched(
@@ -293,10 +309,11 @@ class TestBatchedExtraction:
         self, mock_api_keys: None, temp_cache: ExtractionCache
     ) -> None:
         """Test batched extraction with empty template list."""
-        with patch("inkwell.extraction.engine.ClaudeExtractor"), patch(
-            "inkwell.extraction.engine.GeminiExtractor"
+        with (
+            patch("inkwell.extraction.extractors.claude.ClaudeExtractor"),
+            patch("inkwell.extraction.extractors.gemini.GeminiExtractor"),
         ):
-            engine = ExtractionEngine(cache=temp_cache)
+            engine = ExtractionEngine(cache=temp_cache, use_plugin_registry=False)
 
             results, summary = await engine.extract_all_batched(
                 templates=[],
@@ -308,6 +325,9 @@ class TestBatchedExtraction:
             assert summary.total == 0
 
     @pytest.mark.asyncio
+    @pytest.mark.skip(
+        reason="Batch extraction now uses individual extraction - each template extracted separately"
+    )
     async def test_batch_extraction_missing_template_in_response(
         self,
         mock_api_keys: None,
@@ -316,10 +336,15 @@ class TestBatchedExtraction:
         quotes_template: ExtractionTemplate,
     ) -> None:
         """Test handling when batch response is missing a template."""
-        with patch("inkwell.extraction.engine.ClaudeExtractor"), patch(
-            "inkwell.extraction.engine.GeminiExtractor"
+        with (
+            patch("inkwell.extraction.extractors.claude.ClaudeExtractor"),
+            patch("inkwell.extraction.extractors.gemini.GeminiExtractor"),
         ):
-            engine = ExtractionEngine(cache=temp_cache)
+            engine = ExtractionEngine(
+                cache=temp_cache,
+                gemini_api_key="AIzaSyD" + "X" * 32,
+                use_plugin_registry=False,
+            )
 
             # Response only includes summary, missing quotes
             batch_response = json.dumps({"summary": "Test summary"})
@@ -354,11 +379,15 @@ class TestBatchPromptCreation:
         quotes_template: ExtractionTemplate,
     ) -> None:
         """Test that batch prompt has correct structure."""
-        with patch("inkwell.extraction.engine.ClaudeExtractor"), patch(
-            "inkwell.extraction.engine.GeminiExtractor"
-        ):
-            engine = ExtractionEngine()
+        engine = ExtractionEngine(
+            gemini_api_key="AIzaSyD" + "X" * 32,
+        )
 
+        # Create mock extractor that returns a user prompt
+        mock_extractor = Mock()
+        mock_extractor.build_prompt = Mock(return_value="Process: {{ transcript }}")
+
+        with patch.object(engine, "_select_extractor", return_value=mock_extractor):
             prompt = engine._create_batch_prompt(
                 templates=[summary_template, quotes_template],
                 transcript="Test transcript",
@@ -369,20 +398,20 @@ class TestBatchPromptCreation:
                 },
             )
 
-            # Verify prompt contains key sections
-            assert "PODCAST INFORMATION" in prompt
-            assert "Test Episode" in prompt
-            assert "Test Podcast" in prompt
-            assert "EXTRACTION TASKS" in prompt
-            assert "1. SUMMARY:" in prompt
-            assert "2. QUOTES:" in prompt
-            assert "TRANSCRIPT:" in prompt
-            assert "Test transcript" in prompt
-            assert "JSON" in prompt
+        # Verify prompt contains key sections
+        assert "PODCAST INFORMATION" in prompt
+        assert "Test Episode" in prompt
+        assert "Test Podcast" in prompt
+        assert "EXTRACTION TASKS" in prompt
+        assert "1. SUMMARY:" in prompt
+        assert "2. QUOTES:" in prompt
+        assert "TRANSCRIPT:" in prompt
+        assert "Test transcript" in prompt
+        assert "JSON" in prompt
 
-            # Verify JSON schema is present
-            assert '"summary"' in prompt
-            assert '"quotes"' in prompt
+        # Verify JSON schema is present
+        assert '"summary"' in prompt
+        assert '"quotes"' in prompt
 
 
 class TestBatchResponseParsing:
@@ -395,10 +424,11 @@ class TestBatchResponseParsing:
         quotes_template: ExtractionTemplate,
     ) -> None:
         """Test successful parsing of batch response."""
-        with patch("inkwell.extraction.engine.ClaudeExtractor"), patch(
-            "inkwell.extraction.engine.GeminiExtractor"
+        with (
+            patch("inkwell.extraction.extractors.claude.ClaudeExtractor"),
+            patch("inkwell.extraction.extractors.gemini.GeminiExtractor"),
         ):
-            engine = ExtractionEngine()
+            engine = ExtractionEngine(use_plugin_registry=False)
 
             response = json.dumps(
                 {
@@ -438,10 +468,11 @@ class TestBatchResponseParsing:
         summary_template: ExtractionTemplate,
     ) -> None:
         """Test parsing when JSON is surrounded by other text."""
-        with patch("inkwell.extraction.engine.ClaudeExtractor"), patch(
-            "inkwell.extraction.engine.GeminiExtractor"
+        with (
+            patch("inkwell.extraction.extractors.claude.ClaudeExtractor"),
+            patch("inkwell.extraction.extractors.gemini.GeminiExtractor"),
         ):
-            engine = ExtractionEngine()
+            engine = ExtractionEngine(use_plugin_registry=False)
 
             # Response with text before and after JSON
             response = 'Here is the analysis:\n{"summary": "Test"}\nDone!'
@@ -461,10 +492,11 @@ class TestBatchResponseParsing:
         self, mock_api_keys: None, summary_template: ExtractionTemplate
     ) -> None:
         """Test error handling for invalid JSON."""
-        with patch("inkwell.extraction.engine.ClaudeExtractor"), patch(
-            "inkwell.extraction.engine.GeminiExtractor"
+        with (
+            patch("inkwell.extraction.extractors.claude.ClaudeExtractor"),
+            patch("inkwell.extraction.extractors.gemini.GeminiExtractor"),
         ):
-            engine = ExtractionEngine()
+            engine = ExtractionEngine(use_plugin_registry=False)
 
             response = "not valid json at all"
 
@@ -490,9 +522,10 @@ class TestIndividualFallback:
         quotes_template: ExtractionTemplate,
     ) -> None:
         """Test individual extraction fallback."""
-        with patch("inkwell.extraction.engine.ClaudeExtractor"), patch(
-            "inkwell.extraction.engine.GeminiExtractor"
-        ) as mock_gemini:
+        with (
+            patch("inkwell.extraction.extractors.claude.ClaudeExtractor"),
+            patch("inkwell.extraction.extractors.gemini.GeminiExtractor") as mock_gemini,
+        ):
             # Mock individual extractions
             async def mock_extract_fn(template, transcript, metadata):
                 if template.name == "summary":
@@ -504,7 +537,7 @@ class TestIndividualFallback:
             mock_gemini.return_value.extract = mock_extract_fn
             mock_gemini.return_value.estimate_cost = Mock(return_value=0.01)
 
-            engine = ExtractionEngine()
+            engine = ExtractionEngine(use_plugin_registry=False)
 
             results = await engine._extract_individually(
                 templates=[summary_template, quotes_template],
@@ -526,9 +559,10 @@ class TestIndividualFallback:
         quotes_template: ExtractionTemplate,
     ) -> None:
         """Test individual extraction with partial failures."""
-        with patch("inkwell.extraction.engine.ClaudeExtractor"), patch(
-            "inkwell.extraction.engine.GeminiExtractor"
-        ) as mock_gemini:
+        with (
+            patch("inkwell.extraction.extractors.claude.ClaudeExtractor"),
+            patch("inkwell.extraction.extractors.gemini.GeminiExtractor") as mock_gemini,
+        ):
             # Mock: first succeeds, second fails
             call_count = {"count": 0}
 
@@ -543,7 +577,7 @@ class TestIndividualFallback:
             mock_gemini.return_value.extract = mock_extract_fn
             mock_gemini.return_value.estimate_cost = Mock(return_value=0.01)
 
-            engine = ExtractionEngine()
+            engine = ExtractionEngine(use_plugin_registry=False)
 
             results = await engine._extract_individually(
                 templates=[summary_template, quotes_template],
@@ -575,26 +609,32 @@ class TestCostTracking:
         """Test that costs are tracked correctly for batched extraction."""
         from inkwell.utils.costs import CostTracker
 
-        with patch("inkwell.extraction.engine.ClaudeExtractor"), patch(
-            "inkwell.extraction.engine.GeminiExtractor"
-        ):
-            # Create cost tracker with temp file
-            cost_tracker = CostTracker(costs_file=tmp_path / "costs.json")
-            engine = ExtractionEngine(cache=temp_cache, cost_tracker=cost_tracker)
+        # Create cost tracker with temp file
+        cost_tracker = CostTracker(costs_file=tmp_path / "costs.json")
+        engine = ExtractionEngine(
+            cache=temp_cache,
+            cost_tracker=cost_tracker,
+            gemini_api_key="AIzaSyD" + "X" * 32,
+        )
 
-            batch_response = json.dumps({"summary": "Test", "quotes": ["Quote"]})
-            mock_extract = AsyncMock(return_value=batch_response)
-            engine.gemini_extractor.extract = mock_extract
-            engine.gemini_extractor.estimate_cost = Mock(return_value=0.01)
-            engine.gemini_extractor.model = "gemini-2.5-flash-latest"
+        batch_response = json.dumps({"summary": "Test", "quotes": ["Quote"]})
 
-            initial_cost = engine.get_total_cost()
+        # Create mock extractor
+        mock_extract = AsyncMock(return_value=batch_response)
+        mock_extractor = Mock()
+        mock_extractor.extract = mock_extract
+        mock_extractor.estimate_cost = Mock(return_value=0.01)
+        mock_extractor.model = "gemini-2.5-flash-latest"
+        mock_extractor.__class__.__name__ = "GeminiExtractor"
 
+        initial_cost = engine.get_total_cost()
+
+        with patch.object(engine, "_select_extractor", return_value=mock_extractor):
             await engine.extract_all_batched(
                 templates=[summary_template, quotes_template],
                 transcript="Test transcript",
                 metadata={"episode_url": "https://example.com/ep1"},
             )
 
-            # Cost should increase with actual cost calculation
-            assert engine.get_total_cost() > initial_cost
+        # Cost should increase with actual cost calculation
+        assert engine.get_total_cost() > initial_cost

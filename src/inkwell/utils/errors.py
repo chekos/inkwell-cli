@@ -71,7 +71,8 @@ class APIError(InkwellError):
         message: str,
         provider: str | None = None,
         status_code: int | None = None,
-        **kwargs,
+        details: dict | None = None,
+        suggestion: str | None = None,
     ):
         """Initialize API error with provider context.
 
@@ -79,9 +80,10 @@ class APIError(InkwellError):
             message: Error description
             provider: API provider name (e.g., "gemini", "claude", "youtube")
             status_code: HTTP status code if applicable
-            **kwargs: Additional arguments (details, suggestion)
+            details: Additional context as a dictionary
+            suggestion: User-friendly suggestion for resolving the error
         """
-        super().__init__(message, **kwargs)
+        super().__init__(message, details=details, suggestion=suggestion)
         self.provider = provider
         self.status_code = status_code
 
@@ -115,17 +117,19 @@ class NotFoundError(InkwellError):
         self,
         resource_type: str,
         resource_id: str,
-        **kwargs,
+        details: dict | None = None,
+        suggestion: str | None = None,
     ):
         """Initialize NotFoundError with resource context.
 
         Args:
             resource_type: Type of resource (e.g., "Feed", "Template", "File")
             resource_id: Resource identifier (name, path, ID)
-            **kwargs: Additional arguments (details, suggestion)
+            details: Additional context as a dictionary
+            suggestion: User-friendly suggestion for resolving the error
         """
         message = f"{resource_type} not found: {resource_id}"
-        super().__init__(message, **kwargs)
+        super().__init__(message, details=details, suggestion=suggestion)
         self.resource_type = resource_type
         self.resource_id = resource_id
 

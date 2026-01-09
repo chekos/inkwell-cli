@@ -4,19 +4,25 @@ Coordinates template selection, provider selection, caching, and result parsing.
 """
 
 import logging
+import os
 import re
 import time
 import warnings
-
-# Type-only import to avoid circular dependency
 from typing import TYPE_CHECKING, Any
 
 from ..config.precedence import resolve_config_value
 from ..config.schema import ExtractionConfig
+
+# Import from specific submodules to avoid circular import with inkwell.plugins.__init__
+# (which imports ExtractionPlugin from .types.extraction, which imports BaseExtractor
+# from inkwell.extraction.extractors.base, which triggers inkwell.extraction.__init__)
+from ..plugins.discovery import discover_plugins, get_entry_point_group
+from ..plugins.registry import PluginRegistry
+from ..plugins.types.extraction import ExtractionPlugin
 from ..utils.errors import ValidationError
 from ..utils.json_utils import JSONParsingError, safe_json_loads
 from .cache import ExtractionCache
-from .extractors import BaseExtractor, ClaudeExtractor, GeminiExtractor
+from .extractors import BaseExtractor
 from .models import (
     ExtractedContent,
     ExtractionAttempt,
@@ -49,9 +55,9 @@ def _sanitize_error_message(message: str) -> str:
         'Error with key [REDACTED_GEMINI_KEY]'
     """
     # Redact Gemini keys (AIza...)
-    message = re.sub(r'AIza[A-Za-z0-9_-]+', '[REDACTED_GEMINI_KEY]', message)
+    message = re.sub(r"AIza[A-Za-z0-9_-]+", "[REDACTED_GEMINI_KEY]", message)
     # Redact Claude keys (sk-ant-...)
-    message = re.sub(r'sk-ant-[A-Za-z0-9_-]+', '[REDACTED_CLAUDE_KEY]', message)
+    message = re.sub(r"sk-ant-[A-Za-z0-9_-]+", "[REDACTED_CLAUDE_KEY]", message)
     return message
 
 
@@ -83,6 +89,8 @@ class ExtractionEngine:
         cache: ExtractionCache | None = None,
         default_provider: str = "gemini",
         cost_tracker: "CostTracker | None" = None,
+        use_plugin_registry: bool = True,
+        extractor_override: str | None = None,
     ) -> None:
         """Initialize extraction engine.
 
@@ -91,12 +99,20 @@ class ExtractionEngine:
             claude_api_key: Anthropic API key (defaults to env var) [deprecated, use config]
             gemini_api_key: Google AI API key (defaults to env var) [deprecated, use config]
             cache: Cache instance (defaults to new ExtractionCache)
-            default_provider: Default provider to use ("claude" or "gemini") [deprecated, use config]
+            default_provider: Default provider ("claude" or "gemini") [deprecated]
             cost_tracker: Cost tracker for recording API usage (optional, for DI)
+            use_plugin_registry: Whether to load extractors from plugin registry (default: True)
+            extractor_override: Force a specific extractor plugin (e.g., "claude", "gemini").
+                               Takes precedence over INKWELL_EXTRACTOR env var.
 
         Note:
             Prefer passing `config` over individual parameters. Individual parameters
             are maintained for backward compatibility but will be deprecated in v2.0.
+
+            Plugin Selection:
+            - extractor_override parameter (explicit override, takes precedence)
+            - INKWELL_EXTRACTOR env var (environment override)
+            - Otherwise, the highest priority available extractor is used
         """
         # Warn if using deprecated individual parameters
         deprecated_params = []
@@ -113,31 +129,109 @@ class ExtractionEngine:
                 f"Use ExtractionConfig instead. "
                 f"These parameters will be removed in v2.0.",
                 DeprecationWarning,
-                stacklevel=2
+                stacklevel=2,
             )
 
         # Extract config values with standardized precedence
         effective_claude_key = resolve_config_value(
-            config.claude_api_key if config else None,
-            claude_api_key,
-            None
+            config.claude_api_key if config else None, claude_api_key, None
         )
         effective_gemini_key = resolve_config_value(
-            config.gemini_api_key if config else None,
-            gemini_api_key,
-            None
+            config.gemini_api_key if config else None, gemini_api_key, None
         )
         effective_provider = resolve_config_value(
-            config.default_provider if config else None,
-            default_provider,
-            "gemini"
+            config.default_provider if config else None, default_provider, "gemini"
         )
 
-        self.claude_extractor = ClaudeExtractor(api_key=effective_claude_key)
-        self.gemini_extractor = GeminiExtractor(api_key=effective_gemini_key)
+        # Store API keys for plugin configuration
+        self._claude_api_key = effective_claude_key
+        self._gemini_api_key = effective_gemini_key
+
         self.cache = cache or ExtractionCache()
         self.default_provider = effective_provider
         self.cost_tracker = cost_tracker
+
+        # Initialize plugin registry
+        self._registry: PluginRegistry[ExtractionPlugin] = PluginRegistry(
+            ExtractionPlugin  # type: ignore[type-abstract]
+        )
+        self._use_plugin_registry = use_plugin_registry
+        self._plugins_loaded = False
+
+        # Store extractor override (takes precedence over INKWELL_EXTRACTOR env var)
+        self._extractor_override = extractor_override
+
+    def _load_extraction_plugins(self) -> None:
+        """Load extraction plugins from entry points into registry.
+
+        This is called lazily when plugins are first needed. Plugins are
+        configured with any available API keys and cost tracker.
+        """
+        if self._plugins_loaded:
+            return
+
+        group = get_entry_point_group("extraction")
+
+        for result in discover_plugins(group):
+            if result.success and result.plugin is not None:
+                # Configure the plugin
+                plugin_config: dict[str, Any] = {}
+
+                # Provide API key based on plugin name
+                if result.name == "claude" and self._claude_api_key:
+                    plugin_config["api_key"] = self._claude_api_key
+                elif result.name == "gemini" and self._gemini_api_key:
+                    plugin_config["api_key"] = self._gemini_api_key
+
+                try:
+                    result.plugin.configure(plugin_config, self.cost_tracker)
+                    result.plugin.validate()
+
+                    # Register with built-in priority
+                    self._registry.register(
+                        name=result.name,
+                        plugin=result.plugin,  # type: ignore[arg-type]
+                        priority=PluginRegistry.PRIORITY_BUILTIN,
+                        source=result.source,
+                    )
+                    logger.debug(f"Registered extraction plugin: {result.name}")
+                except Exception as e:
+                    # Register as broken plugin
+                    self._registry.register(
+                        name=result.name,
+                        plugin=None,
+                        priority=0,
+                        source=result.source,
+                        error=str(e),
+                    )
+                    # Only warn for the default provider - others failing is expected
+                    # if user hasn't configured their API keys
+                    if result.name == self.default_provider:
+                        logger.warning(f"Failed to configure extraction plugin {result.name}: {e}")
+                    else:
+                        logger.debug(f"Extraction plugin {result.name} not configured: {e}")
+            else:
+                # Register broken plugin for visibility
+                self._registry.register(
+                    name=result.name,
+                    plugin=None,
+                    priority=0,
+                    source=result.source,
+                    error=result.error,
+                    recovery_hint=result.recovery_hint,
+                )
+
+        self._plugins_loaded = True
+
+    @property
+    def extraction_registry(self) -> PluginRegistry[ExtractionPlugin]:
+        """Get the extraction plugin registry.
+
+        Lazily loads plugins on first access.
+        """
+        if self._use_plugin_registry and not self._plugins_loaded:
+            self._load_extraction_plugins()
+        return self._registry
 
     async def extract(
         self,
@@ -172,6 +266,7 @@ class ExtractionEngine:
                 return ExtractionResult(
                     episode_url=episode_url,
                     template_name=template.name,
+                    template_version=template.version,
                     success=True,
                     extracted_content=content,
                     cost_usd=0.0,  # Cached, no cost
@@ -181,11 +276,7 @@ class ExtractionEngine:
 
         # Select provider
         extractor = self._select_extractor(template)
-        provider_name = (
-            "claude"
-            if extractor.__class__.__name__ == "ClaudeExtractor"
-            else "gemini"
-        )
+        provider_name = "claude" if extractor.__class__.__name__ == "ClaudeExtractor" else "gemini"
 
         # Estimate cost
         estimated_cost = extractor.estimate_cost(template, len(transcript))
@@ -210,7 +301,7 @@ class ExtractionEngine:
 
                 self.cost_tracker.add_cost(
                     provider=provider_name,
-                    model=extractor.model if hasattr(extractor, 'model') else "unknown",
+                    model=extractor.model if hasattr(extractor, "model") else "unknown",
                     operation="extraction",
                     input_tokens=input_tokens,
                     output_tokens=output_tokens,
@@ -221,6 +312,7 @@ class ExtractionEngine:
             return ExtractionResult(
                 episode_url=episode_url,
                 template_name=template.name,
+                template_version=template.version,
                 success=True,
                 extracted_content=content,
                 cost_usd=estimated_cost,
@@ -234,6 +326,7 @@ class ExtractionEngine:
             return ExtractionResult(
                 episode_url=episode_url,
                 template_name=template.name,
+                template_version=template.version,
                 success=False,
                 extracted_content=None,
                 error=error_msg,
@@ -287,9 +380,7 @@ class ExtractionEngine:
                 if result.success:
                     # Determine if from cache
                     status = (
-                        ExtractionStatus.CACHED
-                        if result.from_cache
-                        else ExtractionStatus.SUCCESS
+                        ExtractionStatus.CACHED if result.from_cache else ExtractionStatus.SUCCESS
                     )
 
                     attempts.append(
@@ -392,6 +483,7 @@ class ExtractionEngine:
                 cached_results[template.name] = ExtractionResult(
                     episode_url=episode_url,
                     template_name=template.name,
+                    template_version=template.version,
                     success=True,
                     extracted_content=content,
                     cost_usd=0.0,
@@ -490,77 +582,19 @@ class ExtractionEngine:
             )
             return results_list, summary
 
-        # Build batched prompt
-        logger.info(f"Batching {len(uncached_templates)} templates in single API call")
-        batched_prompt = self._create_batch_prompt(uncached_templates, transcript, metadata)
-
-        # Select provider (use first template's preference or default)
-        extractor = self._select_extractor(uncached_templates[0])
-        provider_name = (
-            "claude"
-            if extractor.__class__.__name__ == "ClaudeExtractor"
-            else "gemini"
+        # Extract each template individually for focused, reliable results
+        logger.info(f"Extracting {len(uncached_templates)} templates individually")
+        batch_results = await self._extract_individually(
+            uncached_templates, transcript, metadata, episode_url
         )
 
-        # Estimate cost (slightly higher than sum of individual calls due to larger prompt)
-        estimated_cost = sum(
-            extractor.estimate_cost(t, len(transcript)) for t in uncached_templates
-        ) * 1.1  # 10% overhead for batch prompt
-
-        # Single API call for all templates
-        batch_results = {}
-        try:
-            # Call LLM with batched prompt
-            response = await extractor.extract(
-                uncached_templates[0],  # Use first template for LLM config
-                batched_prompt,
-                metadata,
-            )
-
-            # Parse batch response
-            batch_results = self._parse_batch_response(
-                response, uncached_templates, episode_url, provider_name, estimated_cost
-            )
-
-            # Cache individual results
-            if use_cache:
-                for template in uncached_templates:
-                    result = batch_results.get(template.name)
-                    if result and result.success and result.extracted_content:
-                        # Cache the raw output for this template
-                        raw_output = self._serialize_extracted_content(result.extracted_content)
-                        await self.cache.set(
-                            template.name, template.version, transcript, raw_output
-                        )
-
-            # Track cost in CostTracker if available
-            if self.cost_tracker:
-                # Estimate token counts for batch operation
-                input_tokens = len(batched_prompt) // 4
-                output_tokens = len(response) // 4
-
-                # Track once for the batch (distributed across templates)
-                for template in uncached_templates:
-                    self.cost_tracker.add_cost(
-                        provider=provider_name,
-                        model=extractor.model if hasattr(extractor, 'model') else "unknown",
-                        operation="extraction",
-                        input_tokens=input_tokens // len(uncached_templates),
-                        output_tokens=output_tokens // len(uncached_templates),
-                        episode_title=metadata.get("episode_title"),
-                        template_name=template.name,
-                    )
-
-            logger.info(f"Batch extraction successful for {len(batch_results)} templates")
-
-        except Exception as e:
-            # Sanitize error message to prevent API key leakage in logs
-            sanitized_error_msg = _sanitize_error_message(str(e))
-            logger.error(f"Batch extraction failed: {sanitized_error_msg}", exc_info=True)
-            # Fallback to individual extraction
-            batch_results = await self._extract_individually(
-                uncached_templates, transcript, metadata, episode_url
-            )
+        # Cache successful results
+        if use_cache:
+            for template in uncached_templates:
+                result = batch_results.get(template.name)
+                if result and result.success and result.extracted_content:
+                    raw_output = self._serialize_extracted_content(result.extracted_content)
+                    await self.cache.set(template.name, template.version, transcript, raw_output)
 
         # Combine cached and new results in original order and build summary
         all_results = []
@@ -603,10 +637,11 @@ class ExtractionEngine:
                 error_result = ExtractionResult(
                     episode_url=episode_url,
                     template_name=template.name,
+                    template_version=template.version,
                     success=False,
                     error="Template not found in batch results",
                     cost_usd=0.0,
-                    provider=provider_name,
+                    provider="gemini",  # Default to gemini for batched extraction
                 )
                 all_results.append(error_result)
                 attempts.append(
@@ -659,37 +694,86 @@ class ExtractionEngine:
     def _select_extractor(self, template: ExtractionTemplate) -> BaseExtractor:
         """Select appropriate extractor for template.
 
-        Uses template's model_preference if specified, otherwise uses heuristics.
+        Selection priority:
+        1. extractor_override parameter (explicit override)
+        2. INKWELL_EXTRACTOR environment variable (environment override)
+        3. Template's model_preference if specified
+        4. Heuristics based on template type
+        5. Default provider
+        6. Highest priority plugin from registry
 
         Args:
             template: Extraction template
 
         Returns:
-            Extractor instance (Claude or Gemini)
+            Extractor instance (Claude, Gemini, or plugin)
+
+        Raises:
+            ValueError: If no extractor is available
         """
-        # Explicit preference
-        if template.model_preference == "claude":
-            return self.claude_extractor
-        elif template.model_preference == "gemini":
-            return self.gemini_extractor
+        # Check for extractor override (parameter takes precedence over env var)
+        override = self._extractor_override or os.environ.get("INKWELL_EXTRACTOR")
+        if override:
+            plugin = self.extraction_registry.get(override)
+            if plugin:
+                return plugin
+            raise ValueError(
+                f"Extractor '{override}' not found. "
+                f"Available: {', '.join(n for n, _ in self.extraction_registry.get_enabled())}"
+            )
+
+        # Use plugin registry for selection
+        return self._select_extractor_from_registry(template)
+
+    def _select_extractor_from_registry(self, template: ExtractionTemplate) -> BaseExtractor:
+        """Select extractor using plugin registry.
+
+        Args:
+            template: Extraction template
+
+        Returns:
+            Extractor instance from registry
+
+        Raises:
+            ValueError: If no extractor plugins are available
+        """
+        # Template's explicit preference
+        if template.model_preference:
+            plugin = self.extraction_registry.get(template.model_preference)
+            if plugin:
+                return plugin
+
+        # Get all available plugins
+        enabled_plugins = self.extraction_registry.get_enabled()
+
+        if not enabled_plugins:
+            raise ValueError(
+                "No extraction plugins available. "
+                "Set GOOGLE_API_KEY or ANTHROPIC_API_KEY environment variable."
+            )
 
         # Heuristics for auto-selection
-        # Use Claude for:
-        # - Quote extraction (precision critical)
-        # - Complex structured data (many required fields)
+        # Use Claude for quote extraction (precision critical)
         if "quote" in template.name.lower():
-            return self.claude_extractor
+            claude_plugin = self.extraction_registry.get("claude")
+            if claude_plugin:
+                return claude_plugin
 
+        # Use Claude for complex structured data
         if template.expected_format == "json" and template.output_schema:
             required_fields = template.output_schema.get("required", [])
-            if len(required_fields) > 5:  # Complex schema
-                return self.claude_extractor
+            if len(required_fields) > 5:
+                claude_plugin = self.extraction_registry.get("claude")
+                if claude_plugin:
+                    return claude_plugin
 
-        # Default provider
-        if self.default_provider == "claude":
-            return self.claude_extractor
-        else:
-            return self.gemini_extractor
+        # Default provider preference
+        default_plugin = self.extraction_registry.get(self.default_provider)
+        if default_plugin:
+            return default_plugin
+
+        # Use highest priority available plugin
+        return enabled_plugins[0][1]
 
     def _parse_output(self, raw_output: str, template: ExtractionTemplate) -> ExtractedContent:
         """Parse raw LLM output into ExtractedContent.
@@ -827,9 +911,9 @@ class ExtractionEngine:
 Analyze this podcast transcript and provide multiple extractions.
 
 PODCAST INFORMATION:
-- Title: {metadata.get('episode_title', 'Unknown')}
-- Podcast: {metadata.get('podcast_name', 'Unknown')}
-- URL: {metadata.get('episode_url', 'Unknown')}
+- Title: {metadata.get("episode_title", "Unknown")}
+- Podcast: {metadata.get("podcast_name", "Unknown")}
+- URL: {metadata.get("episode_url", "Unknown")}
 
 EXTRACTION TASKS:
 {chr(10).join(instructions)}
@@ -894,6 +978,7 @@ Use the exact template names as JSON keys.
                     results[template.name] = ExtractionResult(
                         episode_url=episode_url,
                         template_name=template.name,
+                        template_version=template.version,
                         success=False,
                         error=f"Missing '{template.name}' in batch response",
                         cost_usd=0.0,
@@ -928,6 +1013,7 @@ Use the exact template names as JSON keys.
                     results[template.name] = ExtractionResult(
                         episode_url=episode_url,
                         template_name=template.name,
+                        template_version=template.version,
                         success=True,
                         extracted_content=content,
                         cost_usd=cost_per_template,
@@ -947,7 +1033,9 @@ Use the exact template names as JSON keys.
         metadata: dict[str, Any],
         episode_url: str,
     ) -> dict[str, ExtractionResult]:
-        """Fallback: extract templates individually if batch fails.
+        """Extract templates individually in parallel.
+
+        Each template gets its own focused LLM call for better reliability.
 
         Args:
             templates: Templates to extract
@@ -959,11 +1047,6 @@ Use the exact template names as JSON keys.
             Dict mapping template name to ExtractionResult
         """
         import asyncio
-
-        logger.warning(
-            f"Batch extraction failed, falling back to individual extraction "
-            f"for {len(templates)} templates"
-        )
 
         tasks = [
             self.extract(template, transcript, metadata, use_cache=False) for template in templates
@@ -981,6 +1064,7 @@ Use the exact template names as JSON keys.
                 results[template.name] = ExtractionResult(
                     episode_url=episode_url,
                     template_name=template.name,
+                    template_version=template.version,
                     success=False,
                     error=str(result),
                     cost_usd=0.0,

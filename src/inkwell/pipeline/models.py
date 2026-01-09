@@ -27,6 +27,15 @@ class PipelineOptions:
     interview_template: str | None = None
     interview_format: str | None = None
     max_questions: int | None = None
+    # Audio download authentication (for private feeds)
+    auth_username: str | None = None
+    auth_password: str | None = None
+    # Episode metadata (from RSS feed)
+    episode_title: str | None = None
+    podcast_name: str | None = None
+    # Plugin overrides (from CLI flags or env vars)
+    extractor: str | None = None
+    transcriber: str | None = None
 
 
 @dataclass

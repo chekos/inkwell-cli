@@ -3,18 +3,25 @@
 Handles directory creation, atomic file writes, and metadata generation.
 """
 
+from __future__ import annotations
+
 import logging
 import os
 import shutil
 import tempfile
+import warnings
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+import yaml
 
 from ..extraction.models import ExtractionResult
 from ..utils.errors import SecurityError
-from ..utils.yaml_integrity import YAMLWithIntegrity
-from .markdown import MarkdownGenerator
+from .markdown import MarkdownGenerator, MarkdownOutput
 from .models import EpisodeMetadata, EpisodeOutput, OutputFile
+
+if TYPE_CHECKING:
+    from inkwell.plugins.types.output import OutputPlugin
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +36,9 @@ class OutputManager:
     - File conflict resolution
     - Schema versioning and migrations
 
+    The OutputManager accepts an OutputPlugin for rendering extraction results.
+    By default, it uses MarkdownOutput (the built-in markdown plugin).
+
     Example:
         >>> manager = OutputManager(output_dir=Path("./output"))
         >>> output = manager.write_episode(
@@ -37,28 +47,77 @@ class OutputManager:
         ... )
         >>> print(output.directory)
         ./output/podcast-name-2025-11-07-episode-title/
+
+        # Use a custom output plugin:
+        >>> from inkwell.output.markdown import MarkdownOutput
+        >>> renderer = MarkdownOutput()
+        >>> renderer.configure({})
+        >>> manager = OutputManager(output_dir=Path("./output"), renderer=renderer)
     """
 
     CURRENT_METADATA_SCHEMA_VERSION = 1
 
-    def __init__(self, output_dir: Path, markdown_generator: MarkdownGenerator | None = None):
+    def __init__(
+        self,
+        output_dir: Path,
+        renderer: OutputPlugin | MarkdownOutput | None = None,
+        markdown_generator: MarkdownGenerator | None = None,
+    ):
         """Initialize output manager.
 
         Args:
             output_dir: Base output directory
-            markdown_generator: MarkdownGenerator instance (creates one if None)
+            renderer: OutputPlugin instance for rendering (creates MarkdownOutput if None)
+            markdown_generator: Deprecated. Use `renderer` instead.
+
+        .. deprecated:: 0.12.0
+            The `markdown_generator` parameter is deprecated. Use `renderer` instead.
         """
         self.output_dir = output_dir
-        self.markdown_generator = markdown_generator or MarkdownGenerator()
+        self._renderer: OutputPlugin | MarkdownOutput
+
+        # Handle deprecated markdown_generator parameter
+        if markdown_generator is not None:
+            warnings.warn(
+                "The 'markdown_generator' parameter is deprecated. Use 'renderer' instead. "
+                "This parameter will be removed in v1.0.0.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            self._renderer = markdown_generator
+        else:
+            self._renderer = renderer or MarkdownOutput()
 
         # Ensure output directory exists
         self.output_dir.mkdir(parents=True, exist_ok=True)
+
+    @property
+    def renderer(self) -> OutputPlugin | MarkdownOutput:
+        """Get the output renderer plugin."""
+        return self._renderer
+
+    @property
+    def markdown_generator(self) -> MarkdownOutput:
+        """Get the markdown generator (backward compatibility).
+
+        .. deprecated:: 0.12.0
+            Use `renderer` property instead. This property will be removed in v1.0.0.
+        """
+        warnings.warn(
+            "The 'markdown_generator' property is deprecated. Use 'renderer' instead. "
+            "This property will be removed in v1.0.0.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self._renderer  # type: ignore[return-value]
 
     def write_episode(
         self,
         episode_metadata: EpisodeMetadata,
         extraction_results: list[ExtractionResult],
         overwrite: bool = False,
+        transcript: str | None = None,
+        transcript_summary: str | None = None,
     ) -> EpisodeOutput:
         """Write extraction results for an episode to disk.
 
@@ -66,6 +125,8 @@ class OutputManager:
             episode_metadata: Episode metadata
             extraction_results: List of extraction results
             overwrite: Whether to overwrite existing directory
+            transcript: Optional transcript text to include as _transcript.md
+            transcript_summary: Optional summary to include at top of transcript
 
         Returns:
             EpisodeOutput with directory and file information
@@ -79,7 +140,7 @@ class OutputManager:
 
         # Track backup directory if overwriting existing episode
         if overwrite and episode_dir.exists():
-            backup_dir = episode_dir.with_suffix('.backup')
+            backup_dir = episode_dir.with_suffix(".backup")
 
         try:
             # Create episode directory (handles backup internally)
@@ -90,8 +151,8 @@ class OutputManager:
             total_cost = 0.0
 
             for result in extraction_results:
-                # Generate markdown
-                markdown_content = self.markdown_generator.generate(
+                # Generate markdown using the renderer's sync method
+                markdown_content = self._renderer.generate(
                     result,
                     episode_metadata.model_dump(),
                     include_frontmatter=True,
@@ -114,9 +175,37 @@ class OutputManager:
 
                 total_cost += result.cost_usd
 
-            # Update metadata with cost
+            # Write transcript file if provided
+            if transcript:
+                transcript_filename = "_transcript.md"
+                transcript_path = episode_dir / transcript_filename
+
+                # Build transcript content with optional summary
+                if transcript_summary:
+                    transcript_content = (
+                        f"# Transcript\n\n"
+                        f"## Summary\n\n{transcript_summary}\n\n"
+                        f"---\n\n"
+                        f"## Full Transcript\n\n{transcript}"
+                    )
+                else:
+                    transcript_content = f"# Transcript\n\n{transcript}"
+
+                self._write_file_atomic(transcript_path, transcript_content)
+                output_files.insert(
+                    0,  # Insert at beginning so it's first in list
+                    OutputFile(
+                        template_name="_transcript",
+                        filename=transcript_filename,
+                        content=transcript_content,
+                        size_bytes=len(transcript_content.encode("utf-8")),
+                    ),
+                )
+
+            # Update metadata with cost and template versions
             episode_metadata.total_cost_usd = total_cost
-            episode_metadata.templates_applied = [r.template_name for r in extraction_results]
+            for result in extraction_results:
+                episode_metadata.add_template(result.template_name, result.template_version)
 
             # Write metadata file
             metadata_file = episode_dir / ".metadata.yaml"
@@ -144,11 +233,105 @@ class OutputManager:
                 backup_dir.rename(episode_dir)
             raise
 
+    def write_incremental_episode(
+        self,
+        episode_dir: Path,
+        existing_metadata: EpisodeMetadata,
+        new_extraction_results: list[ExtractionResult],
+        transcript: str | None = None,
+        transcript_summary: str | None = None,
+    ) -> EpisodeOutput:
+        """Write new/updated extraction results to an existing episode directory.
+
+        Unlike write_episode, this method:
+        - Does NOT delete existing directory
+        - Writes only new/changed template files
+        - Merges metadata (templates_applied, templates_versions, costs)
+        - Preserves existing files not being updated
+
+        Args:
+            episode_dir: Existing episode directory
+            existing_metadata: Metadata loaded from existing directory
+            new_extraction_results: New extraction results to write
+            transcript: Optional transcript (only written if _transcript.md doesn't exist)
+            transcript_summary: Optional summary for transcript
+
+        Returns:
+            EpisodeOutput with merged metadata and all files
+        """
+        output_files: list[OutputFile] = []
+        added_cost = 0.0
+
+        # Write new markdown files
+        for result in new_extraction_results:
+            # Generate markdown using the renderer's sync method
+            markdown_content = self._renderer.generate(
+                result,
+                existing_metadata.model_dump(),
+                include_frontmatter=True,
+            )
+
+            # Write file (overwrites if exists)
+            filename = f"{result.template_name}.md"
+            file_path = episode_dir / filename
+
+            self._write_file_atomic(file_path, markdown_content)
+
+            output_files.append(
+                OutputFile(
+                    template_name=result.template_name,
+                    filename=filename,
+                    content=markdown_content,
+                    size_bytes=len(markdown_content.encode("utf-8")),
+                )
+            )
+
+            added_cost += result.cost_usd
+
+            # Update metadata with new template and version
+            existing_metadata.add_template(result.template_name, result.template_version)
+
+        # Write transcript only if it doesn't exist
+        transcript_path = episode_dir / "_transcript.md"
+        if transcript and not transcript_path.exists():
+            if transcript_summary:
+                transcript_content = (
+                    f"# Transcript\n\n"
+                    f"## Summary\n\n{transcript_summary}\n\n"
+                    f"---\n\n"
+                    f"## Full Transcript\n\n{transcript}"
+                )
+            else:
+                transcript_content = f"# Transcript\n\n{transcript}"
+
+            self._write_file_atomic(transcript_path, transcript_content)
+            output_files.insert(
+                0,
+                OutputFile(
+                    template_name="_transcript",
+                    filename="_transcript.md",
+                    content=transcript_content,
+                    size_bytes=len(transcript_content.encode("utf-8")),
+                ),
+            )
+
+        # Update metadata costs
+        existing_metadata.add_cost(added_cost)
+
+        # Write updated metadata file
+        metadata_file = episode_dir / ".metadata.yaml"
+        self._write_metadata(metadata_file, existing_metadata)
+
+        # Load complete EpisodeOutput (includes all files, not just new ones)
+        return EpisodeOutput.from_directory(episode_dir)
+
     def _get_episode_directory_path(self, episode_metadata: EpisodeMetadata) -> Path:
         """Get episode directory path without creating it.
 
         This is a helper to calculate the directory path before creating it,
         useful for backup tracking in write_episode().
+
+        Structure: output_dir/podcast-slug/YYYY-MM-DD-episode-slug/
 
         Args:
             episode_metadata: Episode metadata
@@ -156,21 +339,31 @@ class OutputManager:
         Returns:
             Path to episode directory (may not exist yet)
         """
-        # Get directory name from metadata
-        dir_name = episode_metadata.directory_name
+        # Sanitize each path component separately
+        podcast_slug = self._sanitize_path_component(episode_metadata.podcast_slug)
+        episode_slug = self._sanitize_path_component(episode_metadata.episode_slug)
 
-        # Sanitize directory name (same as _create_episode_directory)
-        dir_name = dir_name.replace("..", "").replace("/", "-").replace("\\", "-")
-        dir_name = dir_name.replace("\0", "")
+        if not podcast_slug.strip() or not episode_slug.strip():
+            raise ValueError("Episode directory path is empty after sanitization")
 
-        if not dir_name.strip():
-            raise ValueError("Episode directory name is empty after sanitization")
+        return self.output_dir / podcast_slug / episode_slug
 
-        return self.output_dir / dir_name
+    def _sanitize_path_component(self, component: str) -> str:
+        """Sanitize a single path component (no slashes allowed).
 
-    def _create_episode_directory(
-        self, episode_metadata: EpisodeMetadata, overwrite: bool
-    ) -> Path:
+        Args:
+            component: Path component to sanitize
+
+        Returns:
+            Sanitized path component
+        """
+        # Remove path traversal sequences and path separators
+        sanitized = component.replace("..", "").replace("/", "-").replace("\\", "-")
+        # Remove null bytes (path injection)
+        sanitized = sanitized.replace("\0", "")
+        return sanitized
+
+    def _create_episode_directory(self, episode_metadata: EpisodeMetadata, overwrite: bool) -> Path:
         """Create episode directory with comprehensive security checks.
 
         This method implements defense-in-depth path traversal protection:
@@ -179,6 +372,8 @@ class OutputManager:
         3. Prevents symlink attacks
         4. Validates overwrite targets are episode directories
         5. Creates backups before overwrite with rollback support
+
+        Structure: output_dir/podcast-slug/YYYY-MM-DD-episode-slug/
 
         Args:
             episode_metadata: Episode metadata
@@ -192,41 +387,37 @@ class OutputManager:
             SecurityError: If path traversal or symlink attack detected
             ValueError: If directory name is invalid or empty after sanitization
         """
-        # Get directory name from metadata
-        dir_name = episode_metadata.directory_name
+        # Step 1: Sanitize each path component
+        podcast_slug = self._sanitize_path_component(episode_metadata.podcast_slug)
+        episode_slug = self._sanitize_path_component(episode_metadata.episode_slug)
 
-        # Step 1: Sanitize directory name
-        # Remove path traversal sequences and path separators
-        dir_name = dir_name.replace("..", "").replace("/", "-").replace("\\", "-")
+        # Step 2: Ensure not empty after sanitization
+        if not podcast_slug.strip() or not episode_slug.strip():
+            raise ValueError("Episode directory path is empty after sanitization")
 
-        # Step 2: Remove null bytes (path injection)
-        dir_name = dir_name.replace("\0", "")
+        # Build the nested path: output_dir/podcast-slug/episode-slug
+        podcast_dir = self.output_dir / podcast_slug
+        episode_dir = podcast_dir / episode_slug
 
-        # Step 3: Ensure it's not empty after sanitization
-        if not dir_name.strip():
-            raise ValueError("Episode directory name is empty after sanitization")
-
-        episode_dir = self.output_dir / dir_name
-
-        # Step 4: Verify resolved path is within output_dir
+        # Step 3: Verify resolved path is within output_dir
         try:
             resolved_episode = episode_dir.resolve()
             resolved_output = self.output_dir.resolve()
             resolved_episode.relative_to(resolved_output)
         except ValueError:
             raise SecurityError(
-                f"Invalid directory path: {dir_name}. "
+                f"Invalid directory path: {podcast_slug}/{episode_slug}. "
                 f"Resolved path {resolved_episode} is outside output directory."
-            )
+            ) from None
 
-        # Step 5: Check it's not a symlink (symlink attack)
+        # Step 4: Check it's not a symlink (symlink attack)
         if episode_dir.exists() and episode_dir.is_symlink():
             raise SecurityError(
                 f"Episode directory {episode_dir} is a symlink. "
                 f"Refusing to use for security reasons."
             )
 
-        # Step 6: Handle overwrite with validation
+        # Step 5: Handle overwrite with validation
         if episode_dir.exists():
             if not overwrite:
                 raise FileExistsError(
@@ -242,15 +433,15 @@ class OutputManager:
                 )
 
             # Create backup before deletion
-            backup_dir = episode_dir.with_suffix('.backup')
+            backup_dir = episode_dir.with_suffix(".backup")
             if backup_dir.exists():
                 shutil.rmtree(backup_dir)
             episode_dir.rename(backup_dir)
 
-            # Create new directory
-            # Note: Backup restoration is now handled by write_episode() wrapper
+            # Create new directory (parents=True ensures podcast dir exists)
             episode_dir.mkdir(parents=True)
         else:
+            # Create both podcast and episode directories if needed
             episode_dir.mkdir(parents=True, exist_ok=True)
 
         return episode_dir
@@ -277,9 +468,7 @@ class OutputManager:
             OSError: If write or sync fails
         """
         # Write to temporary file in same directory (ensures same filesystem)
-        temp_fd, temp_path = tempfile.mkstemp(
-            dir=file_path.parent, prefix=".tmp_", suffix=".md"
-        )
+        temp_fd, temp_path = tempfile.mkstemp(dir=file_path.parent, prefix=".tmp_", suffix=".md")
 
         try:
             # Write content to temp file
@@ -318,7 +507,7 @@ class OutputManager:
             raise
 
     def _write_metadata(self, metadata_file: Path, episode_metadata: EpisodeMetadata) -> None:
-        """Write metadata file with schema version and integrity checksum.
+        """Write metadata file with schema version.
 
         Args:
             metadata_file: Path to metadata file
@@ -331,20 +520,32 @@ class OutputManager:
         if "schema_version" not in metadata_dict or metadata_dict["schema_version"] is None:
             metadata_dict["schema_version"] = self.CURRENT_METADATA_SCHEMA_VERSION
 
-        # Write with integrity checksum via atomic write (temp file + rename)
-        YAMLWithIntegrity.write_yaml_with_checksum(metadata_file, metadata_dict)
+        # Write YAML
+        metadata_file.write_text(
+            yaml.dump(metadata_dict, default_flow_style=False, sort_keys=False),
+            encoding="utf-8",
+        )
 
     def list_episodes(self) -> list[Path]:
         """List all episode directories.
 
+        Looks for episode directories in the nested structure:
+        output_dir/podcast-slug/episode-slug/.metadata.yaml
+
         Returns:
             List of episode directory paths
         """
-        # Find directories with .metadata.yaml
         episodes = []
-        for item in self.output_dir.iterdir():
-            if item.is_dir() and (item / ".metadata.yaml").exists():
-                episodes.append(item)
+
+        # Iterate through podcast directories
+        for podcast_dir in self.output_dir.iterdir():
+            if not podcast_dir.is_dir():
+                continue
+
+            # Look for episode directories inside each podcast directory
+            for episode_dir in podcast_dir.iterdir():
+                if episode_dir.is_dir() and (episode_dir / ".metadata.yaml").exists():
+                    episodes.append(episode_dir)
 
         return sorted(episodes)
 
@@ -368,8 +569,7 @@ class OutputManager:
         if not metadata_file.exists():
             raise FileNotFoundError(f"Metadata file not found: {metadata_file}")
 
-        # Load with integrity verification
-        data = YAMLWithIntegrity.read_yaml_with_verification(metadata_file)
+        data = yaml.safe_load(metadata_file.read_text(encoding="utf-8")) or {}
 
         # Handle schema migrations
         schema_version = data.get("schema_version", 0)
@@ -432,9 +632,7 @@ class OutputManager:
             Dict with statistics
         """
         episodes = self.list_episodes()
-        total_files = sum(
-            len(list(ep.glob("*.md"))) for ep in episodes
-        )
+        total_files = sum(len(list(ep.glob("*.md"))) for ep in episodes)
         total_size = self.get_total_size()
 
         return {

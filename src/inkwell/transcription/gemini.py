@@ -1,20 +1,38 @@
-"""Gemini-based audio transcription."""
+"""Gemini-based audio transcription using modern google-genai SDK."""
 
 import asyncio
+import logging
 import os
 from collections.abc import Callable
 from pathlib import Path
+from typing import TYPE_CHECKING, Any, ClassVar
 
-import google.generativeai as genai
-from google.generativeai.types import GenerateContentResponse
+from google import genai
+from google.genai import types
 from pydantic import BaseModel, Field
 
+from inkwell.plugins.types.transcription import TranscriptionPlugin, TranscriptionRequest
+from inkwell.transcription.chunking import (
+    CHUNK_DURATION_SECONDS,
+    OVERLAP_SECONDS,
+    cleanup_chunks,
+    get_audio_duration,
+    needs_chunking,
+    split_audio_into_chunks,
+)
 from inkwell.transcription.models import Transcript, TranscriptSegment
 from inkwell.utils.errors import APIError
 from inkwell.utils.rate_limiter import get_rate_limiter
 
+if TYPE_CHECKING:
+    from inkwell.utils.costs import CostTracker
+
+logger = logging.getLogger(__name__)
+
 # Allowed Gemini models for transcription
 ALLOWED_GEMINI_MODELS = {
+    "gemini-3-flash-preview",
+    "gemini-3-pro-preview",
     "gemini-2.5-flash",
     "gemini-2.5-pro",
     "gemini-1.5-flash",
@@ -37,28 +55,93 @@ class CostEstimate(BaseModel):
         return f"${self.estimated_cost_usd:.2f}"
 
 
-class GeminiTranscriber:
+class GeminiTranscriber(TranscriptionPlugin):
     """Transcribe audio files using Google Gemini API.
 
-    Uses Gemini 2.5 Flash for cost-effective audio transcription.
+    Uses Gemini 3 Flash for cost-effective audio transcription.
     Supports automatic file upload for large files (>10MB).
     Implements cost estimation per ADR-012.
+
+    Usage:
+        # Legacy interface
+        transcriber = GeminiTranscriber(api_key="...")
+        transcript = await transcriber.transcribe(audio_path)
+
+        # Plugin interface
+        request = TranscriptionRequest(file_path=Path("/tmp/audio.mp3"))
+        if transcriber.can_handle(request):
+            transcript = await transcriber.transcribe(request)
     """
+
+    # Plugin metadata (required by TranscriptionPlugin)
+    NAME: ClassVar[str] = "gemini"
+    VERSION: ClassVar[str] = "1.0.0"
+    DESCRIPTION: ClassVar[str] = "Google Gemini audio transcription"
+
+    # Model identifier
+    MODEL: ClassVar[str] = "gemini-3-flash-preview"
+
+    # Transcription-specific metadata
+    HANDLES_URLS: ClassVar[list[str]] = []  # Gemini handles files, not URLs
+    CAPABILITIES: ClassVar[dict[str, Any]] = {
+        "formats": ["mp3", "m4a", "wav", "aac", "ogg", "flac"],
+        "max_duration_hours": None,  # Handles long audio via chunking
+        "requires_internet": True,
+        "supports_file": True,
+        "supports_url": False,
+        "supports_bytes": False,
+    }
 
     def __init__(
         self,
         api_key: str | None = None,
-        model_name: str = "gemini-2.5-flash",
+        model_name: str = "gemini-3-flash-preview",
         cost_threshold_usd: float = 1.0,
         cost_confirmation_callback: Callable[[CostEstimate], bool] | None = None,
+        lazy_init: bool = False,
     ):
         """Initialize Gemini transcriber.
 
         Args:
             api_key: Google AI API key (default: GOOGLE_API_KEY env var)
-            model_name: Gemini model to use (default: gemini-2.5-flash)
+            model_name: Gemini model to use (default: gemini-3-flash-preview)
             cost_threshold_usd: Threshold for cost confirmation (default: $1.00)
             cost_confirmation_callback: Callback for cost confirmation (default: auto-approve)
+            lazy_init: If True, defer client initialization until configure() is called.
+                      Used by plugin system. Default: False for backward compatibility.
+        """
+        TranscriptionPlugin.__init__(self)
+
+        # Store initialization parameters
+        self._api_key_param = api_key
+        self._model_name_param = model_name
+        self._cost_threshold_param = cost_threshold_usd
+        self._cost_confirmation_callback = cost_confirmation_callback
+        self._lazy_init = lazy_init
+
+        if not lazy_init:
+            # Immediate initialization for backward compatibility
+            self._initialize_client(
+                api_key=api_key,
+                model_name=model_name,
+                cost_threshold_usd=cost_threshold_usd,
+                cost_confirmation_callback=cost_confirmation_callback,
+            )
+
+    def _initialize_client(
+        self,
+        api_key: str | None = None,
+        model_name: str = "gemini-3-flash-preview",
+        cost_threshold_usd: float = 1.0,
+        cost_confirmation_callback: Callable[[CostEstimate], bool] | None = None,
+    ) -> None:
+        """Initialize the Gemini client.
+
+        Args:
+            api_key: Google AI API key
+            model_name: Gemini model to use
+            cost_threshold_usd: Cost threshold for confirmation
+            cost_confirmation_callback: Callback for cost confirmation
         """
         # Get API key from parameter or environment
         # Try GOOGLE_API_KEY first (standard), then GOOGLE_AI_API_KEY (deprecated)
@@ -66,8 +149,6 @@ class GeminiTranscriber:
 
         # Warn if using deprecated env var
         if os.getenv("GOOGLE_AI_API_KEY") and not os.getenv("GOOGLE_API_KEY"):
-            import logging
-            logger = logging.getLogger(__name__)
             logger.warning(
                 "GOOGLE_AI_API_KEY is deprecated. Please use GOOGLE_API_KEY instead. "
                 "GOOGLE_AI_API_KEY will be removed in v2.0.0"
@@ -86,17 +167,39 @@ class GeminiTranscriber:
                 f"Allowed models: {', '.join(sorted(ALLOWED_GEMINI_MODELS))}"
             )
 
-        genai.configure(api_key=self.api_key)
+        # Initialize client with new SDK
+        self.client = genai.Client(api_key=self.api_key)
 
         self.model_name = model_name
         self.cost_threshold_usd = cost_threshold_usd
         self.cost_confirmation_callback = cost_confirmation_callback
 
-        # Initialize model
-        self.model = genai.GenerativeModel(model_name)
+    def configure(
+        self,
+        config: dict[str, Any],
+        cost_tracker: "CostTracker | None" = None,
+    ) -> None:
+        """Configure the plugin.
+
+        Args:
+            config: Plugin configuration (may include 'api_key', 'model_name', etc.)
+            cost_tracker: Optional cost tracker for API usage
+        """
+        super().configure(config, cost_tracker)
+
+        # Initialize client with config values or stored parameters
+        self._initialize_client(
+            api_key=config.get("api_key", self._api_key_param),
+            model_name=config.get("model_name", self._model_name_param),
+            cost_threshold_usd=config.get("cost_threshold_usd", self._cost_threshold_param),
+            cost_confirmation_callback=self._cost_confirmation_callback,
+        )
 
     async def can_transcribe(self, audio_path: Path) -> bool:
         """Check if this transcriber can handle the audio file.
+
+        This is the legacy interface. For new code, use can_handle() with
+        a TranscriptionRequest.
 
         Args:
             audio_path: Path to audio file
@@ -110,6 +213,46 @@ class GeminiTranscriber:
         # Gemini supports common audio formats
         supported_extensions = {".mp3", ".m4a", ".wav", ".aac", ".ogg", ".flac"}
         return audio_path.suffix.lower() in supported_extensions
+
+    def can_handle(self, request: TranscriptionRequest) -> bool:
+        """Check if this plugin can handle the given request.
+
+        Gemini transcriber handles local audio files only.
+
+        Args:
+            request: The transcription request to check
+
+        Returns:
+            True if this is a file request with a supported format
+        """
+        # Only handle file-based requests
+        if request.source_type != "file" or request.file_path is None:
+            return False
+
+        # Check file exists and has supported extension
+        if not request.file_path.exists():
+            return False
+
+        supported_extensions = {".mp3", ".m4a", ".wav", ".aac", ".ogg", ".flac"}
+        return request.file_path.suffix.lower() in supported_extensions
+
+    def estimate_cost(self, duration_seconds: float) -> float:
+        """Estimate transcription cost based on audio duration.
+
+        This is the plugin interface method. For file-based estimation,
+        use _estimate_cost() with a Path.
+
+        Args:
+            duration_seconds: Duration of audio in seconds
+
+        Returns:
+            Estimated cost in USD
+        """
+        # Rough estimate: assume average bitrate of 128kbps
+        # This gives approximately 1MB per minute of audio
+        estimated_mb = (duration_seconds / 60) * 1.0  # MB per minute
+        rate_per_mb = 0.000125  # Gemini pricing
+        return estimated_mb * rate_per_mb
 
     def _estimate_cost(self, audio_path: Path) -> CostEstimate:
         """Estimate transcription cost based on file size.
@@ -151,28 +294,49 @@ class GeminiTranscriber:
         if self.cost_confirmation_callback:
             # Run callback in executor to avoid blocking
             loop = asyncio.get_event_loop()
-            return await loop.run_in_executor(
-                None, self.cost_confirmation_callback, estimate
-            )
+            return await loop.run_in_executor(None, self.cost_confirmation_callback, estimate)
 
         # Default: auto-approve
         return True
 
     async def transcribe(
-        self, audio_path: Path, episode_url: str | None = None
+        self,
+        path_or_request: Path | TranscriptionRequest,
+        episode_url: str | None = None,
     ) -> Transcript:
         """Transcribe audio file using Gemini.
 
+        Supports both the legacy interface (Path) and the new plugin
+        interface (TranscriptionRequest).
+
+        For long audio files (>15 minutes), automatically uses chunking to avoid
+        hitting the 65,536 output token limit.
+
         Args:
-            audio_path: Path to audio file
-            episode_url: Optional URL of original episode (for metadata)
+            path_or_request: Path to audio file (legacy) or TranscriptionRequest (plugin).
+                           The TranscriptionRequest form is preferred for new code.
+            episode_url: Optional URL of original episode (for metadata).
+                        Ignored when using TranscriptionRequest.
 
         Returns:
             Transcript object
 
         Raises:
-            TranscriptionError: If transcription fails
+            APIError: If transcription fails or file not found
         """
+        # Handle both interfaces
+        if isinstance(path_or_request, TranscriptionRequest):
+            if path_or_request.file_path is None:
+                raise APIError(
+                    "GeminiTranscriber requires a file path. "
+                    "Use TranscriptionRequest(file_path=Path('...')) for Gemini transcription."
+                )
+            audio_path = path_or_request.file_path
+            # Extract episode URL from request metadata if available (future extension)
+        else:
+            # Legacy Path interface
+            audio_path = path_or_request
+
         # Validate file exists
         if not audio_path.exists():
             raise APIError(f"Audio file not found: {audio_path}")
@@ -195,14 +359,19 @@ class GeminiTranscriber:
             )
 
         try:
-            # Upload file and generate transcript
-            loop = asyncio.get_event_loop()
-            response = await loop.run_in_executor(
-                None, self._transcribe_sync, audio_path
-            )
+            # Check if audio needs chunking (>15 minutes)
+            should_chunk = needs_chunking(audio_path)
+            logger.info(f"needs_chunking() returned {should_chunk} for {audio_path}")
 
-            # Parse response to transcript
-            transcript = self._parse_response(response, audio_path, episode_url)
+            if should_chunk:
+                duration = get_audio_duration(audio_path)
+                logger.info(f"Audio is {duration / 60:.1f} minutes - using chunked transcription")
+                transcript = await self._transcribe_chunked(audio_path, episode_url)
+            else:
+                # Short audio - single-pass transcription
+                logger.info("Using single-pass transcription (audio under 15 minutes)")
+                response = await asyncio.to_thread(self._transcribe_sync, audio_path)
+                transcript = self._parse_response(response, audio_path, episode_url)
 
             # Add cost metadata
             transcript.cost_usd = estimate.estimated_cost_usd
@@ -216,11 +385,74 @@ class GeminiTranscriber:
                 f"Error: {e}"
             ) from e
 
-    def _transcribe_sync(self, audio_path: Path) -> GenerateContentResponse:
-        """Synchronous transcription for thread pool execution.
+    async def _transcribe_chunked(
+        self, audio_path: Path, episode_url: str | None = None
+    ) -> Transcript:
+        """Transcribe long audio using chunking strategy.
+
+        Splits audio into 10-minute chunks with 30-second overlap,
+        transcribes each chunk, then merges the results.
 
         Args:
             audio_path: Path to audio file
+            episode_url: Optional URL of original episode
+
+        Returns:
+            Merged transcript from all chunks
+        """
+        chunk_paths: list[Path] = []
+
+        try:
+            # Split audio into overlapping chunks
+            chunk_paths = split_audio_into_chunks(
+                audio_path,
+                chunk_duration=CHUNK_DURATION_SECONDS,
+                overlap=OVERLAP_SECONDS,
+            )
+
+            logger.info(f"Processing {len(chunk_paths)} chunks...")
+
+            # Transcribe each chunk
+            chunk_transcripts: list[Transcript] = []
+            for i, chunk_path in enumerate(chunk_paths):
+                logger.info(f"Transcribing chunk {i + 1}/{len(chunk_paths)}...")
+
+                # Transcribe single chunk
+                response = await asyncio.to_thread(self._transcribe_chunk_sync, chunk_path, i)
+                chunk_transcript = self._parse_response(response, chunk_path, episode_url)
+                chunk_transcripts.append(chunk_transcript)
+
+            # Merge all chunk transcripts
+            logger.info(
+                f"Merging {len(chunk_transcripts)} chunk transcripts "
+                f"(total segments before merge: {sum(len(c.segments) for c in chunk_transcripts)})"
+            )
+            merged = self._merge_chunk_transcripts(
+                chunk_transcripts,
+                chunk_duration=CHUNK_DURATION_SECONDS,
+                overlap=OVERLAP_SECONDS,
+            )
+            logger.info(f"Merged transcript has {len(merged.segments)} segments")
+
+            # Set proper source and episode URL
+            merged.source = "gemini"
+            merged.episode_url = episode_url or str(audio_path)
+
+            return merged
+
+        finally:
+            # Clean up temporary chunk files
+            if chunk_paths:
+                cleanup_chunks(chunk_paths)
+
+    def _transcribe_chunk_sync(
+        self, chunk_path: Path, chunk_index: int
+    ) -> types.GenerateContentResponse:
+        """Transcribe a single chunk synchronously.
+
+        Args:
+            chunk_path: Path to chunk audio file
+            chunk_index: Index of this chunk (for time offset calculation)
 
         Returns:
             Gemini API response
@@ -229,56 +461,269 @@ class GeminiTranscriber:
         limiter = get_rate_limiter("gemini")
         limiter.acquire()
 
-        # Upload audio file
-        audio_file = genai.upload_file(path=str(audio_path))
+        # Upload chunk file
+        audio_file = self.client.files.upload(file=chunk_path)
 
-        # Generate transcript with structured prompt
+        # Prompt must be explicit about transcribing the FULL audio content
         prompt = (
-            "Please transcribe this audio file. "
-            "Provide the transcript with timestamps in the following format:\n\n"
-            "[00:00:00] Speaker: Text\n"
-            "[00:00:05] Speaker: More text\n\n"
-            "If you cannot determine speaker names, use 'Speaker 1', 'Speaker 2', etc. "
-            "Be as accurate as possible with timestamps."
+            f"Transcribe this ENTIRE audio file in plain text format.\n\n"
+            f"CRITICAL: You MUST transcribe ALL speech in this audio from start to finish.\n"
+            f"This audio is approximately {CHUNK_DURATION_SECONDS // 60} minutes long.\n"
+            f"Do not stop early or summarize - transcribe every word spoken.\n\n"
+            f"FORMAT REQUIREMENTS:\n"
+            f"1. Use timestamps starting at 00:00 for this audio segment\n"
+            f"2. Use this exact format for each segment:\n"
+            f"   [MM:SS] Speaker Name: What they said...\n"
+            f"3. Identify speakers by name when possible, "
+            f"otherwise use 'Speaker 1', 'Speaker 2', etc.\n"
+            f"4. Capture all spoken words verbatim with proper punctuation\n"
+            f"5. Do NOT include a summary - transcribe the full audio content\n\n"
+            f"Example output:\n"
+            f"[00:00] Host: Welcome back. As I was saying...\n"
+            f"[00:15] Guest: Right, and that's exactly why...\n"
+            f"[01:30] Host: That's a great point. Let me add that...\n"
         )
 
-        response = self.model.generate_content([audio_file, prompt])
+        response = self.client.models.generate_content(
+            model=self.model_name,
+            contents=[audio_file, prompt],
+            config=types.GenerateContentConfig(
+                response_mime_type="text/plain",
+                max_output_tokens=65536,
+            ),
+        )
+
+        # Check if output was truncated
+        if (
+            response.candidates
+            and response.candidates[0].finish_reason
+            and response.candidates[0].finish_reason.name == "MAX_TOKENS"
+        ):
+            logger.warning(f"Chunk {chunk_index + 1} may be incomplete - hit token limit")
+
+        return response
+
+    def _merge_chunk_transcripts(
+        self,
+        chunks: list[Transcript],
+        chunk_duration: int = CHUNK_DURATION_SECONDS,
+        overlap: int = OVERLAP_SECONDS,
+    ) -> Transcript:
+        """Merge transcripts from overlapping chunks into a single transcript.
+
+        Args:
+            chunks: List of transcripts from each chunk
+            chunk_duration: Duration of each chunk in seconds
+            overlap: Overlap between chunks in seconds
+
+        Returns:
+            Merged transcript with adjusted timestamps
+        """
+        if not chunks:
+            return Transcript(segments=[], source="gemini", language="en", episode_url="")
+
+        if len(chunks) == 1:
+            return chunks[0]
+
+        merged_segments: list[TranscriptSegment] = []
+        step = chunk_duration - overlap  # Time step between chunk starts
+
+        for chunk_idx, chunk in enumerate(chunks):
+            # Calculate time offset for this chunk
+            time_offset = chunk_idx * step
+
+            # For each segment in this chunk, adjust timestamps
+            for segment in chunk.segments:
+                # Skip segments in the overlap zone (except for first/last chunk)
+                # For middle chunks, skip first `overlap` seconds (covered by previous chunk)
+                if chunk_idx > 0 and segment.start < overlap:
+                    continue
+
+                # Adjust timestamp to global time
+                adjusted_segment = TranscriptSegment(
+                    text=segment.text,
+                    start=segment.start + time_offset,
+                    duration=segment.duration,
+                )
+                merged_segments.append(adjusted_segment)
+
+        # Sort by start time and remove potential duplicates
+        merged_segments.sort(key=lambda s: s.start)
+
+        # Recalculate durations
+        for i in range(len(merged_segments) - 1):
+            merged_segments[i].duration = merged_segments[i + 1].start - merged_segments[i].start
+
+        # Combine summaries if present
+        summaries = [c.summary for c in chunks if c.summary]
+        combined_summary = " ".join(summaries) if summaries else ""
+
+        return Transcript(
+            segments=merged_segments,
+            source="gemini",
+            language="en",
+            episode_url="",  # Will be set by caller
+            summary=combined_summary,
+        )
+
+    def _transcribe_sync(self, audio_path: Path) -> types.GenerateContentResponse:
+        """Synchronous transcription for thread pool execution.
+
+        Args:
+            audio_path: Path to audio file
+
+        Returns:
+            Gemini API response with structured JSON output
+        """
+        # Apply rate limiting before API call
+        limiter = get_rate_limiter("gemini")
+        limiter.acquire()
+
+        # Upload audio file using new SDK
+        audio_file = self.client.files.upload(file=audio_path)
+
+        # Generate transcript with plain text prompt
+        # Using plain text instead of JSON to avoid truncation issues with long podcasts
+        # (JSON mode hits token limits and produces malformed output - see ADR-034)
+        prompt = (
+            "Transcribe this audio file in plain text format.\n\n"
+            "IMPORTANT FORMAT REQUIREMENTS:\n"
+            "1. Start with a brief summary paragraph (2-3 sentences) on its own line, "
+            "prefixed with 'SUMMARY:'\n"
+            "2. Then transcribe the full content with timestamps\n"
+            "3. Use this exact format for each segment:\n"
+            "   [MM:SS] Speaker Name: What they said...\n"
+            "4. Use HH:MM:SS for podcasts over 1 hour\n"
+            "5. Identify speakers by name when possible, "
+            "otherwise use 'Speaker 1', 'Speaker 2', etc.\n"
+            "6. Capture all spoken words verbatim with proper punctuation\n\n"
+            "Example output:\n"
+            "SUMMARY: This episode discusses AI developments "
+            "and their impact on software engineering.\n\n"
+            "[00:00] Host: Welcome to the show. Today we're talking about...\n"
+            "[00:15] Guest: Thanks for having me. I've been working on...\n"
+        )
+
+        response = self.client.models.generate_content(
+            model=self.model_name,
+            contents=[audio_file, prompt],
+            config=types.GenerateContentConfig(
+                response_mime_type="text/plain",
+                max_output_tokens=65536,  # Support long transcripts (2+ hours)
+            ),
+        )
+
+        # Check if output was truncated due to token limit
+        if (
+            response.candidates
+            and response.candidates[0].finish_reason
+            and response.candidates[0].finish_reason.name == "MAX_TOKENS"
+        ):
+            logger.warning(
+                "Transcript may be incomplete - output hit token limit. "
+                "Consider processing shorter audio segments."
+            )
 
         return response
 
     def _parse_response(
-        self, response: GenerateContentResponse, audio_path: Path, episode_url: str | None
+        self, response: types.GenerateContentResponse, audio_path: Path, episode_url: str | None
     ) -> Transcript:
-        """Parse Gemini response into Transcript object.
+        """Parse Gemini plain text response into Transcript object.
 
         Args:
-            response: Gemini API response
+            response: Gemini API response with plain text content
             audio_path: Path to audio file (for metadata)
             episode_url: Optional episode URL
 
         Returns:
-            Transcript object
+            Transcript object with summary and segments
         """
+        import re
+
         if not response.text:
             raise APIError("Gemini returned empty transcript")
 
-        # Parse transcript text into segments
-        # Gemini doesn't provide native segment timestamps, so we create one large segment
-        # (Future enhancement: parse timestamp markers from response)
-        segments = [
-            TranscriptSegment(
-                text=response.text.strip(),
-                start=0.0,
-                duration=0.0,  # Unknown duration
+        text = response.text.strip()
+
+        # Extract summary if present (SUMMARY: prefix)
+        summary = ""
+        summary_match = re.match(r"^SUMMARY:\s*(.+?)(?:\n\n|\n\[)", text, re.DOTALL | re.IGNORECASE)
+        if summary_match:
+            summary = summary_match.group(1).strip()
+
+        # Parse timestamp markers: [HH:MM:SS] or [MM:SS] followed by Speaker: text
+        # Pattern matches: [00:00] Speaker Name: text or [00:00:00] Speaker: text
+        timestamp_pattern = r"\[(\d{1,2}:\d{2}(?::\d{2})?)\]\s*([^:]+):\s*"
+
+        segments: list[TranscriptSegment] = []
+        matches = list(re.finditer(timestamp_pattern, text))
+
+        for i, match in enumerate(matches):
+            timestamp_str = match.group(1)
+            speaker = match.group(2).strip()
+
+            # Get text until next timestamp or end
+            start_pos = match.end()
+            end_pos = matches[i + 1].start() if i + 1 < len(matches) else len(text)
+            segment_text = text[start_pos:end_pos].strip()
+
+            # Parse timestamp to seconds
+            start_seconds = self._parse_timestamp(timestamp_str)
+
+            # Format text with speaker label (preserve original format)
+            formatted_text = f"[{timestamp_str}] {speaker}: {segment_text}"
+
+            segments.append(
+                TranscriptSegment(
+                    text=formatted_text,
+                    start=start_seconds,
+                    duration=0.0,  # Will calculate from next segment
+                )
             )
-        ]
+
+        # Calculate durations from consecutive timestamps
+        for i in range(len(segments) - 1):
+            segments[i].duration = segments[i + 1].start - segments[i].start
+
+        # Fallback if no segments parsed - use entire text as single segment
+        if not segments:
+            segments = [
+                TranscriptSegment(
+                    text=text,
+                    start=0.0,
+                    duration=0.0,
+                )
+            ]
 
         return Transcript(
             segments=segments,
             source="gemini",
-            language="en",  # Gemini auto-detects, defaulting to English
+            language="en",
             episode_url=episode_url or str(audio_path),
+            summary=summary,
         )
+
+    def _parse_timestamp(self, timestamp: str) -> float:
+        """Parse MM:SS timestamp to seconds.
+
+        Args:
+            timestamp: Timestamp string in MM:SS format
+
+        Returns:
+            Time in seconds
+        """
+        try:
+            parts = timestamp.split(":")
+            if len(parts) == 2:
+                minutes, seconds = int(parts[0]), int(parts[1])
+                return minutes * 60 + seconds
+            elif len(parts) == 3:
+                hours, minutes, seconds = int(parts[0]), int(parts[1]), int(parts[2])
+                return hours * 3600 + minutes * 60 + seconds
+        except (ValueError, IndexError):
+            pass
+        return 0.0
 
 
 class GeminiTranscriberWithSegments(GeminiTranscriber):
@@ -289,7 +734,7 @@ class GeminiTranscriberWithSegments(GeminiTranscriber):
     """
 
     def _parse_response(
-        self, response: GenerateContentResponse, audio_path: Path, episode_url: str | None
+        self, response: types.GenerateContentResponse, audio_path: Path, episode_url: str | None
     ) -> Transcript:
         """Parse Gemini response with timestamp extraction.
 

@@ -88,16 +88,13 @@ class APIUsage(BaseModel):
 
     # Unique identifier for true deduplication
     usage_id: str = Field(
-        default_factory=lambda: str(uuid4()),
-        description="Unique identifier for this usage record"
+        default_factory=lambda: str(uuid4()), description="Unique identifier for this usage record"
     )
 
-    provider: Literal["gemini", "claude", "youtube"] = Field(
-        ..., description="API provider"
-    )
+    provider: Literal["gemini", "claude", "youtube"] = Field(..., description="API provider")
     model: str = Field(..., description="Model used (e.g., gemini-2.5-flash)")
-    operation: Literal["transcription", "extraction", "tag_generation", "interview"] = (
-        Field(..., description="Type of operation")
+    operation: Literal["transcription", "extraction", "tag_generation", "interview"] = Field(
+        ..., description="Type of operation"
     )
 
     # Token usage
@@ -109,13 +106,9 @@ class APIUsage(BaseModel):
     cost_usd: float = Field(0.0, ge=0, description="Cost in USD")
 
     # Context
-    timestamp: datetime = Field(
-        default_factory=now_utc, description="When operation occurred"
-    )
+    timestamp: datetime = Field(default_factory=now_utc, description="When operation occurred")
     episode_title: str | None = Field(None, description="Episode title if applicable")
-    template_name: str | None = Field(
-        None, description="Template name if applicable"
-    )
+    template_name: str | None = Field(None, description="Template name if applicable")
 
     @field_validator("timestamp", mode="before")
     @classmethod
@@ -190,8 +183,7 @@ class CostSummary(BaseModel):
             # Breakdown by episode
             if usage.episode_title:
                 summary.costs_by_episode[usage.episode_title] = (
-                    summary.costs_by_episode.get(usage.episode_title, 0.0)
-                    + usage.cost_usd
+                    summary.costs_by_episode.get(usage.episode_title, 0.0) + usage.cost_usd
                 )
 
         return summary
@@ -283,9 +275,7 @@ class CostTracker:
 
         # Both failed - archive corrupt file
         if self.costs_file.exists():
-            corrupt_backup = self.costs_file.with_suffix(
-                f".json.corrupt.{int(time.time())}"
-            )
+            corrupt_backup = self.costs_file.with_suffix(f".json.corrupt.{int(time.time())}")
             try:
                 self.costs_file.rename(corrupt_backup)
                 logger.error("Archived corrupt cost file to %s", corrupt_backup)
@@ -354,20 +344,16 @@ class CostTracker:
                     try:
                         if content.strip():
                             existing_data = json.loads(content)
-                            existing = [
-                                APIUsage.model_validate(item) for item in existing_data
-                            ]
+                            existing = [APIUsage.model_validate(item) for item in existing_data]
                         else:
                             existing = []
                     except (json.JSONDecodeError, ValueError):
                         existing = []
 
                     # Merge: add entries not already present (by unique usage_id)
-                    # This prevents false duplicate detection when same episode is processed multiple times
+                    # This prevents false duplicates when same episode is processed again
                     existing_ids = {u.usage_id for u in existing}
-                    new_entries = [
-                        u for u in self.usage_history if u.usage_id not in existing_ids
-                    ]
+                    new_entries = [u for u in self.usage_history if u.usage_id not in existing_ids]
                     combined = existing + new_entries
 
                     # Write to temp file
@@ -435,7 +421,7 @@ class CostTracker:
             output_tokens=output_tokens,
         )
 
-        # Create usage record
+        # Create usage record (provider/operation are str but APIUsage expects Literal types)
         usage = APIUsage(
             provider=provider,  # type: ignore[arg-type]
             model=model,
@@ -516,9 +502,7 @@ class CostTracker:
         Returns:
             List of recent APIUsage records (newest first)
         """
-        sorted_usage = sorted(
-            self.usage_history, key=lambda u: u.timestamp, reverse=True
-        )
+        sorted_usage = sorted(self.usage_history, key=lambda u: u.timestamp, reverse=True)
         return sorted_usage[:limit]
 
     def clear(self) -> None:

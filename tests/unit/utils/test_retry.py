@@ -4,7 +4,6 @@ from unittest.mock import patch
 
 import pytest
 
-from inkwell.utils.errors import SecurityError
 from inkwell.utils.retry import (
     TEST_RETRY_CONFIG,
     AuthenticationError,
@@ -122,7 +121,7 @@ class TestWithRetryDecorator:
             call_count += 1
             raise AuthenticationError("Invalid API key")
 
-        with pytest.raises(SecurityError):
+        with pytest.raises(AuthenticationError):
             auth_error_call()
 
         assert call_count == 1  # No retries
@@ -236,7 +235,7 @@ class TestSpecializedRetryDecorators:
 class TestExponentialBackoff:
     """Test exponential backoff timing."""
 
-    @patch('time.sleep')
+    @patch("time.sleep")
     def test_backoff_timing_without_jitter(self, mock_sleep):
         """Test backoff timing without jitter."""
         config = RetryConfig(max_attempts=4, jitter=False)
@@ -256,7 +255,7 @@ class TestExponentialBackoff:
         # Should have 3 sleep calls (after attempts 1, 2, 3)
         assert mock_sleep.call_count == 3
 
-    @patch('time.sleep')
+    @patch("time.sleep")
     def test_backoff_max_wait_time(self, mock_sleep):
         """Test backoff respects max wait time."""
         config = RetryConfig(max_attempts=10, max_wait_seconds=10, jitter=False)
@@ -329,7 +328,7 @@ class TestRetryDecoratorsIntegration:
             call_count += 1
             raise AuthenticationError("Invalid API key")
 
-        with pytest.raises(SecurityError):
+        with pytest.raises(AuthenticationError):
             invalid_api_key()
 
         # Should only try once (no retries for auth errors)

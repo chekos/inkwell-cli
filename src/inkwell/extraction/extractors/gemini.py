@@ -1,79 +1,124 @@
-"""Gemini (Google AI) extractor implementation."""
+"""Gemini (Google AI) extractor implementation using modern google-genai SDK."""
 
 import asyncio
 from typing import Any
 
-import google.generativeai as genai
-from google.generativeai import GenerativeModel
-from google.generativeai.types import GenerateContentResponse
+from google import genai
+from google.genai import types
 
+from ...plugins.types.extraction import ExtractionPlugin
 from ...utils.api_keys import get_validated_api_key
 from ...utils.errors import APIError, ValidationError
-from ...utils.json_utils import JSONParsingError, safe_json_loads
 from ...utils.rate_limiter import get_rate_limiter
 from ..models import ExtractionTemplate
-from .base import BaseExtractor
 
 
-class GeminiExtractor(BaseExtractor):
+class GeminiExtractor(ExtractionPlugin):
     """Extractor using Gemini (Google AI) API.
 
-    Supports Gemini 2.5 Flash with:
-    - Fast, cost-effective extraction
-    - Good quality for most tasks
+    Supports Gemini 3 Pro with:
+    - Advanced reasoning capabilities
+    - High quality extraction
     - Native JSON mode for structured output
     - Long context support (1M tokens)
 
-    Cost (as of Nov 2024):
-    - Input: $0.075 per million tokens (<128K tokens)
-    - Input: $0.15 per million tokens (>128K tokens)
-    - Output: $0.30 per million tokens
+    Cost (as of Dec 2025):
+    - Input: $2.00 per million tokens (<200K tokens)
+    - Input: $4.00 per million tokens (>200K tokens)
+    - Output: $12.00 per million tokens (<200K tokens)
+    - Output: $18.00 per million tokens (>200K tokens)
     """
 
+    # Plugin metadata (required by InkwellPlugin)
+    NAME = "gemini"
+    VERSION = "1.0.0"
+    DESCRIPTION = "Google Gemini API extractor with long context support"
+
     # Model to use
-    MODEL = "gemini-2.5-flash"
+    MODEL = "gemini-3-pro-preview"
 
     # Pricing per million tokens (USD)
-    INPUT_PRICE_PER_M_SHORT = 0.075  # < 128K tokens
-    INPUT_PRICE_PER_M_LONG = 0.15  # > 128K tokens
-    OUTPUT_PRICE_PER_M = 0.30
-    CONTEXT_THRESHOLD = 128_000  # Token threshold for pricing
+    INPUT_PRICE_PER_M_SHORT = 2.00  # < 200K tokens
+    INPUT_PRICE_PER_M_LONG = 4.00  # > 200K tokens
+    INPUT_PRICE_PER_M = 2.00  # Default for base class (short context)
+    OUTPUT_PRICE_PER_M = 12.00  # < 200K tokens (using base rate)
+    CONTEXT_THRESHOLD = 200_000  # Token threshold for pricing
 
-    def __init__(self, api_key: str | None = None) -> None:
+    def __init__(self, api_key: str | None = None, *, lazy_init: bool = False) -> None:
         """Initialize Gemini extractor.
 
         Args:
-            api_key: Google AI API key (defaults to GOOGLE_API_KEY env var)
+            api_key: Google AI API key (defaults to GOOGLE_API_KEY env var).
+                    Can also be provided via configure() for plugin lifecycle.
+            lazy_init: If True, defer client initialization until first use.
+                      Used internally by plugin system. Default False maintains
+                      backward compatibility.
 
         Raises:
-            APIKeyError: If API key not provided or invalid
+            APIKeyError: If API key not provided or invalid (unless lazy_init)
         """
-        # Validate API key
+        super().__init__()
+
+        # Store provided key for lazy initialization
+        self._provided_api_key = api_key
+        self._client: genai.Client | None = None
+
+        # Initialize immediately unless lazy_init requested (backward compat)
+        if not lazy_init:
+            self._init_client(api_key)
+
+    def _init_client(self, api_key: str | None = None) -> None:
+        """Initialize API client with the given or configured API key."""
         if api_key:
-            # If provided directly, still validate it
             from ...utils.api_keys import validate_api_key
 
             self.api_key = validate_api_key(api_key, "gemini", "GOOGLE_API_KEY")
         else:
-            # Get from environment and validate
             self.api_key = get_validated_api_key("GOOGLE_API_KEY", "gemini")
 
-        # Configure API
-        genai.configure(api_key=self.api_key)
-        self.model = GenerativeModel(self.MODEL)
+        self._client = genai.Client(api_key=self.api_key)
+
+    @property
+    def client(self) -> genai.Client:
+        """Get client, initializing if needed."""
+        if self._client is None:
+            self._init_client(self._provided_api_key)
+        return self._client  # type: ignore[return-value]
+
+    def configure(
+        self,
+        config: dict[str, Any],
+        cost_tracker: "Any | None" = None,
+    ) -> None:
+        """Configure the plugin with settings and cost tracker.
+
+        Args:
+            config: Plugin configuration. May include 'api_key'.
+            cost_tracker: Optional cost tracker for API usage tracking.
+        """
+        super().configure(config, cost_tracker)
+
+        # Initialize client with config API key if provided
+        api_key = config.get("api_key") or self._provided_api_key
+        if api_key or self._client is None:
+            self._init_client(api_key)
 
     async def extract(
         self,
         template: ExtractionTemplate,
         transcript: str,
         metadata: dict[str, Any],
+        force_json: bool = False,
+        max_tokens_override: int | None = None,
     ) -> str:
         """Extract content using Gemini.
 
         Args:
             template: Extraction template configuration
-            transcript: Full transcript text
+            transcript: Full transcript text (or pre-built batched prompt)
             metadata: Episode metadata
+            force_json: Force JSON response mode (for batch extraction)
+            max_tokens_override: Override template's max_tokens (for batch extraction)
 
         Returns:
             Raw LLM response string
@@ -82,28 +127,45 @@ class GeminiExtractor(BaseExtractor):
             ProviderError: If API call fails
             ValidationError: If response format invalid
         """
-        # Build prompt
-        user_prompt = self.build_prompt(template, transcript, metadata)
+        # For batch extraction (force_json=True), transcript IS the pre-built prompt
+        # Otherwise, build prompt from template
+        if force_json:
+            # Transcript is already the full batched prompt
+            full_prompt = transcript
+        else:
+            # Build prompt normally
+            user_prompt = self.build_prompt(template, transcript, metadata)
+            # Combine system prompt and user prompt
+            # Gemini doesn't have separate system message, so prepend it
+            full_prompt = f"{template.system_prompt}\n\n{user_prompt}"
 
-        # Combine system prompt and user prompt
-        # Gemini doesn't have separate system message, so prepend it
-        full_prompt = f"{template.system_prompt}\n\n{user_prompt}"
-
-        # Configure generation
-        generation_config = {
+        # Build generation config
+        max_tokens = max_tokens_override if max_tokens_override else template.max_tokens
+        config_kwargs: dict[str, Any] = {
             "temperature": template.temperature,
-            "max_output_tokens": template.max_tokens,
+            "max_output_tokens": max_tokens,
         }
 
-        # Add JSON mode if expected format is JSON
-        if template.expected_format == "json" and template.output_schema:
-            generation_config["response_mime_type"] = "application/json"
+        # Add JSON mode if expected format is JSON or forced (for batch extraction)
+        if force_json or (template.expected_format == "json" and template.output_schema):
+            config_kwargs["response_mime_type"] = "application/json"
+            # Pass schema if available and not in batch mode (batch has its own schema)
+            if not force_json and template.output_schema:
+                config_kwargs["response_json_schema"] = template.output_schema
+
+        config = types.GenerateContentConfig(**config_kwargs)
 
         try:
-            # Make API call (Gemini SDK doesn't have async version for generate_content)
-            # We'll use the sync version and await it
-            response: GenerateContentResponse = await self._generate_async(
-                full_prompt, generation_config
+            # Apply rate limiting before API call
+            limiter = get_rate_limiter("gemini")
+            limiter.acquire()
+
+            # Make async API call using thread pool (SDK is sync)
+            response = await asyncio.to_thread(
+                self.client.models.generate_content,
+                model=self.MODEL,
+                contents=full_prompt,
+                config=config,
             )
 
             # Extract text from response
@@ -112,8 +174,8 @@ class GeminiExtractor(BaseExtractor):
 
             result = response.text
 
-            # Validate JSON if schema provided
-            if template.expected_format == "json" and template.output_schema:
+            # Validate JSON if schema provided (and not forced - batch handles its own validation)
+            if not force_json and template.expected_format == "json" and template.output_schema:
                 self._validate_json_output(result, template.output_schema)
 
             return result
@@ -124,32 +186,6 @@ class GeminiExtractor(BaseExtractor):
 
             # Wrap API errors
             raise APIError(f"Gemini API error: {str(e)}", provider="gemini") from e
-
-    async def _generate_async(
-        self, prompt: str, generation_config: dict[str, Any]
-    ) -> GenerateContentResponse:
-        """Generate content using Gemini API (async wrapper).
-
-        The Gemini SDK is synchronous, so we run it in a thread pool
-        to avoid blocking the event loop and enable concurrent processing.
-
-        Args:
-            prompt: Full prompt text
-            generation_config: Generation configuration
-
-        Returns:
-            Response from Gemini
-        """
-        # Apply rate limiting before API call
-        limiter = get_rate_limiter("gemini")
-        limiter.acquire()
-
-        # Run sync SDK call in thread pool to avoid blocking event loop
-        return await asyncio.to_thread(
-            self.model.generate_content,
-            prompt,
-            generation_config=generation_config
-        )
 
     def estimate_cost(
         self,
@@ -203,28 +239,3 @@ class GeminiExtractor(BaseExtractor):
             True (Gemini supports JSON mode via response_mime_type)
         """
         return True
-
-    def _validate_json_output(self, output: str, schema: dict[str, Any]) -> None:
-        """Validate JSON output against schema.
-
-        Args:
-            output: JSON string from LLM
-            schema: JSON Schema to validate against
-
-        Raises:
-            ValidationError: If validation fails
-        """
-        try:
-            # Use safe JSON parsing with size/depth limits
-            # 5MB for extraction results, depth of 10 for structured data
-            data = safe_json_loads(output, max_size=5_000_000, max_depth=10)
-        except JSONParsingError as e:
-            raise ValidationError(f"Invalid JSON from Gemini: {str(e)}") from e
-
-        # Basic schema validation
-        if "required" in schema:
-            for field in schema["required"]:
-                if field not in data:
-                    raise ValidationError(
-                        f"Missing required field '{field}' in Gemini output", schema=schema
-                    )

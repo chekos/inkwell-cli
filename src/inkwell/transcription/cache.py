@@ -3,6 +3,7 @@
 import asyncio
 import hashlib
 import json
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -15,14 +16,15 @@ from inkwell.utils.cache import CacheError, FileCache
 __all__ = ["TranscriptCache", "CacheError"]
 
 
-class TranscriptCache(FileCache[Transcript]):
+class TranscriptCache:
     """File-based cache for transcripts.
 
     Uses SHA256 hashes of episode URLs as cache keys.
     Stores transcripts as JSON files with metadata.
     Implements TTL-based expiration (default: 30 days).
 
-    Inherits from FileCache[Transcript] for all core cache operations.
+    Uses composition with FileCache[Transcript] for core cache operations,
+    providing a clean domain-specific API.
     """
 
     def __init__(
@@ -39,13 +41,17 @@ class TranscriptCache(FileCache[Transcript]):
         if cache_dir is None:
             cache_dir = Path(user_cache_dir("inkwell", "inkwell")) / "transcripts"
 
-        super().__init__(
+        self._cache = FileCache[Transcript](
             cache_dir=cache_dir,
             ttl_days=ttl_days,
             serializer=self._serialize_transcript,
             deserializer=self._deserialize_transcript,
             key_generator=self._make_cache_key,
         )
+
+        # Expose cache_dir for compatibility
+        self.cache_dir = cache_dir
+        self.ttl_days = ttl_days
 
     def _make_cache_key(self, episode_url: str) -> str:
         """Generate cache key from episode URL.
@@ -58,7 +64,7 @@ class TranscriptCache(FileCache[Transcript]):
         """
         return hashlib.sha256(episode_url.encode("utf-8")).hexdigest()
 
-    def _serialize_transcript(self, transcript: Transcript) -> dict:
+    def _serialize_transcript(self, transcript: Transcript) -> dict[str, Any]:
         """Serialize transcript to dict for JSON storage.
 
         Args:
@@ -72,7 +78,7 @@ class TranscriptCache(FileCache[Transcript]):
             "episode_url": transcript.episode_url,
         }
 
-    def _deserialize_transcript(self, data: dict) -> Transcript:
+    def _deserialize_transcript(self, data: dict[str, Any]) -> Transcript:
         """Deserialize transcript from stored data.
 
         Args:
@@ -86,7 +92,6 @@ class TranscriptCache(FileCache[Transcript]):
         transcript.source = "cached"
         return transcript
 
-    # Convenience methods that match the original API
     async def get(self, episode_url: str) -> Transcript | None:
         """Get transcript from cache.
 
@@ -96,7 +101,7 @@ class TranscriptCache(FileCache[Transcript]):
         Returns:
             Transcript if found and not expired, None otherwise
         """
-        return await super().get(episode_url)
+        return await self._cache.get(episode_url)
 
     async def set(self, episode_url: str, transcript: Transcript) -> None:
         """Save transcript to cache.
@@ -108,7 +113,7 @@ class TranscriptCache(FileCache[Transcript]):
         Raises:
             CacheError: If caching fails
         """
-        await super().set(episode_url, value=transcript)
+        await self._cache.set(episode_url, value=transcript)
 
     async def delete(self, episode_url: str) -> bool:
         """Delete transcript from cache.
@@ -119,7 +124,23 @@ class TranscriptCache(FileCache[Transcript]):
         Returns:
             True if deleted, False if not found
         """
-        return await super().delete(episode_url)
+        return await self._cache.delete(episode_url)
+
+    async def clear(self) -> int:
+        """Clear all cached values.
+
+        Returns:
+            Number of cache entries deleted
+        """
+        return await self._cache.clear()
+
+    async def clear_expired(self) -> int:
+        """Clear expired cache entries.
+
+        Returns:
+            Number of expired entries deleted
+        """
+        return await self._cache.clear_expired()
 
     # Helper methods for compatibility with original implementation
     def _get_cache_key(self, episode_url: str) -> str:
@@ -145,7 +166,7 @@ class TranscriptCache(FileCache[Transcript]):
         cache_key = self._make_cache_key(episode_url)
         return self.cache_dir / f"{cache_key}.json"
 
-    def _is_expired(self, cached_at) -> bool:
+    def _is_expired(self, cached_at: datetime) -> bool:
         """Check if cache entry is expired (compatibility method).
 
         Args:
@@ -154,7 +175,7 @@ class TranscriptCache(FileCache[Transcript]):
         Returns:
             True if expired, False otherwise
         """
-        return super()._is_expired(cached_at)
+        return self._cache._is_expired(cached_at)
 
     async def _delete_file(self, path: Path) -> None:
         """Delete file asynchronously (compatibility method).
@@ -162,7 +183,7 @@ class TranscriptCache(FileCache[Transcript]):
         Args:
             path: Path to file to delete
         """
-        await super()._delete_file(path)
+        await self._cache._delete_file(path)
 
     async def stats(self) -> dict[str, Any]:
         """Get cache statistics (with transcript-specific source tracking).
@@ -195,13 +216,14 @@ class TranscriptCache(FileCache[Transcript]):
                     data = json.loads(content)
 
                 # Check expiration
-                from datetime import datetime
-
                 cached_at = datetime.fromisoformat(data["cached_at"])
                 is_expired = self._is_expired(cached_at)
 
                 # Get source from transcript data
-                source = data.get("transcript", {}).get("source", "unknown")
+                # Handle old format (data["transcript"]) and new format
+                # (data["value"]["transcript"])
+                value_data = data.get("value", data)  # Fallback for old format
+                source = value_data.get("transcript", {}).get("source", "unknown")
 
                 return {
                     "size": file_size,

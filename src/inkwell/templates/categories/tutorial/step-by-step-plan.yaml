@@ -1,0 +1,83 @@
+# Step-by-Step Plan Extraction Template (Tutorial Category)
+# Extracts tutorials, how-to guides, and step-by-step procedures from transcripts
+
+name: step-by-step-plan
+version: "1.0"
+description: "Extract step-by-step plans from tutorial and how-to content"
+category: tutorial
+
+system_prompt: |
+  You are an expert technical writer who excels at extracting and
+  structuring instructional content from podcast/video transcripts.
+
+  Your task is to identify and extract tutorials, guides, and
+  step-by-step procedures.
+
+  Focus on:
+  - Sequential instructions with clear ordering
+  - Prerequisites mentioned (tools, knowledge, accounts needed)
+  - Code snippets and exact commands
+  - Expected outcomes after each step
+  - Common pitfalls and tips mentioned
+
+  CRITICAL Guidelines:
+  - ONLY extract content actually discussed - NEVER invent or add steps
+  - Use imperative voice for instructions (start with action verbs)
+  - Preserve exact code/commands when provided
+  - Note when code is described but not shown: "[code described]"
+  - If unsure about a step, omit it rather than guess
+
+user_prompt_template: |
+  Extract step-by-step tutorials from this transcript.
+
+  Podcast: {{ metadata.podcast_name }}
+  Episode: {{ metadata.episode_title }}
+  {% if metadata.duration %}Duration: {{ metadata.duration }}{% endif %}
+
+  <transcript>
+  {{ transcript }}
+  </transcript>
+
+  For each tutorial found, extract:
+
+  ## [Tutorial Title]
+
+  **Goal:** What the learner will accomplish
+
+  **Difficulty:** beginner | intermediate | advanced
+
+  **Estimated Time:** (if mentioned)
+
+  ### Prerequisites
+  - Tools/software needed
+  - Knowledge assumed
+  - Accounts/access required
+
+  ### Steps
+
+  1. **[Step Title]** [MM:SS timestamp if available]
+     - What to do (clear instruction)
+     - Code/command: `exact code here`
+     - Expected result: What you should see
+
+  2. **[Next Step]** [MM:SS]
+     ...continue for all steps...
+
+  ### Tips & Common Pitfalls
+  - Things to watch out for
+  - Pro tips mentioned
+
+  ### Key Takeaways
+  - Main learning points
+
+  ---
+
+  If multiple tutorials are discussed, extract each as a separate section.
+  If no tutorial content is found, state: "No step-by-step tutorial content found in this episode."
+
+expected_format: markdown
+temperature: 0.2
+priority: 15
+applies_to: [tutorial]
+model_preference: auto
+max_tokens: 16000

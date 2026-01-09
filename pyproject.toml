@@ -1,15 +1,25 @@
 [project]
 name = "inkwell-cli"
-version = "1.0.0"
+dynamic = ["version"]
 description = "Transform podcast episodes into structured markdown notes"
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
 authors = [
-    {name = "Inkwell Contributors"}
+    {name = "Sergio Sanchez", email = "chekos@users.noreply.github.com"}
+]
+keywords = [
+    "podcast",
+    "transcription",
+    "markdown",
+    "notes",
+    "obsidian",
+    "cli",
+    "ai",
+    "llm",
 ]
 classifiers = [
-    "Development Status :: 5 - Production/Stable",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "Intended Audience :: End Users/Desktop",
     "License :: OSI Approved :: MIT License",
@@ -21,22 +31,31 @@ classifiers = [
     "Topic :: Text Processing :: Markup :: Markdown",
 ]
 dependencies = [
-    "typer[all]>=0.12.0",
-    "pyyaml>=6.0",
-    "feedparser>=6.0.0",
-    "pydantic>=2.0.0",
-    "pydantic-settings>=2.0.0",
-    "cryptography>=42.0.0",
-    "httpx>=0.27.0",
-    "platformdirs>=4.0.0",
-    "youtube-transcript-api>=1.2.3",
-    "yt-dlp>=2025.10.22",
-    "google-generativeai>=0.8.5",
+    "typer>=0.15.0",
+    "rich>=14.0.0",
+    "pyyaml>=6.0.2",
+    "feedparser>=6.0.11",
+    "pydantic>=2.10.0",
+    "pydantic-settings>=2.10.0",
+    "cryptography>=44.0.0",
+    "httpx>=0.28.0",
+    "platformdirs>=4.3.0",
+    "youtube-transcript-api>=1.0.0",
+    "yt-dlp>=2025.1.0",
+    "google-genai>=1.0.0",
     "anthropic>=0.72.0",
-    "tenacity>=9.1.2",
-    "regex>=2023.12.25",
-    "aiofiles>=23.2.0",
+    "tenacity>=9.0.0",
+    "regex>=2024.11.0",
+    "aiofiles>=24.1.0",
+    "jinja2>=3.1.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/chekos/inkwell-cli"
+Documentation = "https://github.com/chekos/inkwell-cli#readme"
+Repository = "https://github.com/chekos/inkwell-cli.git"
+Issues = "https://github.com/chekos/inkwell-cli/issues"
+Changelog = "https://github.com/chekos/inkwell-cli/releases"
 
 [project.optional-dependencies]
 dev = [
@@ -54,17 +73,41 @@ dev = [
 [project.scripts]
 inkwell = "inkwell.cli:app"
 
+# Plugin entry points - built-in plugins registered here
+# Third-party plugins can register their own entry points
+[project.entry-points."inkwell.plugins.extraction"]
+claude = "inkwell.extraction.extractors.claude:ClaudeExtractor"
+gemini = "inkwell.extraction.extractors.gemini:GeminiExtractor"
+
+[project.entry-points."inkwell.plugins.transcription"]
+youtube = "inkwell.transcription.youtube:YouTubeTranscriber"
+gemini = "inkwell.transcription.gemini:GeminiTranscriber"
+
+[project.entry-points."inkwell.plugins.output"]
+markdown = "inkwell.output.markdown:MarkdownOutput"
+
 [build-system]
-requires = ["setuptools>=61.0", "wheel"]
+requires = ["setuptools>=61.0", "wheel", "setuptools-scm>=8.0"]
 build-backend = "setuptools.build_meta"
+
+[tool.setuptools_scm]
+# Version from git tags (e.g., v0.9.0 -> 0.9.0)
+version_scheme = "guess-next-dev"
+local_scheme = "no-local-version"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+inkwell = ["templates/**/*.yaml"]
 
 [tool.ruff]
 line-length = 100
 target-version = "py310"
 src = ["src"]
+extend-exclude = [
+    "docs/building-in-public/research/*.py",  # Research examples, not production code
+]
 
 [tool.ruff.lint]
 select = [
@@ -82,8 +125,27 @@ select = [
 ignore = []
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**/*.py" = ["S101"]  # Allow assert in tests
-"src/inkwell/cli.py" = ["B008"]  # Allow typer.Option in function defaults (Typer pattern)
+"tests/**/*.py" = [
+    "S101",  # Allow assert in tests
+    "F841",  # Unused variables (often for side effects in tests)
+    "PT011", # Allow broad pytest.raises (exception type matching is often sufficient)
+    "A002",  # Allow shadowing builtins in test fixtures (e.g., 'id' parameter)
+    "A004",  # Allow importing names that shadow builtins (ConnectionError, TimeoutError)
+    "B017",  # Allow asserting on Exception for error handling tests
+    "E501",  # Allow long lines in tests (test descriptions, assertions)
+    "E741",  # Allow ambiguous variable names in lambdas (e.g., `l` for length)
+    "B007",  # Allow unused loop control variables in tests
+]
+"src/inkwell/cli.py" = [
+    "B008",  # Allow typer.Option in function defaults (Typer pattern)
+    "B023",  # Allow loop variable capture in progress callbacks (intentional design)
+]
+"src/inkwell/utils/retry.py" = ["A001"]  # Intentional custom exception classes (TimeoutError, ConnectionError)
+"benchmarks/**/*.py" = [
+    "E501",  # Long lines in benchmarks are acceptable
+    "E402",  # Module imports not at top (needed for path manipulation)
+    "F401",  # Unused imports (may be for timing setup)
+]
 
 [tool.mypy]
 python_version = "3.10"
@@ -102,9 +164,15 @@ python_files = "test_*.py"
 python_classes = "Test*"
 python_functions = "test_*"
 addopts = [
-    "-v",
+    "--tb=line",       # One-line tracebacks (shortest)
+    "--no-header",     # No pytest header
+    "-q",              # Quiet mode
 ]
 asyncio_mode = "auto"
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::PendingDeprecationWarning",
+]
 
 [tool.coverage.run]
 source = ["src/inkwell"]
@@ -131,6 +199,7 @@ dev = [
     "mypy>=1.18.2",
     "pytest>=8.4.2",
     "pytest-asyncio>=1.2.0",
+    "pytest-cov>=7.0.0",
     "pytest-mock>=3.15.1",
     "respx>=0.22.0",
     "ruff>=0.14.4",

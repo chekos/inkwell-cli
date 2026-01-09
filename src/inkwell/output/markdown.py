@@ -4,16 +4,21 @@ Formats extracted content as markdown files with YAML frontmatter.
 """
 
 import json
+import warnings
 from datetime import datetime
-from typing import Any
+from typing import Any, ClassVar
 
 import yaml
 
-from ..extraction.models import ExtractedContent, ExtractionResult
+from inkwell.extraction.models import ExtractedContent, ExtractionResult
+from inkwell.plugins.types.output import OutputPlugin
 
 
-class MarkdownGenerator:
+class MarkdownOutput(OutputPlugin):
     """Generate markdown files from extraction results.
+
+    This is the built-in output plugin that converts extraction results
+    to markdown format with YAML frontmatter.
 
     Handles:
     - YAML frontmatter for metadata
@@ -22,8 +27,9 @@ class MarkdownGenerator:
     - Clean markdown output
 
     Example:
-        >>> generator = MarkdownGenerator()
-        >>> markdown = generator.generate(result, metadata)
+        >>> output = MarkdownOutput()
+        >>> output.configure({})
+        >>> markdown = await output.render(result, metadata)
         >>> print(markdown)
         ---
         title: Episode Title
@@ -33,13 +39,32 @@ class MarkdownGenerator:
         ...
     """
 
-    def generate(
+    # Plugin metadata
+    NAME: ClassVar[str] = "markdown"
+    VERSION: ClassVar[str] = "1.0.0"
+    DESCRIPTION: ClassVar[str] = "Markdown output with YAML frontmatter"
+    AUTHOR: ClassVar[str] = "Inkwell"
+
+    # Output format metadata
+    OUTPUT_FORMAT: ClassVar[str] = "Markdown"
+    FILE_EXTENSION: ClassVar[str] = ".md"
+
+    def __init__(self, lazy_init: bool = False) -> None:
+        """Initialize the markdown output plugin.
+
+        Args:
+            lazy_init: If True, defer full initialization until configure() is called.
+                      Used by plugin discovery to instantiate without configuration.
+        """
+        super().__init__(lazy_init=lazy_init)
+
+    async def render(
         self,
         result: ExtractionResult,
         episode_metadata: dict[str, Any],
         include_frontmatter: bool = True,
     ) -> str:
-        """Generate markdown from extraction result.
+        """Render extraction result to markdown string.
 
         Args:
             result: ExtractionResult from extraction engine
@@ -62,6 +87,43 @@ class MarkdownGenerator:
 
         return "\n\n".join(parts)
 
+    def generate(
+        self,
+        result: ExtractionResult,
+        episode_metadata: dict[str, Any],
+        include_frontmatter: bool = True,
+    ) -> str:
+        """Generate markdown from extraction result (sync wrapper).
+
+        .. deprecated:: 0.12.0
+            Use :meth:`render` instead. This method will be removed in v1.0.0.
+
+        Args:
+            result: ExtractionResult from extraction engine
+            episode_metadata: Episode metadata (podcast name, title, etc.)
+            include_frontmatter: Whether to include YAML frontmatter
+
+        Returns:
+            Formatted markdown string
+        """
+        warnings.warn(
+            "MarkdownOutput.generate() is deprecated. Use await render() instead. "
+            "This method will be removed in v1.0.0.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        # Sync implementation for backward compatibility
+        parts = []
+
+        if include_frontmatter:
+            frontmatter = self._generate_frontmatter(result, episode_metadata)
+            parts.append(frontmatter)
+
+        content = self._format_content(result)
+        parts.append(content)
+
+        return "\n\n".join(parts)
+
     def _generate_frontmatter(
         self, result: ExtractionResult, episode_metadata: dict[str, Any]
     ) -> str:
@@ -78,6 +140,7 @@ class MarkdownGenerator:
 
         frontmatter_data = {
             "template": result.template_name,
+            "template_version": result.template_version,
             "podcast": episode_metadata.get("podcast_name", "Unknown"),
             "episode": episode_metadata.get("episode_title", "Unknown"),
             "date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
@@ -336,3 +399,7 @@ class MarkdownGenerator:
             Text content
         """
         return str(content.content)
+
+
+# Backward compatibility alias
+MarkdownGenerator = MarkdownOutput

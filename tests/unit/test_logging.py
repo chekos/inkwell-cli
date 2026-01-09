@@ -63,9 +63,7 @@ class TestLoggingSetup:
         # Handler should be RichHandler
         from rich.logging import RichHandler
 
-        has_rich_handler = any(
-            isinstance(h, RichHandler) for h in logger.handlers
-        )
+        has_rich_handler = any(isinstance(h, RichHandler) for h in logger.handlers)
         assert has_rich_handler
 
     def test_setup_logging_without_rich_console(self) -> None:
@@ -78,9 +76,7 @@ class TestLoggingSetup:
         # Handler should be StreamHandler (not RichHandler)
         from rich.logging import RichHandler
 
-        has_rich_handler = any(
-            isinstance(h, RichHandler) for h in logger.handlers
-        )
+        has_rich_handler = any(isinstance(h, RichHandler) for h in logger.handlers)
         assert not has_rich_handler
 
     def test_logger_clears_existing_handlers(self) -> None:

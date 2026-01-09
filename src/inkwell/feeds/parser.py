@@ -1,5 +1,6 @@
 """RSS feed parser using feedparser."""
 
+import re
 from datetime import datetime
 from email.utils import parsedate_to_datetime
 
@@ -8,11 +9,21 @@ import httpx
 
 from inkwell.config.schema import AuthConfig
 from inkwell.feeds.models import Episode
-from inkwell.utils.errors import APIError, SecurityError, ValidationError
+from inkwell.utils.errors import APIError, NotFoundError, SecurityError, ValidationError
+from inkwell.utils.retry import AuthenticationError
+
+# Maximum number of episodes that can be selected in a single request
+# Prevents resource exhaustion from large ranges like "1-1000000000"
+MAX_EPISODES_PER_SELECTION = 100
 
 
 class RSSParser:
     """Parses RSS feeds and extracts episode information."""
+
+    # Pre-compiled regex patterns for episode selection
+    _SINGLE_POSITION_PATTERN = re.compile(r"^\d+$")
+    _RANGE_PATTERN = re.compile(r"^(\d+)-(\d+)$")
+    _LIST_PATTERN = re.compile(r"^\d+(,\s*\d+)+$")
 
     def __init__(self, timeout: int = 30) -> None:
         """Initialize the RSS parser.
@@ -42,16 +53,11 @@ class RSSParser:
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 headers = self._build_auth_headers(auth)
-                response = await client.get(
-                    url, headers=headers, follow_redirects=True
-                )
+                response = await client.get(url, headers=headers, follow_redirects=True)
 
                 # Check for auth errors
                 if response.status_code == 401:
-                    raise SecurityError(
-                        f"Authentication failed for {url}. "
-                        "Check your credentials."
-                    )
+                    raise SecurityError(f"Authentication failed for {url}. Check your credentials.")
 
                 response.raise_for_status()
 
@@ -62,12 +68,8 @@ class RSSParser:
                 if feed.bozo:  # feedparser error flag
                     # Log warning but continue if we got entries
                     if not feed.entries:
-                        error_msg = getattr(
-                            feed, "bozo_exception", "Unknown parsing error"
-                        )
-                        raise ValidationError(
-                            f"Failed to parse feed from {url}: {error_msg}"
-                        )
+                        error_msg = getattr(feed, "bozo_exception", "Unknown parsing error")
+                        raise ValidationError(f"Failed to parse feed from {url}: {error_msg}")
 
                 if not feed.entries:
                     raise ValidationError(f"No episodes found in feed: {url}")
@@ -78,16 +80,12 @@ class RSSParser:
             raise APIError(f"Timeout fetching feed from {url}") from e
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 401:
-                raise AuthenticationError(
-                    f"Authentication required for {url}"
-                ) from e
+                raise AuthenticationError(f"Authentication required for {url}") from e
             raise APIError(f"HTTP error fetching {url}: {e}") from e
         except httpx.RequestError as e:
             raise APIError(f"Network error fetching {url}: {e}") from e
 
-    def _build_auth_headers(
-        self, auth: AuthConfig | None = None
-    ) -> dict[str, str]:
+    def _build_auth_headers(self, auth: AuthConfig | None = None) -> dict[str, str]:
         """Build HTTP headers for authentication.
 
         Args:
@@ -115,9 +113,7 @@ class RSSParser:
 
         return headers
 
-    def get_latest_episode(
-        self, feed: feedparser.FeedParserDict, podcast_name: str
-    ) -> Episode:
+    def get_latest_episode(self, feed: feedparser.FeedParserDict, podcast_name: str) -> Episode:
         """Extract the latest episode from a feed.
 
         Args:
@@ -163,13 +159,87 @@ class RSSParser:
             if title_keyword_lower in entry_title:
                 return self.extract_episode_metadata(entry, podcast_name)
 
-        raise ValidationError(
-            f"No episode found matching '{title_keyword}' in feed"
-        )
+        raise ValidationError(f"No episode found matching '{title_keyword}' in feed")
 
-    def extract_episode_metadata(
-        self, entry: dict, podcast_name: str
-    ) -> Episode:
+    # TODO(v0.3): Extract to EpisodeSelector class when adding "all", "last-N", date ranges
+    # See architectural review PR#22 for rationale
+    def parse_and_fetch_episodes(
+        self,
+        feed: feedparser.FeedParserDict,
+        selector: str,
+        podcast_name: str,
+    ) -> list[Episode]:
+        """Parse selector and return matching episodes.
+
+        Supports multiple selector formats:
+        - Position: "3" → episode at position 3
+        - Range: "1-5" → episodes 1 through 5 (reversed ranges auto-corrected)
+        - List: "1,3,7" → episodes at those positions
+        - Keyword: "AI security" → search by title (fallback)
+
+        Args:
+            feed: Parsed RSS feed
+            selector: Position, range, list, or keyword
+            podcast_name: Name of the podcast
+
+        Returns:
+            List of matching episodes
+
+        Raises:
+            ValidationError: If keyword search finds no matches
+            NotFoundError: If numeric positions are valid but out of bounds
+                for the feed (e.g., position 50 in a 10-episode feed)
+        """
+        selector = selector.strip()
+        feed_size = len(feed.entries)
+
+        # Single position: "3"
+        if self._SINGLE_POSITION_PATTERN.match(selector):
+            positions = [int(selector)]
+
+        # Range: "1-5" (auto-correct reversed ranges)
+        elif range_match := self._RANGE_PATTERN.match(selector):
+            start, end = int(range_match.group(1)), int(range_match.group(2))
+            range_size = abs(end - start) + 1
+            if range_size > MAX_EPISODES_PER_SELECTION:
+                raise ValidationError(
+                    f"Range '{selector}' contains {range_size} episodes, "
+                    f"maximum is {MAX_EPISODES_PER_SELECTION}",
+                    suggestion="Select fewer episodes or use multiple smaller requests",
+                )
+            positions = list(range(min(start, end), max(start, end) + 1))
+
+        # List: "1,3,7"
+        elif self._LIST_PATTERN.match(selector):
+            positions = [int(x.strip()) for x in selector.split(",")]
+            if len(positions) > MAX_EPISODES_PER_SELECTION:
+                raise ValidationError(
+                    f"List contains {len(positions)} episodes, "
+                    f"maximum is {MAX_EPISODES_PER_SELECTION}",
+                    suggestion="Select fewer episodes or use multiple smaller requests",
+                )
+
+        # Keyword search (existing behavior)
+        else:
+            return [self.get_episode_by_title(feed, selector, podcast_name)]
+
+        # Validate positions
+        invalid = [p for p in positions if p < 1 or p > feed_size]
+        if invalid:
+            raise NotFoundError(
+                resource_type="Episode position",
+                resource_id=str(invalid),
+                details={"feed_size": feed_size, "requested": positions},
+                suggestion=f"Valid positions are 1-{feed_size}. "
+                f"Run 'inkwell episodes {podcast_name}' to see available episodes.",
+            )
+
+        # Fetch episodes (1-indexed to 0-indexed)
+        return [
+            self.extract_episode_metadata(feed.entries[pos - 1], podcast_name) for pos in positions
+        ]
+
+    def extract_episode_metadata(self, entry: dict, podcast_name: str) -> Episode:
         """Extract Episode model from feedparser entry.
 
         Args:
@@ -208,9 +278,10 @@ class RSSParser:
         # Extract GUID
         guid = entry.get("id") or entry.get("guid")
 
+        # url is HttpUrl but Pydantic validates str at runtime
         return Episode(
             title=title,
-            url=enclosure_url,  # type: ignore
+            url=enclosure_url,  # type: ignore[arg-type]
             published=published,
             description=description,
             duration_seconds=duration_seconds,
@@ -235,13 +306,15 @@ class RSSParser:
             if enclosure.get("type", "").startswith("audio/") or enclosure.get(
                 "type", ""
             ).startswith("video/"):
-                return enclosure.get("href") or enclosure.get("url")
+                href = enclosure.get("href") or enclosure.get("url")
+                return str(href) if href else None
 
         # Fallback: check links
         links = entry.get("links", [])
         for link in links:
             if link.get("rel") == "enclosure":
-                return link.get("href")
+                href = link.get("href")
+                return str(href) if href else None
 
         return None
 
@@ -258,12 +331,14 @@ class RSSParser:
         if hasattr(entry, "published_parsed") and entry.published_parsed:
             import time
 
-            return datetime.fromtimestamp(time.mktime(entry.published_parsed))
+            timestamp = time.mktime(entry.published_parsed)
+            return datetime.fromtimestamp(timestamp)
 
         # Try parsing published string
         if "published" in entry:
             try:
-                return parsedate_to_datetime(entry["published"])
+                parsed: datetime = parsedate_to_datetime(entry["published"])
+                return parsed
             except (ValueError, TypeError):
                 pass
 
@@ -276,6 +351,7 @@ class RSSParser:
 
         # Fallback to now
         from inkwell.utils.datetime import now_utc
+
         return now_utc()
 
     def _extract_description(self, entry: dict) -> str:
@@ -289,15 +365,16 @@ class RSSParser:
         """
         # Try summary first
         if "summary" in entry:
-            return entry["summary"]
+            return str(entry["summary"])
 
         # Try description
         if "description" in entry:
-            return entry["description"]
+            return str(entry["description"])
 
         # Try content
         if "content" in entry and entry["content"]:
-            return entry["content"][0].get("value", "")
+            value = entry["content"][0].get("value", "")
+            return str(value) if value else ""
 
         return ""
 
@@ -318,11 +395,7 @@ class RSSParser:
                 if ":" in str(duration):
                     parts = str(duration).split(":")
                     if len(parts) == 3:  # HH:MM:SS
-                        return (
-                            int(parts[0]) * 3600
-                            + int(parts[1]) * 60
-                            + int(parts[2])
-                        )
+                        return int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
                     elif len(parts) == 2:  # MM:SS
                         return int(parts[0]) * 60 + int(parts[1])
                 else:

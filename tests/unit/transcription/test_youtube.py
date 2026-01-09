@@ -10,8 +10,8 @@ from youtube_transcript_api._errors import (
     VideoUnavailable,
 )
 
-from inkwell.utils.errors import APIError
 from inkwell.transcription import YouTubeTranscriber
+from inkwell.utils.errors import APIError
 
 
 class TestYouTubeURLDetection:
@@ -136,9 +136,7 @@ class TestTranscriptFetching:
         ]
 
     @pytest.mark.asyncio
-    async def test_successful_transcript_fetch(
-        self, transcriber, mock_transcript_data
-    ):
+    async def test_successful_transcript_fetch(self, transcriber, mock_transcript_data):
         """Test successful transcript fetching."""
         url = "https://youtube.com/watch?v=test123"
 
@@ -162,9 +160,7 @@ class TestTranscriptFetching:
         assert transcript.segments[0].duration == 2.0
 
     @pytest.mark.asyncio
-    async def test_fallback_to_generated_transcript(
-        self, transcriber, mock_transcript_data
-    ):
+    async def test_fallback_to_generated_transcript(self, transcriber, mock_transcript_data):
         """Test fallback to auto-generated transcript."""
         url = "https://youtube.com/watch?v=test123"
 
@@ -231,9 +227,7 @@ class TestTranscriptFetching:
         url = "https://youtube.com/watch?v=test123"
 
         mock_transcript_list = Mock()
-        mock_transcript_list.find_transcript.side_effect = TranscriptsDisabled(
-            "test123"
-        )
+        mock_transcript_list.find_transcript.side_effect = TranscriptsDisabled("test123")
 
         with patch.object(transcriber.api, "list", return_value=mock_transcript_list):
             with pytest.raises(APIError) as exc_info:

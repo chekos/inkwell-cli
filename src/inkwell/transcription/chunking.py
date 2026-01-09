@@ -151,7 +151,7 @@ def needs_chunking(audio_path: Path, threshold: int = MIN_DURATION_FOR_CHUNKING)
         duration = get_audio_duration(audio_path)
         needs_it = duration > threshold
         logger.debug(
-            f"Audio duration: {duration:.1f}s ({duration/60:.1f} min), "
+            f"Audio duration: {duration:.1f}s ({duration / 60:.1f} min), "
             f"threshold: {threshold}s, needs_chunking: {needs_it}"
         )
         return needs_it

@@ -25,7 +25,7 @@ __all__ = [
 ]
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> type:
     """Lazy import for ExtractionEngine to avoid circular imports.
 
     The circular import chain is:

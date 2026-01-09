@@ -127,7 +127,13 @@ When implementing features:
 5. **Reflect:** Add lessons learned to `docs/building-in-public/lessons/` when complete
 6. **Update:** Keep this CLAUDE.md updated as the architecture evolves
 
-**Before committing:** Verify pre-commit hooks are installed once (`pre-commit install`). See [ADR-007](./docs/building-in-public/adr/007-enforce-pre-commit-hooks.md).
+**Before committing:** Install git hooks once after cloning:
+```bash
+./.claude/hooks/install-git-hooks.sh
+```
+This installs both pre-commit and pre-push hooks that mirror CI checks. See [ADR-007](./docs/building-in-public/adr/007-enforce-pre-commit-hooks.md).
+
+**CI Prevention:** Claude Code hooks in `.claude/settings.json` automatically run lint, format, and type checks after code changes, and full test suite before stopping.
 
 ## Releasing
 

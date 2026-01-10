@@ -33,10 +33,13 @@ console = Console()
 
 
 @app.callback()
-def list_default(ctx: typer.Context) -> None:
+def list_default(
+    ctx: typer.Context,
+    json_output: Annotated[bool, typer.Option("--json", "-j", help="Output as JSON")] = False,
+) -> None:
     """List resources. Defaults to feeds if no subcommand given."""
     if ctx.invoked_subcommand is None:
-        _list_feeds_impl()
+        _list_feeds_impl(json_output=json_output)
 
 
 @app.command("feeds")
@@ -96,7 +99,7 @@ def list_templates(
         console.print(f"\n[dim]Total: {len(names)} template(s)[/dim]")
 
     except InkwellError as e:
-        console.print(f"[red]x[/red] Error: {e}")
+        console.print(f"[red]✗[/red] Error: {e}")
         sys.exit(1)
 
 
@@ -118,7 +121,6 @@ def list_episodes(
     """
 
     async def run_episodes() -> None:
-        nonlocal json_output
         try:
             manager = ConfigManager()
 
@@ -129,7 +131,7 @@ def list_episodes(
                 if json_output:
                     print(json.dumps({"error": f"Feed '{name}' not found"}, indent=2))
                 else:
-                    console.print(f"[red]x[/red] Feed '{escape(name)}' not found.")
+                    console.print(f"[red]✗[/red] Feed '{escape(name)}' not found.")
                     console.print("  Use [cyan]inkwell list feeds[/cyan] to see configured feeds.")
                 sys.exit(1)
 
@@ -200,11 +202,11 @@ def list_episodes(
             total = len(feed.entries)
             console.print(f"\n[dim]Showing {shown} of {total} episodes[/dim]")
             console.print("\n[bold]To fetch an episode:[/bold]")
-            console.print(f"  inkwell fetch {name} --latest")
-            console.print(f'  inkwell fetch {name} --episode "keyword"')
+            console.print(f"  inkwell fetch {escape(name)} --latest")
+            console.print(f'  inkwell fetch {escape(name)} --episode "keyword"')
 
         except InkwellError as e:
-            console.print(f"[red]x[/red] Error: {e}")
+            console.print(f"[red]✗[/red] Error: {e}")
             sys.exit(1)
 
     asyncio.run(run_episodes())
@@ -256,5 +258,5 @@ def _list_feeds_impl(json_output: bool = False) -> None:
         console.print(f"\n[dim]Total: {len(feeds)} feed(s)[/dim]")
 
     except InkwellError as e:
-        console.print(f"[red]x[/red] Error: {e}")
+        console.print(f"[red]✗[/red] Error: {e}")
         sys.exit(1)

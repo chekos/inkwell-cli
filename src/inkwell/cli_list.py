@@ -360,7 +360,7 @@ def list_latest(
             _output_latest_table(results)
 
         # Exit 1 if all feeds failed
-        if all(not r.success for r in results):
+        if results and all(not r.success for r in results):
             sys.exit(1)
 
     asyncio.run(run_latest())

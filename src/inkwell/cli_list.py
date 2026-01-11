@@ -43,9 +43,9 @@ def list_default(
     ctx: typer.Context,
     json_output: Annotated[bool, typer.Option("--json", "-j", help="Output as JSON")] = False,
 ) -> None:
-    """List resources. Defaults to feeds if no subcommand given."""
+    """Show latest episode from each feed. Use subcommands for other resources."""
     if ctx.invoked_subcommand is None:
-        _list_feeds_impl(json_output=json_output)
+        _list_latest_impl(json_output=json_output)
 
 
 @app.command("feeds")
@@ -308,19 +308,8 @@ async def _fetch_latest_for_feed(
         )
 
 
-@app.command("latest")
-def list_latest(
-    json_output: Annotated[bool, typer.Option("--json", "-j", help="Output as JSON")] = False,
-) -> None:
-    """Show the latest episode from each configured feed.
-
-    Fetches all configured feeds in parallel and displays the most recent
-    episode from each. Failed feeds are shown with error messages.
-
-    Examples:
-        inkwell list latest
-        inkwell list latest --json
-    """
+def _list_latest_impl(json_output: bool = False) -> None:
+    """Fetch and display latest episode from each configured feed."""
 
     async def run_latest() -> None:
         try:
@@ -377,6 +366,22 @@ def list_latest(
             sys.exit(1)
 
     asyncio.run(run_latest())
+
+
+@app.command("latest")
+def list_latest(
+    json_output: Annotated[bool, typer.Option("--json", "-j", help="Output as JSON")] = False,
+) -> None:
+    """Show the latest episode from each configured feed.
+
+    Fetches all configured feeds in parallel and displays the most recent
+    episode from each. Failed feeds are shown with error messages.
+
+    Examples:
+        inkwell list latest
+        inkwell list latest --json
+    """
+    _list_latest_impl(json_output=json_output)
 
 
 def _output_latest_table(results: list[LatestEpisodeResult]) -> None:

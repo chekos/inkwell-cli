@@ -17,15 +17,15 @@ runner = CliRunner()
 class TestListDefault:
     """Tests for `inkwell list` (default behavior)."""
 
-    def test_list_no_args_shows_feeds(self, tmp_path: Path, monkeypatch) -> None:
-        """inkwell list with no args should show feeds (backward compat)."""
+    def test_list_no_args_shows_latest(self, tmp_path: Path, monkeypatch) -> None:
+        """inkwell list with no args should show latest episodes."""
         monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
 
         result = runner.invoke(app, ["list"])
 
         assert result.exit_code == 0
-        # Should show empty state or feeds table
-        assert "No feeds configured" in result.stdout or "Configured" in result.stdout
+        # Should show empty state or latest episodes table
+        assert "No feeds configured" in result.stdout or "Latest Episodes" in result.stdout
 
 
 class TestListFeeds:

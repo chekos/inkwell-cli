@@ -126,3 +126,49 @@ class TestEpisodesCommandRemoved:
 
         # Should fail because 'episodes' is no longer a top-level command
         assert result.exit_code != 0
+
+
+class TestListLatest:
+    """Tests for `inkwell list latest`."""
+
+    def test_list_latest_no_feeds(self, tmp_path: Path, monkeypatch) -> None:
+        """Should show helpful message when no feeds configured."""
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+
+        result = runner.invoke(app, ["list", "latest"])
+
+        assert result.exit_code == 0
+        assert "No feeds configured" in result.stdout
+
+    def test_list_latest_json_no_feeds(self, tmp_path: Path, monkeypatch) -> None:
+        """JSON output should return empty array when no feeds."""
+        import json
+
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+
+        result = runner.invoke(app, ["list", "latest", "--json"])
+
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        assert data["latest_episodes"] == []
+        assert data["total_feeds"] == 0
+        assert data["successful"] == 0
+        assert data["failed"] == 0
+
+    def test_list_latest_help_shows_command(self) -> None:
+        """inkwell list --help should show latest subcommand."""
+        result = runner.invoke(app, ["list", "--help"])
+
+        assert "latest" in result.stdout
+
+    def test_list_latest_short_flag(self, tmp_path: Path, monkeypatch) -> None:
+        """Should support -j short flag for JSON output."""
+        import json
+
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+
+        result = runner.invoke(app, ["list", "latest", "-j"])
+
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        assert "latest_episodes" in data

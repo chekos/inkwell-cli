@@ -126,3 +126,403 @@ class TestEpisodesCommandRemoved:
 
         # Should fail because 'episodes' is no longer a top-level command
         assert result.exit_code != 0
+
+
+class TestListLatest:
+    """Tests for `inkwell list latest`."""
+
+    def test_list_latest_no_feeds(self, tmp_path: Path, monkeypatch) -> None:
+        """Should show helpful message when no feeds configured."""
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+
+        result = runner.invoke(app, ["list", "latest"])
+
+        assert result.exit_code == 0
+        assert "No feeds configured" in result.stdout
+
+    def test_list_latest_json_no_feeds(self, tmp_path: Path, monkeypatch) -> None:
+        """JSON output should return empty array when no feeds."""
+        import json
+
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+
+        result = runner.invoke(app, ["list", "latest", "--json"])
+
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        assert data["latest_episodes"] == []
+        assert data["total_feeds"] == 0
+        assert data["successful"] == 0
+        assert data["failed"] == 0
+
+    def test_list_latest_help_shows_command(self) -> None:
+        """inkwell list --help should show latest subcommand."""
+        result = runner.invoke(app, ["list", "--help"])
+
+        assert "latest" in result.stdout
+
+    def test_list_latest_short_flag(self, tmp_path: Path, monkeypatch) -> None:
+        """Should support -j short flag for JSON output."""
+        import json
+
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+
+        result = runner.invoke(app, ["list", "latest", "-j"])
+
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        assert "latest_episodes" in data
+
+    def test_list_latest_single_feed_success(self, tmp_path: Path, monkeypatch) -> None:
+        """Should display latest episode from a single feed."""
+        import json
+        from datetime import datetime
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from inkwell.config.manager import ConfigManager
+        from inkwell.config.schema import AuthConfig, FeedConfig
+        from inkwell.feeds.models import Episode
+
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+
+        # Setup: configure one feed
+        manager = ConfigManager(config_dir=tmp_path)
+        manager.add_feed(
+            "test-podcast",
+            FeedConfig(
+                url="https://example.com/feed.rss",  # type: ignore
+                auth=AuthConfig(type="none"),
+            ),
+        )
+
+        # Mock the RSS parser
+        mock_episode = Episode(
+            title="Test Episode Title",
+            url="https://example.com/episode.mp3",  # type: ignore
+            published=datetime(2026, 1, 10, 12, 0, 0),
+            description="Test description",
+            duration_seconds=2730,
+            podcast_name="test-podcast",
+        )
+
+        mock_feed = MagicMock()
+        mock_feed.entries = [MagicMock()]
+
+        with patch("inkwell.cli_list.RSSParser") as mock_parser_class:
+            mock_parser = MagicMock()
+            mock_parser.fetch_feed = AsyncMock(return_value=mock_feed)
+            mock_parser.get_latest_episode = MagicMock(return_value=mock_episode)
+            mock_parser_class.return_value = mock_parser
+
+            result = runner.invoke(app, ["list", "latest", "--json"])
+
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        assert data["total_feeds"] == 1
+        assert data["successful"] == 1
+        assert data["failed"] == 0
+        assert len(data["latest_episodes"]) == 1
+        assert data["latest_episodes"][0]["status"] == "success"
+        assert data["latest_episodes"][0]["episode"]["title"] == "Test Episode Title"
+
+    def test_list_latest_partial_failure(self, tmp_path: Path, monkeypatch) -> None:
+        """Should show results from successful feeds even when some fail."""
+        import json
+        from datetime import datetime
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from inkwell.config.manager import ConfigManager
+        from inkwell.config.schema import AuthConfig, FeedConfig
+        from inkwell.feeds.models import Episode
+
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+
+        # Setup: configure two feeds
+        manager = ConfigManager(config_dir=tmp_path)
+        manager.add_feed(
+            "good-podcast",
+            FeedConfig(url="https://example.com/good.rss", auth=AuthConfig(type="none")),  # type: ignore
+        )
+        manager.add_feed(
+            "bad-podcast",
+            FeedConfig(url="https://example.com/bad.rss", auth=AuthConfig(type="none")),  # type: ignore
+        )
+
+        mock_episode = Episode(
+            title="Good Episode",
+            url="https://example.com/episode.mp3",  # type: ignore
+            published=datetime(2026, 1, 10, 12, 0, 0),
+            description="Test",
+            podcast_name="good-podcast",
+        )
+
+        mock_feed = MagicMock()
+        mock_feed.entries = [MagicMock()]
+
+        async def mock_fetch(url, auth):
+            if "bad" in url:
+                raise Exception("Network error")
+            return mock_feed
+
+        with patch("inkwell.cli_list.RSSParser") as mock_parser_class:
+            mock_parser = MagicMock()
+            mock_parser.fetch_feed = AsyncMock(side_effect=mock_fetch)
+            mock_parser.get_latest_episode = MagicMock(return_value=mock_episode)
+            mock_parser_class.return_value = mock_parser
+
+            result = runner.invoke(app, ["list", "latest", "--json"])
+
+        assert result.exit_code == 0  # Partial success = exit 0
+        data = json.loads(result.stdout)
+        assert data["successful"] == 1
+        assert data["failed"] == 1
+
+    def test_list_latest_all_fail_exit_code(self, tmp_path: Path, monkeypatch) -> None:
+        """Should exit 1 when all feeds fail."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from inkwell.config.manager import ConfigManager
+        from inkwell.config.schema import AuthConfig, FeedConfig
+
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+
+        # Setup: configure a feed
+        manager = ConfigManager(config_dir=tmp_path)
+        manager.add_feed(
+            "bad-podcast",
+            FeedConfig(url="https://example.com/bad.rss", auth=AuthConfig(type="none")),  # type: ignore
+        )
+
+        with patch("inkwell.cli_list.RSSParser") as mock_parser_class:
+            mock_parser = MagicMock()
+            mock_parser.fetch_feed = AsyncMock(side_effect=Exception("Network error"))
+            mock_parser_class.return_value = mock_parser
+
+            result = runner.invoke(app, ["list", "latest"])
+
+        assert result.exit_code == 1
+
+    def test_list_latest_empty_feed(self, tmp_path: Path, monkeypatch) -> None:
+        """Should show 'No episodes yet' for feeds with no episodes."""
+        import json
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from inkwell.config.manager import ConfigManager
+        from inkwell.config.schema import AuthConfig, FeedConfig
+        from inkwell.utils.errors import ValidationError
+
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+
+        # Setup: configure a feed
+        manager = ConfigManager(config_dir=tmp_path)
+        manager.add_feed(
+            "empty-podcast",
+            FeedConfig(url="https://example.com/empty.rss", auth=AuthConfig(type="none")),  # type: ignore
+        )
+
+        mock_feed = MagicMock()
+        mock_feed.entries = []
+
+        with patch("inkwell.cli_list.RSSParser") as mock_parser_class:
+            mock_parser = MagicMock()
+            mock_parser.fetch_feed = AsyncMock(return_value=mock_feed)
+            # get_latest_episode raises ValidationError for empty feed
+            mock_parser.get_latest_episode = MagicMock(
+                side_effect=ValidationError("No episodes found in feed")
+            )
+            mock_parser_class.return_value = mock_parser
+
+            result = runner.invoke(app, ["list", "latest", "--json"])
+
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        assert data["successful"] == 1  # Empty feed is still "success"
+        assert data["latest_episodes"][0]["status"] == "empty"
+        assert "No episodes" in data["latest_episodes"][0]["error"]
+
+    def test_list_latest_table_single_feed_success(self, tmp_path: Path, monkeypatch) -> None:
+        """Should display latest episode in table format."""
+        from datetime import datetime
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from inkwell.config.manager import ConfigManager
+        from inkwell.config.schema import AuthConfig, FeedConfig
+        from inkwell.feeds.models import Episode
+
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+
+        # Setup: configure one feed
+        manager = ConfigManager(config_dir=tmp_path)
+        manager.add_feed(
+            "test-podcast",
+            FeedConfig(
+                url="https://example.com/feed.rss",  # type: ignore
+                auth=AuthConfig(type="none"),
+            ),
+        )
+
+        mock_episode = Episode(
+            title="Test Episode Title",
+            url="https://example.com/episode.mp3",  # type: ignore
+            published=datetime(2026, 1, 10, 12, 0, 0),
+            description="Test description",
+            duration_seconds=2730,
+            podcast_name="test-podcast",
+        )
+
+        mock_feed = MagicMock()
+        mock_feed.entries = [MagicMock()]
+
+        with patch("inkwell.cli_list.RSSParser") as mock_parser_class:
+            mock_parser = MagicMock()
+            mock_parser.fetch_feed = AsyncMock(return_value=mock_feed)
+            mock_parser.get_latest_episode = MagicMock(return_value=mock_episode)
+            mock_parser_class.return_value = mock_parser
+
+            result = runner.invoke(app, ["list", "latest"])  # No --json
+
+        assert result.exit_code == 0
+        assert "Latest Episodes" in result.stdout
+        assert "test-podcast" in result.stdout
+        assert "Test Episode Title" in result.stdout
+        assert "fetched successfully" in result.stdout or "succeeded" in result.stdout
+
+    def test_list_latest_table_feeds_sorted_alphabetically(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """Feeds should be sorted by name in table output."""
+        from datetime import datetime
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from inkwell.config.manager import ConfigManager
+        from inkwell.config.schema import AuthConfig, FeedConfig
+        from inkwell.feeds.models import Episode
+
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+
+        # Setup: Add feeds in reverse alphabetical order
+        manager = ConfigManager(config_dir=tmp_path)
+        manager.add_feed(
+            "zebra-podcast",
+            FeedConfig(url="https://example.com/zebra.rss", auth=AuthConfig(type="none")),  # type: ignore
+        )
+        manager.add_feed(
+            "apple-podcast",
+            FeedConfig(url="https://example.com/apple.rss", auth=AuthConfig(type="none")),  # type: ignore
+        )
+
+        mock_episode = Episode(
+            title="Episode",
+            url="https://example.com/episode.mp3",  # type: ignore
+            published=datetime(2026, 1, 10, 12, 0, 0),
+            description="Test",
+            podcast_name="test",
+        )
+
+        mock_feed = MagicMock()
+        mock_feed.entries = [MagicMock()]
+
+        with patch("inkwell.cli_list.RSSParser") as mock_parser_class:
+            mock_parser = MagicMock()
+            mock_parser.fetch_feed = AsyncMock(return_value=mock_feed)
+            mock_parser.get_latest_episode = MagicMock(return_value=mock_episode)
+            mock_parser_class.return_value = mock_parser
+
+            result = runner.invoke(app, ["list", "latest"])
+
+        assert result.exit_code == 0
+        # Verify "apple" appears before "zebra" in output
+        apple_pos = result.stdout.find("apple-podcast")
+        zebra_pos = result.stdout.find("zebra-podcast")
+        assert apple_pos < zebra_pos, "Feeds should be sorted alphabetically"
+
+    def test_list_latest_table_title_truncation(self, tmp_path: Path, monkeypatch) -> None:
+        """Long titles should be truncated with ellipsis."""
+        from datetime import datetime
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from inkwell.config.manager import ConfigManager
+        from inkwell.config.schema import AuthConfig, FeedConfig
+        from inkwell.feeds.models import Episode
+
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+
+        manager = ConfigManager(config_dir=tmp_path)
+        manager.add_feed(
+            "test-podcast",
+            FeedConfig(url="https://example.com/feed.rss", auth=AuthConfig(type="none")),  # type: ignore
+        )
+
+        # Create episode with a very long title (60+ characters)
+        long_title = "This is a very long episode title that should definitely be truncated"
+        mock_episode = Episode(
+            title=long_title,
+            url="https://example.com/episode.mp3",  # type: ignore
+            published=datetime(2026, 1, 10, 12, 0, 0),
+            description="Test",
+            podcast_name="test-podcast",
+        )
+
+        mock_feed = MagicMock()
+        mock_feed.entries = [MagicMock()]
+
+        with patch("inkwell.cli_list.RSSParser") as mock_parser_class:
+            mock_parser = MagicMock()
+            mock_parser.fetch_feed = AsyncMock(return_value=mock_feed)
+            mock_parser.get_latest_episode = MagicMock(return_value=mock_episode)
+            mock_parser_class.return_value = mock_parser
+
+            result = runner.invoke(app, ["list", "latest"])
+
+        assert result.exit_code == 0
+        # Full title should NOT appear (it's > 50 chars)
+        assert long_title not in result.stdout
+        # But truncated portion should appear
+        assert "This is a very long" in result.stdout
+        assert "..." in result.stdout
+
+    def test_list_latest_json_includes_duration_seconds(self, tmp_path: Path, monkeypatch) -> None:
+        """JSON output should include duration_seconds for agent calculations."""
+        import json
+        from datetime import datetime
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from inkwell.config.manager import ConfigManager
+        from inkwell.config.schema import AuthConfig, FeedConfig
+        from inkwell.feeds.models import Episode
+
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+
+        manager = ConfigManager(config_dir=tmp_path)
+        manager.add_feed(
+            "test-podcast",
+            FeedConfig(url="https://example.com/feed.rss", auth=AuthConfig(type="none")),  # type: ignore
+        )
+
+        mock_episode = Episode(
+            title="Test Episode",
+            url="https://example.com/episode.mp3",  # type: ignore
+            published=datetime(2026, 1, 10, 12, 0, 0),
+            description="Test",
+            duration_seconds=3665,  # 1 hour, 1 minute, 5 seconds
+            podcast_name="test-podcast",
+        )
+
+        mock_feed = MagicMock()
+        mock_feed.entries = [MagicMock()]
+
+        with patch("inkwell.cli_list.RSSParser") as mock_parser_class:
+            mock_parser = MagicMock()
+            mock_parser.fetch_feed = AsyncMock(return_value=mock_feed)
+            mock_parser.get_latest_episode = MagicMock(return_value=mock_episode)
+            mock_parser_class.return_value = mock_parser
+
+            result = runner.invoke(app, ["list", "latest", "--json"])
+
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        episode_data = data["latest_episodes"][0]["episode"]
+        assert "duration_seconds" in episode_data
+        assert episode_data["duration_seconds"] == 3665
+        # Also verify formatted duration is present
+        assert "duration" in episode_data

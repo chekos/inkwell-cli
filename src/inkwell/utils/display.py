@@ -3,6 +3,29 @@
 from urllib.parse import urlparse
 
 
+def truncate_text(text: str, max_length: int, suffix: str = "...") -> str:
+    """Truncate text to max_length, adding suffix if truncated.
+
+    Args:
+        text: The text to truncate
+        max_length: Maximum length including suffix
+        suffix: String to append when truncated (default "...")
+
+    Returns:
+        Truncated text with suffix, or original if shorter than max_length
+
+    Examples:
+        >>> truncate_text("Hello World", 8)
+        'Hello...'
+
+        >>> truncate_text("Short", 10)
+        'Short'
+    """
+    if len(text) <= max_length:
+        return text
+    return text[: max_length - len(suffix)] + suffix
+
+
 def truncate_url(url: str, max_length: int = 50) -> str:
     """Truncate URL intelligently, preserving the domain.
 

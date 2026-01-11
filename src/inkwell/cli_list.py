@@ -22,10 +22,13 @@ from inkwell.config.schema import FeedConfig
 from inkwell.extraction.templates import TemplateLoader
 from inkwell.feeds.models import Episode
 from inkwell.feeds.parser import RSSParser
-from inkwell.utils.display import truncate_url
+from inkwell.utils.display import truncate_text, truncate_url
 from inkwell.utils.errors import InkwellError, NotFoundError, ValidationError
 
 logger = logging.getLogger(__name__)
+
+# Maximum concurrent feed fetches to prevent connection exhaustion
+MAX_CONCURRENT_FEEDS = 10
 
 app = typer.Typer(
     name="list",
@@ -189,8 +192,7 @@ def list_episodes(
             for i, entry in enumerate(feed.entries[:limit], 1):
                 try:
                     ep = parser.extract_episode_metadata(entry, name)
-                    # Truncate title if too long
-                    title = ep.title[:57] + "..." if len(ep.title) > 60 else ep.title
+                    title = truncate_text(ep.title, 60)
                     date = ep.published.strftime("%Y-%m-%d")
                     duration = ep.duration_formatted if ep.duration_seconds else "-"
                     table.add_row(str(i), title, date, duration)
@@ -321,46 +323,57 @@ def list_latest(
     """
 
     async def run_latest() -> None:
-        manager = ConfigManager()
-        feeds = manager.list_feeds()
+        try:
+            manager = ConfigManager()
+            feeds = manager.list_feeds()
 
-        if not feeds:
-            if json_output:
-                print(
-                    json.dumps(
-                        {"latest_episodes": [], "total_feeds": 0, "successful": 0, "failed": 0}
+            if not feeds:
+                if json_output:
+                    print(
+                        json.dumps(
+                            {"latest_episodes": [], "total_feeds": 0, "successful": 0, "failed": 0}
+                        )
                     )
-                )
-            else:
-                console.print("[yellow]No feeds configured yet.[/yellow]")
-                console.print("\nAdd a feed: [cyan]inkwell add <url> --name <name>[/cyan]")
-            return
+                else:
+                    console.print("[yellow]No feeds configured yet.[/yellow]")
+                    console.print("\nAdd a feed: [cyan]inkwell add <url> --name <name>[/cyan]")
+                return
 
-        parser = RSSParser()
-        tasks = [_fetch_latest_for_feed(parser, name, config) for name, config in feeds.items()]
+            parser = RSSParser()
+            semaphore = asyncio.Semaphore(MAX_CONCURRENT_FEEDS)
 
-        # Fetch all feeds in parallel
-        if json_output:
-            results = await asyncio.gather(*tasks)
-        else:
-            with Progress(
-                SpinnerColumn(),
-                TextColumn("[progress.description]{task.description}"),
-                console=console,
-            ) as progress:
-                progress.add_task(f"Fetching latest from {len(feeds)} feeds...", total=None)
+            async def fetch_with_limit(name: str, config: FeedConfig) -> LatestEpisodeResult:
+                async with semaphore:
+                    return await _fetch_latest_for_feed(parser, name, config)
+
+            tasks = [fetch_with_limit(name, config) for name, config in feeds.items()]
+
+            # Fetch all feeds in parallel (with concurrency limit)
+            if json_output:
                 results = await asyncio.gather(*tasks)
+            else:
+                with Progress(
+                    SpinnerColumn(),
+                    TextColumn("[progress.description]{task.description}"),
+                    console=console,
+                ) as progress:
+                    progress.add_task(f"Fetching latest from {len(feeds)} feeds...", total=None)
+                    results = await asyncio.gather(*tasks)
 
-        # Sort by feed name
-        results = sorted(results, key=lambda r: r.feed_name.lower())
+            # Sort by feed name
+            results = sorted(results, key=lambda r: r.feed_name.lower())
 
-        if json_output:
-            _output_latest_json(results)
-        else:
-            _output_latest_table(results)
+            if json_output:
+                _output_latest_json(results)
+            else:
+                _output_latest_table(results)
 
-        # Exit 1 if all feeds failed
-        if results and all(not r.success for r in results):
+            # Exit 1 if all feeds failed
+            if results and all(not r.success for r in results):
+                sys.exit(1)
+
+        except InkwellError as e:
+            console.print(f"[red]✗[/red] Error: {e}")
             sys.exit(1)
 
     asyncio.run(run_latest())
@@ -376,22 +389,20 @@ def _output_latest_table(results: list[LatestEpisodeResult]) -> None:
 
     for result in results:
         if result.episode:
-            title = (
-                result.episode.title[:47] + "..."
-                if len(result.episode.title) > 50
-                else result.episode.title
-            )
+            title = truncate_text(result.episode.title, 50)
             date = result.episode.published.strftime("%Y-%m-%d")
             duration = result.episode.duration_formatted if result.episode.duration_seconds else "-"
-            table.add_row(result.feed_name, title, date, duration)
+            table.add_row(escape(result.feed_name), escape(title), date, duration)
         elif result.success:
             # Feed exists but has no episodes
-            table.add_row(result.feed_name, "[dim]No episodes yet[/dim]", "-", "-")
+            table.add_row(escape(result.feed_name), "[dim]No episodes yet[/dim]", "-", "-")
         else:
             # Feed fetch failed
             error = result.error or "Unknown error"
-            error_msg = error[:40] + "..." if len(error) > 40 else error
-            table.add_row(result.feed_name, f"[red]Error: {error_msg}[/red]", "-", "-")
+            error_msg = truncate_text(error, 40)
+            table.add_row(
+                escape(result.feed_name), f"[red]Error: {escape(error_msg)}[/red]", "-", "-"
+            )
 
     console.print(table)
 
@@ -424,6 +435,7 @@ def _output_latest_json(results: list[LatestEpisodeResult]) -> None:
                             if result.episode.duration_seconds
                             else None
                         ),
+                        "duration_seconds": result.episode.duration_seconds,
                         "url": str(result.episode.url),
                     },
                 }

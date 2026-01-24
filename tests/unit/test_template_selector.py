@@ -314,7 +314,6 @@ class TestTemplateSelector:
         def mock_load(name: str) -> ExtractionTemplate:
             if name == "summary":
                 load_count["summary"] += 1
-                # Return different version on second load
                 return summary_v1 if load_count["summary"] == 1 else summary_v2
             return create_template(name)
 
@@ -395,7 +394,6 @@ class TestTemplateSelector:
 
         selector = TemplateSelector(template_loader=mock_loader)
 
-        # Select with tech category
         templates = selector.select_templates(
             episode=sample_episode,
             category="tech",

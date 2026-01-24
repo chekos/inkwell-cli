@@ -176,7 +176,6 @@ class Transcript(BaseModel):
         if not v:
             return v
 
-        # Check if sorted
         for i in range(len(v) - 1):
             if v[i].start > v[i + 1].start:
                 # Not sorted, sort them
@@ -186,11 +185,9 @@ class Transcript(BaseModel):
 
     def model_post_init(self, __context: Any) -> None:
         """Post-initialization hook to calculate optional fields."""
-        # Calculate word count if not provided
         if self.word_count is None and self.segments:
             self.word_count = self.calculate_word_count()
 
-        # Calculate duration if not provided
         if self.duration_seconds is None and self.segments:
             self.duration_seconds = self.segments[-1].end
 

@@ -233,7 +233,6 @@ class ExtractionResult(BaseModel):
     cost_usd: float = Field(0.0, description="Cost in USD", ge=0)
     provider: str | None = Field(None, description="LLM provider used")
 
-    # Cache information
     from_cache: bool = Field(False, description="Whether result came from cache")
     cache_key: str | None = Field(None, description="Cache key if cached")
 

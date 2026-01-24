@@ -16,13 +16,10 @@ def slugify(text: str, max_length: int = 50) -> str:
     Returns:
         Filesystem-safe slug
     """
-    # Convert to lowercase
     text = text.lower()
-    # Remove non-alphanumeric characters (keep spaces and hyphens)
     text = re.sub(r"[^\w\s-]", "", text)
     # Replace spaces with hyphens
     text = re.sub(r"[\s_]+", "-", text)
-    # Remove multiple consecutive hyphens
     text = re.sub(r"-+", "-", text)
     # Strip leading/trailing hyphens
     text = text.strip("-")

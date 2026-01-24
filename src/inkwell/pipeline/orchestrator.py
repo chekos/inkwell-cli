@@ -63,7 +63,6 @@ class PipelineOrchestrator:
             config: Global configuration object
         """
         self.config = config
-        # Create shared cost tracker for entire pipeline
         self.cost_tracker = CostTracker()
 
     def _filter_templates_for_incremental(
@@ -161,11 +160,9 @@ class PipelineOrchestrator:
         # Determine output directory
         output_path = options.output_dir or self.config.default_output_dir
 
-        # Step 1: Transcription
         if progress_callback:
             progress_callback("transcription_start", {})
 
-        # Create sub-progress callback for transcription steps
         def transcription_progress(step: str, data: dict) -> None:
             if progress_callback:
                 progress_callback("transcription_step", {"step": step, **data})
@@ -194,7 +191,6 @@ class PipelineOrchestrator:
                 },
             )
 
-        # Step 2: Template selection
         if progress_callback:
             progress_callback("template_selection_start", {})
 
@@ -204,7 +200,6 @@ class PipelineOrchestrator:
             episode_url=options.url,
         )
 
-        # Create episode metadata (use values from options if available)
         episode_metadata = EpisodeMetadata(
             podcast_name=options.podcast_name or "Unknown Podcast",
             episode_title=options.episode_title or f"Episode from {options.url}",
@@ -221,7 +216,6 @@ class PipelineOrchestrator:
                 },
             )
 
-        # Check for incremental mode (existing directory without --overwrite)
         existing_output: EpisodeOutput | None = None
         templates_to_process = selected_templates
         incremental_mode = False
@@ -258,7 +252,6 @@ class PipelineOrchestrator:
                 logger.warning(f"Could not load existing output: {e}. Will overwrite.")
                 incremental_mode = False
 
-        # Step 3: Extraction
         if progress_callback:
             progress_callback("extraction_start", {})
 
@@ -285,7 +278,6 @@ class PipelineOrchestrator:
 
         # Early exit for dry run
         if options.dry_run:
-            # Create a minimal result for dry run
             dry_run_output = EpisodeOutput(
                 metadata=episode_metadata,
                 output_dir=output_path / "dry-run",
@@ -301,7 +293,6 @@ class PipelineOrchestrator:
                 interview_cost_usd=0.0,
             )
 
-        # Step 4: Write output
         if progress_callback:
             progress_callback("output_start", {})
 
@@ -335,7 +326,6 @@ class PipelineOrchestrator:
                 },
             )
 
-        # Step 5: Interview (optional)
         interview_result = None
         interview_cost = 0.0
 
@@ -352,7 +342,6 @@ class PipelineOrchestrator:
                 )
 
                 if interview_result:
-                    # Update metadata with interview info
                     template_name = (
                         options.interview_template or self.config.interview.default_template
                     )
@@ -387,7 +376,6 @@ class PipelineOrchestrator:
                     progress_callback("interview_failed", {"error": str(e)})
                 # Continue to return result even if interview failed
 
-        # Return complete result
         return PipelineResult(
             episode_output=episode_output,
             transcript_result=transcript_result,
@@ -460,12 +448,10 @@ class PipelineOrchestrator:
         loader = TemplateLoader()
         selector = TemplateSelector(loader)
 
-        # Parse custom templates if provided
         custom_template_list = None
         if options.templates:
             custom_template_list = [t.strip() for t in options.templates]
 
-        # Create episode object for template selection
         # url is HttpUrl but Pydantic validates str at runtime
         episode = Episode(
             title=f"Episode from {episode_url}",
@@ -475,7 +461,6 @@ class PipelineOrchestrator:
             podcast_name="Unknown Podcast",
         )
 
-        # Select templates
         selected_templates = selector.select_templates(
             episode=episode,
             category=options.category,
@@ -638,10 +623,8 @@ class PipelineOrchestrator:
         Returns:
             Tuple of (interview_result, cost_usd)
         """
-        # Get interview configuration
         questions = options.max_questions or self.config.interview.question_count
 
-        # Validate Anthropic API key
         try:
             anthropic_key = get_validated_api_key("ANTHROPIC_API_KEY", "claude")
         except APIKeyError as e:
@@ -662,7 +645,6 @@ class PipelineOrchestrator:
             logger.error(f"Interview failed: {e}", exc_info=True)
             return None, 0.0
 
-        # Save interview output
         interview_path = episode_output.directory / "my-notes.md"
         interview_path.write_text(interview_result.transcript)
 

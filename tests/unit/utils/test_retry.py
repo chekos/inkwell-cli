@@ -91,7 +91,6 @@ class TestWithRetryDecorator:
         """Test retries on retryable errors."""
         call_count = 0
 
-        # Use fast config for testing
         test_config = RetryConfig(
             max_attempts=3,
             max_wait_seconds=TEST_RETRY_CONFIG.max_wait_seconds,
@@ -130,7 +129,6 @@ class TestWithRetryDecorator:
         """Test raises error after max attempts."""
         call_count = 0
 
-        # Use fast config for testing
         test_config = RetryConfig(
             max_attempts=3,
             max_wait_seconds=TEST_RETRY_CONFIG.max_wait_seconds,

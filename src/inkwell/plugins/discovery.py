@@ -123,10 +123,8 @@ def discover_plugins(group: str) -> Iterator[PluginLoadResult]:
         name = ep.name
 
         try:
-            # Load the entry point (imports the module and gets the class)
             plugin_class = ep.load()
 
-            # Validate it's a proper plugin class
             if not isinstance(plugin_class, type) or not issubclass(plugin_class, InkwellPlugin):
                 yield PluginLoadResult(
                     name=name,
@@ -138,7 +136,6 @@ def discover_plugins(group: str) -> Iterator[PluginLoadResult]:
                 )
                 continue
 
-            # Check API version compatibility
             plugin_api_version = getattr(plugin_class, "API_VERSION", PLUGIN_API_VERSION)
             if not check_api_version_compatible(plugin_api_version):
                 yield PluginLoadResult(

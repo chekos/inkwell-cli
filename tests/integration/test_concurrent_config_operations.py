@@ -132,7 +132,6 @@ class TestConcurrentConfigOperations:
 
         processes = []
 
-        # Add new feeds concurrently
         for i in range(5, 10):
             p = multiprocessing.Process(
                 target=add_feed_process,
@@ -140,7 +139,6 @@ class TestConcurrentConfigOperations:
             )
             processes.append(p)
 
-        # Remove some feeds concurrently
         for i in range(3, 5):
             p = multiprocessing.Process(
                 target=remove_feed_process,
@@ -164,15 +162,12 @@ class TestConcurrentConfigOperations:
         # initial3 and initial4 were removed
         assert len(feeds) == 8, f"Expected 8 feeds, got {len(feeds)}"
 
-        # Check all new feeds were added
         for i in range(5, 10):
             assert f"feed{i}" in feeds, f"New feed{i} should exist"
 
-        # Check removed feeds are gone
         for i in range(3, 5):
             assert f"initial{i}" not in feeds, f"Feed initial{i} should be removed"
 
-        # Check remaining initial feeds still exist
         for i in range(3):
             assert f"initial{i}" in feeds, f"Feed initial{i} should still exist"
 
@@ -186,7 +181,6 @@ class TestConcurrentConfigOperations:
         manager = ConfigManager(config_dir=shared_config_dir)
         feed_config = FeedConfig(url="https://example.com/test.rss")  # type: ignore
 
-        # Add a feed (this should acquire and release a lock)
         manager.add_feed("test-feed", feed_config)
 
         # We should be able to acquire the lock again immediately for update
@@ -208,14 +202,12 @@ class TestConcurrentConfigOperations:
         """Test that locking doesn't break normal sequential operations."""
         manager = ConfigManager(config_dir=shared_config_dir)
 
-        # Add feed
         feed_config = FeedConfig(
             url="https://example.com/test.rss",  # type: ignore
             category="tech",
         )
         manager.add_feed("test", feed_config)
 
-        # Update feed
         feed_config.category = "interview"
         manager.update_feed("test", feed_config)
 
@@ -223,7 +215,6 @@ class TestConcurrentConfigOperations:
         feed = manager.get_feed("test")
         assert feed.category == "interview"
 
-        # Remove feed
         manager.remove_feed("test")
 
         # Verify removed

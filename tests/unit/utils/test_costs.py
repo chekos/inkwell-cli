@@ -21,7 +21,6 @@ def _track_cost_in_subprocess(i, costs_file_path):
     """Helper function for concurrent write test (must be at module level for multiprocessing)."""
     try:
         tracker = CostTracker(costs_file=costs_file_path)
-        # Add small delay to increase likelihood of concurrent access
         time.sleep(0.01)
         tracker.track(
             APIUsage(
@@ -35,8 +34,6 @@ def _track_cost_in_subprocess(i, costs_file_path):
             )
         )
     except Exception as e:
-        # Log error to file for debugging
-
         with open(costs_file_path.parent / f"error_{i}.txt", "w") as f:
             f.write(f"Process {i} failed: {e}\n")
             f.write(f"Exception type: {type(e)}\n")
@@ -264,7 +261,6 @@ class TestCostTracker:
         """Test costs are persisted to disk."""
         costs_file = tmp_path / "costs.json"
 
-        # Create tracker and add usage
         tracker1 = CostTracker(costs_file=costs_file)
         usage = APIUsage(
             provider="gemini",
@@ -276,7 +272,6 @@ class TestCostTracker:
         )
         tracker1.track(usage)
 
-        # Create new tracker - should load persisted data
         tracker2 = CostTracker(costs_file=costs_file)
 
         assert len(tracker2.usage_history) == 1
@@ -361,13 +356,11 @@ class TestCostTracker:
             )
         )
 
-        # Filter by gemini
         summary = tracker.get_summary(provider="gemini")
 
         assert summary.total_operations == 1
         assert summary.total_cost_usd == 0.005
 
-        # Filter by claude
         summary = tracker.get_summary(provider="claude")
 
         assert summary.total_operations == 1
@@ -400,7 +393,6 @@ class TestCostTracker:
             )
         )
 
-        # Filter by extraction
         summary = tracker.get_summary(operation="extraction")
 
         assert summary.total_operations == 1
@@ -435,7 +427,6 @@ class TestCostTracker:
             )
         )
 
-        # Filter by episode
         summary = tracker.get_summary(episode_title="Episode 1")
 
         assert summary.total_operations == 1
@@ -474,7 +465,6 @@ class TestCostTracker:
             )
         )
 
-        # Filter by since yesterday
         summary = tracker.get_summary(since=yesterday)
 
         assert summary.total_operations == 1
@@ -485,7 +475,6 @@ class TestCostTracker:
         costs_file = tmp_path / "costs.json"
         tracker = CostTracker(costs_file=costs_file)
 
-        # Add 5 usage records
         for i in range(5):
             tracker.track(
                 APIUsage(
@@ -498,7 +487,6 @@ class TestCostTracker:
                 )
             )
 
-        # Get recent 3
         recent = tracker.get_recent_usage(limit=3)
 
         assert len(recent) == 3
@@ -534,7 +522,6 @@ class TestCostTracker:
         """Test handling of corrupt costs file."""
         costs_file = tmp_path / "costs.json"
 
-        # Write corrupt JSON
         costs_file.write_text("not valid json {")
 
         # Should handle gracefully and start fresh
@@ -552,7 +539,6 @@ class TestCostTracker:
         """
         costs_file = tmp_path / "costs.json"
 
-        # Run 10 concurrent processes
         processes = [
             multiprocessing.Process(target=_track_cost_in_subprocess, args=(i, costs_file))
             for i in range(10)
@@ -562,10 +548,8 @@ class TestCostTracker:
         for p in processes:
             p.join(timeout=5)  # Add timeout to avoid hanging
 
-        # Check for failed processes
         failed = [p for p in processes if p.exitcode != 0]
         if failed:
-            # Check for error files
             error_files = list(tmp_path.glob("error_*.txt"))
             if error_files:
                 for ef in error_files:
@@ -597,7 +581,6 @@ class TestCostTracker:
         backup_file = tmp_path / "costs.json.bak"
         tracker = CostTracker(costs_file=costs_file)
 
-        # Track first usage - file is created but backup only happens if file has content
         tracker.track(
             APIUsage(
                 provider="gemini",
@@ -612,7 +595,6 @@ class TestCostTracker:
         assert costs_file.exists()
         # Backup may or may not exist after first save (timing dependent)
 
-        # Track second usage - backup should definitely exist now
         tracker.track(
             APIUsage(
                 provider="gemini",
@@ -640,7 +622,6 @@ class TestCostTracker:
         costs_file = tmp_path / "costs.json"
         backup_file = tmp_path / "costs.json.bak"
 
-        # Create a good backup
         tracker1 = CostTracker(costs_file=costs_file)
         tracker1.track(
             APIUsage(
@@ -662,7 +643,6 @@ class TestCostTracker:
         # Corrupt main file
         costs_file.write_text("corrupt json {{{")
 
-        # Load should recover from backup
         tracker2 = CostTracker(costs_file=costs_file)
 
         assert len(tracker2.usage_history) == 1
@@ -673,7 +653,6 @@ class TestCostTracker:
         costs_file = tmp_path / "costs.json"
         backup_file = tmp_path / "costs.json.bak"
 
-        # Write corrupt data to both
         costs_file.write_text("corrupt json {{{")
         backup_file.write_text("also corrupt {{{")
 
@@ -690,7 +669,6 @@ class TestCostTracker:
         """Test that merge strategy deduplicates entries."""
         costs_file = tmp_path / "costs.json"
 
-        # Create first tracker and add entry
         tracker1 = CostTracker(costs_file=costs_file)
         usage = APIUsage(
             provider="gemini",
@@ -703,12 +681,10 @@ class TestCostTracker:
         )
         tracker1.track(usage)
 
-        # Create second tracker with same entry in memory
         tracker2 = CostTracker(costs_file=costs_file)
         # Manually add the same entry (simulating race condition)
         tracker2.usage_history.append(usage)
 
-        # Save should deduplicate
         tracker2._save()
 
         # Reload and verify only one entry
@@ -807,7 +783,6 @@ class TestUUIDDeduplication:
         costs_file = tmp_path / "costs.json"
         tracker = CostTracker(costs_file=costs_file)
 
-        # Track 10 identical operations
         for _ in range(10):
             tracker.add_cost(
                 provider="gemini",
@@ -827,7 +802,6 @@ class TestUUIDDeduplication:
         """Verify old records without UUID are migrated."""
         costs_file = tmp_path / "costs.json"
 
-        # Create old-format record (no usage_id)
         old_record = {
             "timestamp": "2025-11-14T10:00:00+00:00",
             "operation": "extraction",
@@ -840,7 +814,6 @@ class TestUUIDDeduplication:
         }
         costs_file.write_text(json.dumps([old_record], indent=2))
 
-        # Load with tracker (should trigger migration)
         tracker = CostTracker(costs_file=costs_file)
 
         # Should have UUID added
@@ -856,7 +829,6 @@ class TestUUIDDeduplication:
         """Verify entries with same UUID are correctly identified as duplicates."""
         costs_file = tmp_path / "costs.json"
 
-        # Create usage with specific UUID
         usage = APIUsage(
             usage_id="test-uuid-12345",
             provider="gemini",
@@ -868,7 +840,6 @@ class TestUUIDDeduplication:
             episode_title="Episode 1",
         )
 
-        # Save it
         tracker1 = CostTracker(costs_file=costs_file)
         tracker1.track(usage)
 
@@ -885,7 +856,6 @@ class TestUUIDDeduplication:
         """Verify entries with different UUIDs are not treated as duplicates."""
         costs_file = tmp_path / "costs.json"
 
-        # Create two usages with identical data but different UUIDs
         usage1 = APIUsage(
             usage_id="uuid-1",
             provider="gemini",

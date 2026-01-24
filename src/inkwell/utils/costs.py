@@ -122,11 +122,9 @@ class APIUsage(BaseModel):
 
     def model_post_init(self, __context: Any) -> None:
         """Calculate derived fields after initialization."""
-        # Calculate total tokens if not set
         if self.total_tokens == 0:
             self.total_tokens = self.input_tokens + self.output_tokens
 
-        # Validate timestamp is timezone-aware (runtime check)
         validate_timezone_aware(self.timestamp, "timestamp")
 
 
@@ -211,7 +209,6 @@ class CostTracker:
         self.costs_file = costs_file
         self.costs_file.parent.mkdir(parents=True, exist_ok=True)
 
-        # Load existing costs
         self.usage_history: list[APIUsage] = []
         if self.costs_file.exists():
             self._load()
@@ -238,7 +235,6 @@ class CostTracker:
                 finally:
                     self._release_lock(f)
 
-            # Save migrated data back to disk (outside the lock context)
             if needs_migration:
                 logger.info("Migrated %d cost records to include usage_id", len(data))
                 # Write directly to file to avoid merge logic
@@ -315,7 +311,6 @@ class CostTracker:
 
     def _save(self) -> None:
         """Save costs to disk with file locking and atomic write."""
-        # Create backup first if file exists
         backup_file = self.costs_file.with_suffix(".json.bak")
         if self.costs_file.exists() and self.costs_file.stat().st_size > 0:
             try:
@@ -340,7 +335,6 @@ class CostTracker:
                     lock_file.seek(0)
                     content = lock_file.read()
 
-                    # Parse existing data
                     try:
                         if content.strip():
                             existing_data = json.loads(content)
@@ -350,13 +344,11 @@ class CostTracker:
                     except (json.JSONDecodeError, ValueError):
                         existing = []
 
-                    # Merge: add entries not already present (by unique usage_id)
                     # This prevents false duplicates when same episode is processed again
                     existing_ids = {u.usage_id for u in existing}
                     new_entries = [u for u in self.usage_history if u.usage_id not in existing_ids]
                     combined = existing + new_entries
 
-                    # Write to temp file
                     with open(temp_fd, "w") as f:
                         data = [usage.model_dump(mode="json") for usage in combined]
                         json.dump(data, f, indent=2, default=str)
@@ -366,14 +358,12 @@ class CostTracker:
                     # Atomic replace
                     Path(temp_path).replace(self.costs_file)
 
-                    # Update in-memory state
                     self.usage_history = combined
 
                 finally:
                     self._release_lock(lock_file)
 
         except Exception:
-            # Clean up temp file on error
             Path(temp_path).unlink(missing_ok=True)
             raise
 
@@ -413,7 +403,6 @@ class CostTracker:
         Returns:
             Cost in USD for this operation
         """
-        # Calculate cost
         cost_usd = calculate_cost_from_usage(
             provider=provider,
             model=model,
@@ -421,7 +410,6 @@ class CostTracker:
             output_tokens=output_tokens,
         )
 
-        # Create usage record (provider/operation are str but APIUsage expects Literal types)
         usage = APIUsage(
             provider=provider,  # type: ignore[arg-type]
             model=model,
@@ -433,7 +421,6 @@ class CostTracker:
             template_name=template_name,
         )
 
-        # Track it
         self.track(usage)
 
         return cost_usd
@@ -473,7 +460,6 @@ class CostTracker:
         """
         filtered = self.usage_history
 
-        # Apply filters
         if provider:
             filtered = [u for u in filtered if u.provider == provider]
         if operation:
@@ -518,7 +504,6 @@ class CostTracker:
             except Exception as e:
                 logger.warning("Failed to create backup: %s", e)
 
-        # Write empty array
         with open(self.costs_file, "w") as f:
             self._acquire_lock(f, exclusive=True)
             try:
@@ -548,7 +533,6 @@ def calculate_cost_from_usage(
     """
     # Determine pricing key
     if provider == "gemini":
-        # Check if long context
         if input_tokens >= 128_000:
             pricing_key = "gemini-flash-long"
         else:

@@ -166,7 +166,6 @@ class TestResolveDependencies:
         plugin_b = PluginB()
         plugin_c = PluginC()
 
-        # Run multiple times with different input orders
         orders = [
             [plugin_a, plugin_b, plugin_c],
             [plugin_c, plugin_b, plugin_a],

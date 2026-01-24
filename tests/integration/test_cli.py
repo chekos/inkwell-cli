@@ -62,7 +62,6 @@ class TestCLIAdd:
             auth=AuthConfig(type="none"),
         )
 
-        # Add feed first time
         manager.add_feed("test-podcast", feed_config)
 
         # Try to add again - should raise error
@@ -89,7 +88,6 @@ class TestCLIList:
 
         from inkwell.config.schema import AuthConfig, FeedConfig
 
-        # Add some feeds
         manager.add_feed(
             "podcast1",
             FeedConfig(
@@ -127,7 +125,6 @@ class TestCLIRemove:
 
         from inkwell.config.schema import AuthConfig, FeedConfig
 
-        # Add a feed
         manager.add_feed(
             "test-podcast",
             FeedConfig(
@@ -139,7 +136,6 @@ class TestCLIRemove:
         # Verify it exists
         assert "test-podcast" in manager.list_feeds()
 
-        # Remove it
         manager.remove_feed("test-podcast")
 
         # Verify it's gone
@@ -171,7 +167,6 @@ class TestCLIConfig:
         """Test setting configuration value."""
         manager = ConfigManager(config_dir=tmp_path)
 
-        # Load config
         config = manager.load_config()
 
         # Change a value
@@ -186,12 +181,10 @@ class TestCLIConfig:
         """Test that config can be saved and loaded."""
         manager = ConfigManager(config_dir=tmp_path)
 
-        # Load config
         original = manager.load_config()
         original.log_level = "DEBUG"
         original.youtube_check = False
 
-        # Save
         manager.save_config(original)
 
         # Reload
@@ -391,7 +384,6 @@ class TestCLIConfigEditSecurity:
         """Test that command injection attempts are blocked - CRITICAL SECURITY TEST."""
         manager = ConfigManager(config_dir=tmp_path)
 
-        # Ensure config file exists before testing
         config = manager.load_config()
         manager.save_config(config)
 

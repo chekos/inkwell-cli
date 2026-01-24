@@ -48,7 +48,6 @@ class OutputManager:
         >>> print(output.directory)
         ./output/podcast-name-2025-11-07-episode-title/
 
-        # Use a custom output plugin:
         >>> from inkwell.output.markdown import MarkdownOutput
         >>> renderer = MarkdownOutput()
         >>> renderer.configure({})
@@ -76,7 +75,6 @@ class OutputManager:
         self.output_dir = output_dir
         self._renderer: OutputPlugin | MarkdownOutput
 
-        # Handle deprecated markdown_generator parameter
         if markdown_generator is not None:
             warnings.warn(
                 "The 'markdown_generator' parameter is deprecated. Use 'renderer' instead. "
@@ -88,7 +86,6 @@ class OutputManager:
         else:
             self._renderer = renderer or MarkdownOutput()
 
-        # Ensure output directory exists
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
     @property
@@ -138,15 +135,12 @@ class OutputManager:
         episode_dir = self._get_episode_directory_path(episode_metadata)
         backup_dir = None
 
-        # Track backup directory if overwriting existing episode
         if overwrite and episode_dir.exists():
             backup_dir = episode_dir.with_suffix(".backup")
 
         try:
-            # Create episode directory (handles backup internally)
             episode_dir = self._create_episode_directory(episode_metadata, overwrite)
 
-            # Write markdown files
             output_files = []
             total_cost = 0.0
 
@@ -158,7 +152,6 @@ class OutputManager:
                     include_frontmatter=True,
                 )
 
-                # Write file
                 filename = f"{result.template_name}.md"
                 file_path = episode_dir / filename
 
@@ -175,12 +168,10 @@ class OutputManager:
 
                 total_cost += result.cost_usd
 
-            # Write transcript file if provided
             if transcript:
                 transcript_filename = "_transcript.md"
                 transcript_path = episode_dir / transcript_filename
 
-                # Build transcript content with optional summary
                 if transcript_summary:
                     transcript_content = (
                         f"# Transcript\n\n"
@@ -202,12 +193,10 @@ class OutputManager:
                     ),
                 )
 
-            # Update metadata with cost and template versions
             episode_metadata.total_cost_usd = total_cost
             for result in extraction_results:
                 episode_metadata.add_template(result.template_name, result.template_version)
 
-            # Write metadata file
             metadata_file = episode_dir / ".metadata.yaml"
             self._write_metadata(metadata_file, episode_metadata)
 
@@ -223,13 +212,10 @@ class OutputManager:
             )
 
         except Exception:
-            # Restore backup on ANY failure during write operation
             if backup_dir and backup_dir.exists():
                 logger.warning(f"Write failed, restoring backup from {backup_dir} to {episode_dir}")
-                # Clean up partial episode directory if it exists
                 if episode_dir.exists():
                     shutil.rmtree(episode_dir)
-                # Restore backup to original location
                 backup_dir.rename(episode_dir)
             raise
 
@@ -262,7 +248,6 @@ class OutputManager:
         output_files: list[OutputFile] = []
         added_cost = 0.0
 
-        # Write new markdown files
         for result in new_extraction_results:
             # Generate markdown using the renderer's sync method
             markdown_content = self._renderer.generate(
@@ -271,7 +256,6 @@ class OutputManager:
                 include_frontmatter=True,
             )
 
-            # Write file (overwrites if exists)
             filename = f"{result.template_name}.md"
             file_path = episode_dir / filename
 
@@ -288,10 +272,8 @@ class OutputManager:
 
             added_cost += result.cost_usd
 
-            # Update metadata with new template and version
             existing_metadata.add_template(result.template_name, result.template_version)
 
-        # Write transcript only if it doesn't exist
         transcript_path = episode_dir / "_transcript.md"
         if transcript and not transcript_path.exists():
             if transcript_summary:
@@ -315,14 +297,11 @@ class OutputManager:
                 ),
             )
 
-        # Update metadata costs
         existing_metadata.add_cost(added_cost)
 
-        # Write updated metadata file
         metadata_file = episode_dir / ".metadata.yaml"
         self._write_metadata(metadata_file, existing_metadata)
 
-        # Load complete EpisodeOutput (includes all files, not just new ones)
         return EpisodeOutput.from_directory(episode_dir)
 
     def _get_episode_directory_path(self, episode_metadata: EpisodeMetadata) -> Path:
@@ -357,9 +336,7 @@ class OutputManager:
         Returns:
             Sanitized path component
         """
-        # Remove path traversal sequences and path separators
         sanitized = component.replace("..", "").replace("/", "-").replace("\\", "-")
-        # Remove null bytes (path injection)
         sanitized = sanitized.replace("\0", "")
         return sanitized
 
@@ -387,19 +364,15 @@ class OutputManager:
             SecurityError: If path traversal or symlink attack detected
             ValueError: If directory name is invalid or empty after sanitization
         """
-        # Step 1: Sanitize each path component
         podcast_slug = self._sanitize_path_component(episode_metadata.podcast_slug)
         episode_slug = self._sanitize_path_component(episode_metadata.episode_slug)
 
-        # Step 2: Ensure not empty after sanitization
         if not podcast_slug.strip() or not episode_slug.strip():
             raise ValueError("Episode directory path is empty after sanitization")
 
-        # Build the nested path: output_dir/podcast-slug/episode-slug
         podcast_dir = self.output_dir / podcast_slug
         episode_dir = podcast_dir / episode_slug
 
-        # Step 3: Verify resolved path is within output_dir
         try:
             resolved_episode = episode_dir.resolve()
             resolved_output = self.output_dir.resolve()
@@ -410,14 +383,12 @@ class OutputManager:
                 f"Resolved path {resolved_episode} is outside output directory."
             ) from None
 
-        # Step 4: Check it's not a symlink (symlink attack)
         if episode_dir.exists() and episode_dir.is_symlink():
             raise SecurityError(
                 f"Episode directory {episode_dir} is a symlink. "
                 f"Refusing to use for security reasons."
             )
 
-        # Step 5: Handle overwrite with validation
         if episode_dir.exists():
             if not overwrite:
                 raise FileExistsError(
@@ -425,23 +396,19 @@ class OutputManager:
                     f"Use --overwrite to replace existing directory."
                 )
 
-            # Validate it looks like an episode directory
             if not (episode_dir / ".metadata.yaml").exists():
                 raise ValueError(
                     f"Directory {episode_dir} doesn't contain .metadata.yaml. "
                     f"Refusing to delete (may not be an episode directory)."
                 )
 
-            # Create backup before deletion
             backup_dir = episode_dir.with_suffix(".backup")
             if backup_dir.exists():
                 shutil.rmtree(backup_dir)
             episode_dir.rename(backup_dir)
 
-            # Create new directory (parents=True ensures podcast dir exists)
             episode_dir.mkdir(parents=True)
         else:
-            # Create both podcast and episode directories if needed
             episode_dir.mkdir(parents=True, exist_ok=True)
 
         return episode_dir
@@ -467,11 +434,9 @@ class OutputManager:
         Raises:
             OSError: If write or sync fails
         """
-        # Write to temporary file in same directory (ensures same filesystem)
         temp_fd, temp_path = tempfile.mkstemp(dir=file_path.parent, prefix=".tmp_", suffix=".md")
 
         try:
-            # Write content to temp file
             with open(temp_fd, "w", encoding="utf-8") as f:
                 f.write(content)
 
@@ -487,7 +452,6 @@ class OutputManager:
             # This is atomic at filesystem level (POSIX guarantee)
             Path(temp_path).replace(file_path)
 
-            # Sync directory to persist the rename operation
             # Without this, the rename might not be durable across power loss
             # This is best effort - some filesystems don't support directory fsync
             try:
@@ -502,7 +466,6 @@ class OutputManager:
                 logger.debug(f"Directory fsync not supported: {e}")
 
         except Exception:
-            # Clean up temp file on error
             Path(temp_path).unlink(missing_ok=True)
             raise
 
@@ -513,14 +476,11 @@ class OutputManager:
             metadata_file: Path to metadata file
             episode_metadata: Episode metadata
         """
-        # Convert to dict
         metadata_dict = episode_metadata.model_dump()
 
-        # Ensure schema_version is set (should be set by model default, but be explicit)
         if "schema_version" not in metadata_dict or metadata_dict["schema_version"] is None:
             metadata_dict["schema_version"] = self.CURRENT_METADATA_SCHEMA_VERSION
 
-        # Write YAML
         metadata_file.write_text(
             yaml.dump(metadata_dict, default_flow_style=False, sort_keys=False),
             encoding="utf-8",
@@ -571,7 +531,6 @@ class OutputManager:
 
         data = yaml.safe_load(metadata_file.read_text(encoding="utf-8")) or {}
 
-        # Handle schema migrations
         schema_version = data.get("schema_version", 0)
 
         if schema_version == 0:
@@ -580,7 +539,6 @@ class OutputManager:
             logger.info(f"Migrated {metadata_file} from schema v0 to v1")
             schema_version = 1
 
-        # Warn if metadata is from a newer version
         if schema_version > self.CURRENT_METADATA_SCHEMA_VERSION:
             logger.warning(
                 f"Metadata schema version {schema_version} is newer than supported "
@@ -602,7 +560,6 @@ class OutputManager:
         Returns:
             Migrated metadata dictionary with schema_version = 1
         """
-        # Add schema version
         data["schema_version"] = 1
 
         # v0 -> v1 had no field changes, just added versioning

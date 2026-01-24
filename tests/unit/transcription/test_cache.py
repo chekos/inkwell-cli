@@ -110,7 +110,6 @@ class TestTranscriptCache:
         """Test caching and retrieval."""
         url = "https://example.com/episode"
 
-        # Cache transcript
         await cache.set(url, sample_transcript)
 
         # Retrieve transcript
@@ -138,7 +137,6 @@ class TestTranscriptCache:
         url = "https://example.com/episode"
         cache_path = cache._get_cache_path(url)
 
-        # Create expired cache entry
         data = {
             "cached_at": (datetime.now(timezone.utc) - timedelta(days=31)).isoformat(),
             "episode_url": url,
@@ -160,7 +158,6 @@ class TestTranscriptCache:
         url = "https://example.com/episode"
         cache_path = cache._get_cache_path(url)
 
-        # Create corrupted cache file
         cache_path.write_text("invalid json{")
 
         # Should return None and remove corrupted file
@@ -232,7 +229,6 @@ class TestTranscriptCache:
     @pytest.mark.asyncio
     async def test_clear(self, cache: TranscriptCache, sample_transcript: Transcript) -> None:
         """Test clearing all cache entries."""
-        # Add multiple entries
         await cache.set("https://example.com/episode1", sample_transcript)
         await cache.set("https://example.com/episode2", sample_transcript)
         await cache.set("https://example.com/episode3", sample_transcript)
@@ -256,11 +252,9 @@ class TestTranscriptCache:
         self, cache: TranscriptCache, sample_transcript: Transcript, temp_cache_dir: Path
     ) -> None:
         """Test clearing only expired entries."""
-        # Add fresh entry
         fresh_url = "https://example.com/fresh"
         await cache.set(fresh_url, sample_transcript)
 
-        # Add expired entry
         expired_url = "https://example.com/expired"
         expired_path = cache._get_cache_path(expired_url)
         data = {
@@ -282,7 +276,6 @@ class TestTranscriptCache:
         self, cache: TranscriptCache, temp_cache_dir: Path
     ) -> None:
         """Test that clear_expired removes corrupted files."""
-        # Create corrupted file
         corrupted_path = temp_cache_dir / "corrupted.json"
         corrupted_path.write_text("invalid json{")
 
@@ -308,7 +301,6 @@ class TestTranscriptCache:
         self, cache: TranscriptCache, sample_transcript: Transcript, temp_cache_dir: Path
     ) -> None:
         """Test stats with multiple entries."""
-        # Add fresh entries
         await cache.set("https://example.com/episode1", sample_transcript)
 
         transcript2 = Transcript(
@@ -319,7 +311,6 @@ class TestTranscriptCache:
         )
         await cache.set("https://example.com/episode2", transcript2)
 
-        # Add expired entry
         expired_url = "https://example.com/expired"
         expired_path = cache._get_cache_path(expired_url)
         data = {
@@ -342,7 +333,6 @@ class TestTranscriptCache:
     @pytest.mark.asyncio
     async def test_stats_with_corrupted(self, cache: TranscriptCache, temp_cache_dir: Path) -> None:
         """Test that stats counts but skips processing corrupted files."""
-        # Create corrupted file
         corrupted_path = temp_cache_dir / "corrupted.json"
         corrupted_path.write_text("invalid json{")
 
@@ -381,7 +371,6 @@ class TestTranscriptCache:
         url = "https://example.com/episode"
         cache_path = cache._get_cache_path(url)
 
-        # Create entry that's 8 days old (expired for 7-day TTL)
         data = {
             "cached_at": (datetime.now(timezone.utc) - timedelta(days=8)).isoformat(),
             "episode_url": url,

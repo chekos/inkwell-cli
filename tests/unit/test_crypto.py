@@ -80,7 +80,6 @@ class TestCredentialEncryptor:
         """Test that insecure key file permissions raise SecurityError."""
         key_file = tmp_path / ".keyfile"
 
-        # Create key file with world-readable permissions
         key_file.write_text("fake-key")
         key_file.chmod(0o644)  # World-readable
 
@@ -287,7 +286,6 @@ class TestCredentialEncryptor:
         key_file.unlink()
         assert not key_file.exists()
 
-        # Restore from backup
         assert encryptor.restore_from_backup()
         assert key_file.exists()
 
@@ -314,7 +312,6 @@ class TestCredentialEncryptor:
         # Delete primary
         key_file.unlink()
 
-        # Restore from backup
         encryptor.restore_from_backup()
 
         # Verify permissions
@@ -326,15 +323,12 @@ class TestCredentialEncryptor:
         """Test that backup is not recreated when key already exists."""
         key_file = tmp_path / ".keyfile"
 
-        # Create initial key
         encryptor1 = CredentialEncryptor(key_file)
         encryptor1.encrypt("test")
 
-        # Get backup timestamp
         backup_path = tmp_path / ".keyfile.backup"
         original_mtime = backup_path.stat().st_mtime
 
-        # Create second encryptor with existing key
         encryptor2 = CredentialEncryptor(key_file)
         encryptor2.encrypt("test")
 

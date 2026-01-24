@@ -279,7 +279,6 @@ class TestTranscriptionManager:
 
         assert result.success is False
         assert result.error is not None
-        # Check for helpful error message with API key configuration instructions
         assert "api key not configured" in result.error.lower()
         assert "inkwell config set" in result.error.lower()
 
@@ -332,7 +331,6 @@ class TestTranscriptionManager:
 
         assert transcript is not None
 
-        # Cache should not have been checked
         mock_cache.get.assert_not_called()
 
     def test_clear_cache(self, manager: TranscriptionManager, mock_cache: Mock) -> None:

@@ -114,7 +114,6 @@ class ExtractionEngine:
             - INKWELL_EXTRACTOR env var (environment override)
             - Otherwise, the highest priority available extractor is used
         """
-        # Warn if using deprecated individual parameters
         deprecated_params = []
         if claude_api_key is not None:
             deprecated_params.append("claude_api_key")
@@ -143,7 +142,6 @@ class ExtractionEngine:
             config.default_provider if config else None, default_provider, "gemini"
         )
 
-        # Store API keys for plugin configuration
         self._claude_api_key = effective_claude_key
         self._gemini_api_key = effective_gemini_key
 
@@ -151,14 +149,12 @@ class ExtractionEngine:
         self.default_provider = effective_provider
         self.cost_tracker = cost_tracker
 
-        # Initialize plugin registry
         self._registry: PluginRegistry[ExtractionPlugin] = PluginRegistry(
             ExtractionPlugin  # type: ignore[type-abstract]
         )
         self._use_plugin_registry = use_plugin_registry
         self._plugins_loaded = False
 
-        # Store extractor override (takes precedence over INKWELL_EXTRACTOR env var)
         self._extractor_override = extractor_override
 
     def _load_extraction_plugins(self) -> None:
@@ -254,14 +250,11 @@ class ExtractionEngine:
         Raises:
             ExtractionError: If extraction fails
         """
-        # Get episode URL from metadata
         episode_url = metadata.get("episode_url", "")
 
-        # Check cache first
         if use_cache:
             cached = await self.cache.get(template.name, template.version, transcript)
             if cached:
-                # Parse cached result
                 content = self._parse_output(cached, template)
                 return ExtractionResult(
                     episode_url=episode_url,
@@ -274,7 +267,6 @@ class ExtractionEngine:
                     from_cache=True,
                 )
 
-        # Select provider
         extractor = self._select_extractor(template)
         provider_name = "claude" if extractor.__class__.__name__ == "ClaudeExtractor" else "gemini"
 
@@ -285,14 +277,11 @@ class ExtractionEngine:
             # Extract
             raw_output = await extractor.extract(template, transcript, metadata)
 
-            # Parse output
             content = self._parse_output(raw_output, template)
 
-            # Cache result
             if use_cache:
                 await self.cache.set(template.name, template.version, transcript, raw_output)
 
-            # Track cost in CostTracker if available
             if self.cost_tracker:
                 # Estimate token counts based on transcript length
                 # This is an approximation; real token counts would come from API response
@@ -320,7 +309,6 @@ class ExtractionEngine:
             )
 
         except Exception as e:
-            # Return failed result instead of raising
             # Sanitize error message to prevent API key leakage
             error_msg = _sanitize_error_message(str(e))
             return ExtractionResult(
@@ -357,7 +345,6 @@ class ExtractionEngine:
         """
         import asyncio
 
-        # Track timing for each extraction
         start_times = {}
 
         async def extract_with_tracking(template: ExtractionTemplate) -> ExtractionResult:
@@ -369,7 +356,6 @@ class ExtractionEngine:
         tasks = [extract_with_tracking(template) for template in templates]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
-        # Build detailed summary
         attempts = []
         successful_results = []
 
@@ -425,7 +411,6 @@ class ExtractionEngine:
                     exc_info=result,
                 )
 
-        # Build summary
         summary = ExtractionSummary(
             total=len(templates),
             successful=sum(1 for a in attempts if a.status == ExtractionStatus.SUCCESS),
@@ -434,7 +419,6 @@ class ExtractionEngine:
             attempts=attempts,
         )
 
-        # Log summary
         logger.info(
             f"Extraction complete: {summary.successful}/{summary.total} successful, "
             f"{summary.failed} failed, {summary.cached} cached"
@@ -471,14 +455,11 @@ class ExtractionEngine:
             )
             return (template, result)
 
-        # Run all lookups in parallel
         results = await asyncio.gather(*[lookup_one(t) for t in templates])
 
-        # Filter to only cache hits and parse results
         cached_results = {}
         for template, cached_raw in results:
             if cached_raw is not None:
-                # Parse cached result
                 content = self._parse_output(cached_raw, template)
                 cached_results[template.name] = ExtractionResult(
                     episode_url=episode_url,
@@ -529,13 +510,10 @@ class ExtractionEngine:
             )
             return [], empty_summary
 
-        # Track timing
         batch_start_time = time.time()
 
-        # Get episode URL from metadata
         episode_url = metadata.get("episode_url", "")
 
-        # Check cache for all templates in parallel
         cached_results = {}
         uncached_templates = []
 
@@ -545,7 +523,6 @@ class ExtractionEngine:
             cached_results = await self._batch_cache_lookup(templates, transcript, episode_url)
             cache_duration = time.time() - cache_start
 
-            # Log cache performance
             logger.debug(
                 f"Cache lookup took {cache_duration:.3f}s for {len(templates)} templates "
                 f"({len(cached_results)} hits, {len(templates) - len(cached_results)} misses)"
@@ -563,7 +540,6 @@ class ExtractionEngine:
             logger.info("All templates found in cache, returning cached results")
             results_list = [cached_results[t.name] for t in templates]
 
-            # Build summary for all-cached scenario
             attempts = [
                 ExtractionAttempt(
                     template_name=t.name,
@@ -588,7 +564,6 @@ class ExtractionEngine:
             uncached_templates, transcript, metadata, episode_url
         )
 
-        # Cache successful results
         if use_cache:
             for template in uncached_templates:
                 result = batch_results.get(template.name)
@@ -653,7 +628,6 @@ class ExtractionEngine:
                     )
                 )
 
-        # Build summary
         summary = ExtractionSummary(
             total=len(templates),
             successful=sum(1 for a in attempts if a.status == ExtractionStatus.SUCCESS),
@@ -662,7 +636,6 @@ class ExtractionEngine:
             attempts=attempts,
         )
 
-        # Log summary
         logger.info(
             f"Batch extraction complete: {summary.successful}/{summary.total} successful, "
             f"{summary.failed} failed, {summary.cached} cached"
@@ -711,7 +684,6 @@ class ExtractionEngine:
         Raises:
             ValueError: If no extractor is available
         """
-        # Check for extractor override (parameter takes precedence over env var)
         override = self._extractor_override or os.environ.get("INKWELL_EXTRACTOR")
         if override:
             plugin = self.extraction_registry.get(override)
@@ -722,7 +694,6 @@ class ExtractionEngine:
                 f"Available: {', '.join(n for n, _ in self.extraction_registry.get_enabled())}"
             )
 
-        # Use plugin registry for selection
         return self._select_extractor_from_registry(template)
 
     def _select_extractor_from_registry(self, template: ExtractionTemplate) -> BaseExtractor:
@@ -743,7 +714,6 @@ class ExtractionEngine:
             if plugin:
                 return plugin
 
-        # Get all available plugins
         enabled_plugins = self.extraction_registry.get_enabled()
 
         if not enabled_plugins:
@@ -759,7 +729,6 @@ class ExtractionEngine:
             if claude_plugin:
                 return claude_plugin
 
-        # Use Claude for complex structured data
         if template.expected_format == "json" and template.output_schema:
             required_fields = template.output_schema.get("required", [])
             if len(required_fields) > 5:
@@ -772,7 +741,6 @@ class ExtractionEngine:
         if default_plugin:
             return default_plugin
 
-        # Use highest priority available plugin
         return enabled_plugins[0][1]
 
     def _parse_output(self, raw_output: str, template: ExtractionTemplate) -> ExtractedContent:
@@ -790,7 +758,6 @@ class ExtractionEngine:
         """
         if template.expected_format == "json":
             try:
-                # Use safe JSON parsing with size/depth limits
                 # 5MB for extraction results, depth of 10 for structured data
                 data = safe_json_loads(raw_output, max_size=5_000_000, max_depth=10)
                 return ExtractedContent(
@@ -882,20 +849,17 @@ class ExtractionEngine:
         """
         import json
 
-        # Build combined instructions
         instructions = []
         for i, template in enumerate(templates, 1):
             task_name = template.name.upper().replace("-", " ").replace("_", " ")
             instructions.append(f"{i}. {task_name}:")
             instructions.append(f"   Description: {template.description}")
 
-            # Use the template's user prompt
             user_prompt = self._select_extractor(template).build_prompt(
                 template, "{{transcript}}", metadata
             )
             instructions.append(f"   Instructions: {user_prompt}")
 
-            # Add format hint
             if template.expected_format == "json" and template.output_schema:
                 schema_str = json.dumps(template.output_schema, indent=2)
                 instructions.append(f"   Expected format: {schema_str}")
@@ -904,7 +868,6 @@ class ExtractionEngine:
 
             instructions.append("")
 
-        # Build JSON schema showing expected structure
         schema = {template.name: f"<{template.expected_format} content>" for template in templates}
 
         prompt = f"""
@@ -966,7 +929,6 @@ Use the exact template names as JSON keys.
             json_str = response[json_start:json_end]
             data = safe_json_loads(json_str, max_size=5_000_000, max_depth=10)
 
-            # Create results for each template
             results = {}
             cost_per_template = estimated_cost / len(templates)
 
@@ -985,7 +947,6 @@ Use the exact template names as JSON keys.
                         provider=provider_name,
                     )
                 else:
-                    # Convert to ExtractedContent
                     if template.expected_format == "json":
                         # Data is already parsed, but ensure it's str or dict
                         if isinstance(template_data, (str, dict)):
@@ -1054,13 +1015,11 @@ Use the exact template names as JSON keys.
 
         results_list = await asyncio.gather(*tasks, return_exceptions=True)
 
-        # Convert to dict
         results = {}
         for template, result in zip(templates, results_list, strict=False):
             if isinstance(result, ExtractionResult):
                 results[template.name] = result
             elif isinstance(result, Exception):
-                # Create error result
                 results[template.name] = ExtractionResult(
                     episode_url=episode_url,
                     template_name=template.name,

@@ -55,16 +55,13 @@ class RSSParser:
                 headers = self._build_auth_headers(auth)
                 response = await client.get(url, headers=headers, follow_redirects=True)
 
-                # Check for auth errors
                 if response.status_code == 401:
                     raise SecurityError(f"Authentication failed for {url}. Check your credentials.")
 
                 response.raise_for_status()
 
-                # Parse feed
                 feed = feedparser.parse(response.content)
 
-                # Check for parsing errors
                 if feed.bozo:  # feedparser error flag
                     # Log warning but continue if we got entries
                     if not feed.entries:
@@ -223,7 +220,6 @@ class RSSParser:
         else:
             return [self.get_episode_by_title(feed, selector, podcast_name)]
 
-        # Validate positions
         invalid = [p for p in positions if p < 1 or p > feed_size]
         if invalid:
             raise NotFoundError(
@@ -300,7 +296,6 @@ class RSSParser:
         Returns:
             URL string or None if not found
         """
-        # Check enclosures list
         enclosures = entry.get("enclosures", [])
         for enclosure in enclosures:
             if enclosure.get("type", "").startswith("audio/") or enclosure.get(
@@ -387,7 +382,6 @@ class RSSParser:
         Returns:
             Duration in seconds or None
         """
-        # Check itunes:duration
         duration = entry.get("itunes_duration")
         if duration:
             try:
@@ -415,7 +409,6 @@ class RSSParser:
         Returns:
             Episode number or None
         """
-        # Check itunes:episode
         episode = entry.get("itunes_episode")
         if episode:
             try:
@@ -434,7 +427,6 @@ class RSSParser:
         Returns:
             Season number or None
         """
-        # Check itunes:season
         season = entry.get("itunes_season")
         if season:
             try:

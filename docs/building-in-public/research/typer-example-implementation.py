@@ -37,7 +37,6 @@ class EpisodeSelector(click.ParamType):
 
         value = value.strip()
 
-        # Validate non-empty
         if not value:
             self.fail("Episode selector cannot be empty", param, ctx)
 
@@ -70,7 +69,6 @@ class EpisodeSelector(click.ParamType):
                 f"Invalid range format: {value}. Expected format: '1-5'", param, ctx
             )
 
-        # Check if both parts are digits
         if not all(p.strip().isdigit() for p in parts):
             return None  # Not a range, might be keyword with hyphen
 
@@ -116,7 +114,6 @@ class EpisodeSelector(click.ParamType):
                     "All episode positions must be positive integers", param, ctx
                 )
 
-            # Remove duplicates and sort
             positions = sorted(set(positions))
 
             return {"type": "list", "positions": positions}
@@ -196,7 +193,6 @@ def select_episodes(all_episodes: List[Any], selector: Dict[str, Any]) -> List[A
     if selector["type"] == "range":
         start, end = selector["start"], selector["end"]
 
-        # Validate range is within bounds
         if start > len(all_episodes):
             console.print(
                 f"[yellow]Warning:[/yellow] Start position {start} "
@@ -214,7 +210,6 @@ def select_episodes(all_episodes: List[Any], selector: Dict[str, Any]) -> List[A
                 err=True,
             )
 
-        # Convert 1-based to 0-based indexing
         return all_episodes[start - 1 : actual_end]
 
     elif selector["type"] == "list":
@@ -226,7 +221,6 @@ def select_episodes(all_episodes: List[Any], selector: Dict[str, Any]) -> List[A
             if pos > len(all_episodes):
                 invalid.append(pos)
             else:
-                # Convert 1-based to 0-based
                 selected.append(all_episodes[pos - 1])
 
         if invalid:
@@ -250,7 +244,6 @@ def select_episodes(all_episodes: List[Any], selector: Dict[str, Any]) -> List[A
             )
             return []
 
-        # Convert 1-based to 0-based
         return [all_episodes[pos - 1]]
 
     else:  # keyword
@@ -319,7 +312,6 @@ def process(
     """
     console = Console()
 
-    # Validate mutually exclusive options
     validate_mutually_exclusive(
         episode, latest, all_episodes, names=["--episode", "--latest", "--all"]
     )
@@ -339,7 +331,6 @@ def process(
         MockEpisode("Episode 5: AI Security Concerns", "AI safety discussion"),
     ]
 
-    # Select episodes
     if latest:
         selected = [mock_episodes[0]]
         console.print("[cyan]Processing latest episode[/cyan]")

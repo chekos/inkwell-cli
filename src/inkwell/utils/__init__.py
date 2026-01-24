@@ -21,7 +21,6 @@ from inkwell.utils.paths import (
 )
 
 __all__ = [
-    # Cache
     "FileCache",
     "CacheError",
     # Errors (5 core types per todo #035)

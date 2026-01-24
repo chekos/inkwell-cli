@@ -204,7 +204,6 @@ class TestAudioDownloader:
                 password="testpass",
             )
 
-        # Check that authentication was passed to yt-dlp
         call_args = mock_ydl_class.call_args
         opts = call_args[0][0]
         assert opts["username"] == "testuser"
@@ -275,7 +274,6 @@ class TestAudioDownloader:
                         "total_bytes": 2048,
                     }
                 )
-            # Create the output file
             output_file.touch()
             return {
                 "title": "Test Video",
@@ -285,7 +283,6 @@ class TestAudioDownloader:
 
         mock_ydl_instance.extract_info.side_effect = mock_extract_info
 
-        # Create mock context manager
         mock_ydl_class = MagicMock()
         mock_ydl_class.return_value.__enter__.return_value = mock_ydl_instance
         mock_ydl_class.return_value.__exit__.return_value = None

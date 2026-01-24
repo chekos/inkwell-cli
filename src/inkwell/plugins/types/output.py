@@ -125,7 +125,6 @@ class OutputPlugin(InkwellPlugin):
             DeprecationWarning,
             stacklevel=2,
         )
-        # Run async render() synchronously
         return asyncio.run(self.render(result, episode_metadata, include_frontmatter))
 
     def get_filename(self, template_name: str) -> str:

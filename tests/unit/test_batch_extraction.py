@@ -14,7 +14,6 @@ from inkwell.extraction.models import ExtractionTemplate
 @pytest.fixture
 def mock_api_keys(monkeypatch: pytest.MonkeyPatch) -> None:
     """Set mock API keys with valid format."""
-    # Use valid-format test keys that pass validation
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-api03-" + "X" * 32)
     monkeypatch.setenv("GOOGLE_API_KEY", "AIzaSyD" + "X" * 32)
 
@@ -108,7 +107,6 @@ class TestBatchedExtraction:
             }
         )
 
-        # Create mock extractor
         mock_extract = AsyncMock(return_value=batch_response)
         mock_extractor = Mock()
         mock_extractor.extract = mock_extract
@@ -131,7 +129,6 @@ class TestBatchedExtraction:
         assert len(results) == 3
         assert all(r.success for r in results)
 
-        # Check that templates are in same order
         assert results[0].template_name == "summary"
         assert results[1].template_name == "quotes"
         assert results[2].template_name == "key-concepts"
@@ -383,7 +380,6 @@ class TestBatchPromptCreation:
             gemini_api_key="AIzaSyD" + "X" * 32,
         )
 
-        # Create mock extractor that returns a user prompt
         mock_extractor = Mock()
         mock_extractor.build_prompt = Mock(return_value="Process: {{ transcript }}")
 
@@ -449,13 +445,11 @@ class TestBatchResponseParsing:
             assert "summary" in results
             assert "quotes" in results
 
-            # Check summary result
             summary_result = results["summary"]
             assert summary_result.success is True
             assert summary_result.template_name == "summary"
             assert summary_result.extracted_content.content == "Test summary content"
 
-            # Check quotes result
             quotes_result = results["quotes"]
             assert quotes_result.success is True
             assert quotes_result.template_name == "quotes"
@@ -609,7 +603,6 @@ class TestCostTracking:
         """Test that costs are tracked correctly for batched extraction."""
         from inkwell.utils.costs import CostTracker
 
-        # Create cost tracker with temp file
         cost_tracker = CostTracker(costs_file=tmp_path / "costs.json")
         engine = ExtractionEngine(
             cache=temp_cache,
@@ -619,7 +612,6 @@ class TestCostTracking:
 
         batch_response = json.dumps({"summary": "Test", "quotes": ["Quote"]})
 
-        # Create mock extractor
         mock_extract = AsyncMock(return_value=batch_response)
         mock_extractor = Mock()
         mock_extractor.extract = mock_extract

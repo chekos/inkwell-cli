@@ -189,13 +189,11 @@ class PluginRegistry(Generic[T]):
             List of (name, plugin) tuples sorted by priority descending.
         """
         if self._enabled_cache is None:
-            # Filter to usable plugins and assert plugin is not None (is_usable guarantees this)
             usable: list[tuple[str, T]] = [
                 (e.name, e.plugin)  # type: ignore[misc]  # is_usable guarantees plugin is not None
                 for e in self._entries.values()
                 if e.is_usable
             ]
-            # Sort by priority (descending), then by name (ascending) for stability
             self._enabled_cache = sorted(
                 usable,
                 key=lambda x: (-self._entries[x[0]].priority, x[0]),

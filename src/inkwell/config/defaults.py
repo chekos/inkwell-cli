@@ -20,7 +20,6 @@ default_output_dir: ~/inkwell-notes
 transcription_model: gemini-2.5-flash
 interview_model: claude-sonnet-4-5
 
-# Check YouTube for existing transcripts before transcribing
 youtube_check: true
 
 # Logging level (DEBUG, INFO, WARNING, ERROR)
@@ -44,7 +43,6 @@ template_categories:
 
 # YAML template for feeds.yaml
 FEEDS_YAML_TEMPLATE = """# Podcast Feeds
-# Add feeds using: inkwell add <url> --name <name>
 # This file will be automatically populated
 
 feeds: {}

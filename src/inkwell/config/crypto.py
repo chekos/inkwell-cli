@@ -37,28 +37,22 @@ class CredentialEncryptor:
             EncryptionError: If key file has insecure permissions
         """
         if self.key_path.exists():
-            # Check permissions
             self._validate_key_permissions()
             return self.key_path.read_bytes()
 
         # Generate new key
         key = Fernet.generate_key()
 
-        # Ensure parent directory exists
         self.key_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # Write primary key file
         self.key_path.write_bytes(key)
 
-        # Set restrictive permissions (owner read/write only)
         self.key_path.chmod(0o600)
 
-        # Create backup keyfile with same permissions
         backup_path = self.key_path.parent / ".keyfile.backup"
         backup_path.write_bytes(key)
         backup_path.chmod(0o600)
 
-        # Create recovery instructions
         recovery_doc = self.key_path.parent / "KEYFILE_RECOVERY.txt"
         recovery_doc.write_text(
             f"ENCRYPTION KEY BACKUP\n"
@@ -104,7 +98,6 @@ class CredentialEncryptor:
         file_stat = self.key_path.stat()
         mode = stat.S_IMODE(file_stat.st_mode)
 
-        # Check if file is readable by group or others
         if mode & (stat.S_IRGRP | stat.S_IROTH | stat.S_IWGRP | stat.S_IWOTH):
             raise SecurityError(
                 f"Key file {self.key_path} has insecure permissions ({oct(mode)}). "

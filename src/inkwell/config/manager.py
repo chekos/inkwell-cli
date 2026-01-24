@@ -117,7 +117,6 @@ class ConfigManager:
             "pid": os.getpid(),
         }
 
-        # Ensure audit log directory exists
         self.audit_log.parent.mkdir(parents=True, exist_ok=True)
 
         # Append to log (atomic on most filesystems)
@@ -134,7 +133,6 @@ class ConfigManager:
             InvalidConfigError: If config is invalid or corrupted
         """
         if not self.config_file.exists():
-            # Create default config
             self._create_default_config()
             return DEFAULT_GLOBAL_CONFIG
 
@@ -163,7 +161,6 @@ class ConfigManager:
         Args:
             config: GlobalConfig instance to save
         """
-        # Load old config to detect changes (if exists)
         old_config = None
         if self.config_file.exists():
             try:
@@ -172,22 +169,18 @@ class ConfigManager:
                 # If we can't load old config, just save new one without logging
                 pass
 
-        # Convert to dict and handle Path objects
         data = config.model_dump(mode="python")
 
-        # Convert Path to string
         if "default_output_dir" in data and isinstance(data["default_output_dir"], Path):
             data["default_output_dir"] = str(data["default_output_dir"])
 
         self.config_dir.mkdir(parents=True, exist_ok=True)
 
-        # Write YAML
         self.config_file.write_text(
             yaml.dump(data, default_flow_style=False, sort_keys=False),
             encoding="utf-8",
         )
 
-        # Log config changes
         if old_config:
             changes = {}
             if str(old_config.default_output_dir) != str(config.default_output_dir):
@@ -251,7 +244,6 @@ class ConfigManager:
             InvalidConfigError: If feeds file is invalid or credentials cannot be decrypted
         """
         if not self.feeds_file.exists():
-            # Create empty feeds file
             self._create_default_feeds()
             return Feeds()
 
@@ -321,7 +313,6 @@ class ConfigManager:
         Args:
             feeds: Feeds instance to save
         """
-        # Convert to dict
         data = feeds.model_dump(mode="python")
 
         # Encrypt credentials
@@ -336,13 +327,11 @@ class ConfigManager:
                     if auth.get("token"):
                         auth["token"] = self.encryptor.encrypt(auth["token"])
 
-                # Convert URL to string
                 if "url" in feed_data:
                     feed_data["url"] = str(feed_data["url"])
 
         self.config_dir.mkdir(parents=True, exist_ok=True)
 
-        # Write YAML
         self.feeds_file.write_text(
             yaml.dump(data, default_flow_style=False, sort_keys=False),
             encoding="utf-8",
@@ -372,7 +361,6 @@ class ConfigManager:
             feeds.feeds[name] = feed_config
             self.save_feeds(feeds)
 
-            # Log the feed addition
             self._log_change(
                 "add_feed",
                 {
@@ -409,7 +397,6 @@ class ConfigManager:
             feeds.feeds[name] = feed_config
             self.save_feeds(feeds)
 
-            # Log what changed
             changes = {}
             if str(old_config.url) != str(feed_config.url):
                 changes["url"] = {
@@ -457,7 +444,6 @@ class ConfigManager:
             del feeds.feeds[name]
             self.save_feeds(feeds)
 
-            # Log the removal with feed details
             self._log_change(
                 "remove_feed",
                 {
@@ -518,7 +504,6 @@ class ConfigManager:
                     if entry["details"].get("feed_name") == feed_name:
                         history.append(entry)
                 except json.JSONDecodeError:
-                    # Skip malformed lines
                     continue
 
         return history
@@ -542,10 +527,8 @@ class ConfigManager:
                     entry = json.loads(line)
                     entries.append(entry)
                 except json.JSONDecodeError:
-                    # Skip malformed lines
                     continue
 
-        # Return most recent entries (last N lines)
         return entries[-limit:][::-1]  # Reverse to show most recent first
 
     def _create_default_config(self) -> None:

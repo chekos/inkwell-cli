@@ -112,7 +112,6 @@ class GeminiTranscriber(TranscriptionPlugin):
         """
         TranscriptionPlugin.__init__(self)
 
-        # Store initialization parameters
         self._api_key_param = api_key
         self._model_name_param = model_name
         self._cost_threshold_param = cost_threshold_usd
@@ -143,11 +142,9 @@ class GeminiTranscriber(TranscriptionPlugin):
             cost_threshold_usd: Cost threshold for confirmation
             cost_confirmation_callback: Callback for cost confirmation
         """
-        # Get API key from parameter or environment
         # Try GOOGLE_API_KEY first (standard), then GOOGLE_AI_API_KEY (deprecated)
         self.api_key = api_key or os.getenv("GOOGLE_API_KEY") or os.getenv("GOOGLE_AI_API_KEY")
 
-        # Warn if using deprecated env var
         if os.getenv("GOOGLE_AI_API_KEY") and not os.getenv("GOOGLE_API_KEY"):
             logger.warning(
                 "GOOGLE_AI_API_KEY is deprecated. Please use GOOGLE_API_KEY instead. "
@@ -160,14 +157,12 @@ class GeminiTranscriber(TranscriptionPlugin):
                 "Provide via api_key parameter or GOOGLE_API_KEY environment variable."
             )
 
-        # Validate model name
         if model_name not in ALLOWED_GEMINI_MODELS:
             raise ValueError(
                 f"Invalid model name '{model_name}'. "
                 f"Allowed models: {', '.join(sorted(ALLOWED_GEMINI_MODELS))}"
             )
 
-        # Initialize client with new SDK
         self.client = genai.Client(api_key=self.api_key)
 
         self.model_name = model_name
@@ -187,7 +182,6 @@ class GeminiTranscriber(TranscriptionPlugin):
         """
         super().configure(config, cost_tracker)
 
-        # Initialize client with config values or stored parameters
         self._initialize_client(
             api_key=config.get("api_key", self._api_key_param),
             model_name=config.get("model_name", self._model_name_param),
@@ -229,7 +223,6 @@ class GeminiTranscriber(TranscriptionPlugin):
         if request.source_type != "file" or request.file_path is None:
             return False
 
-        # Check file exists and has supported extension
         if not request.file_path.exists():
             return False
 
@@ -324,7 +317,6 @@ class GeminiTranscriber(TranscriptionPlugin):
         Raises:
             APIError: If transcription fails or file not found
         """
-        # Handle both interfaces
         if isinstance(path_or_request, TranscriptionRequest):
             if path_or_request.file_path is None:
                 raise APIError(
@@ -337,11 +329,9 @@ class GeminiTranscriber(TranscriptionPlugin):
             # Legacy Path interface
             audio_path = path_or_request
 
-        # Validate file exists
         if not audio_path.exists():
             raise APIError(f"Audio file not found: {audio_path}")
 
-        # Check format support
         if not await self.can_transcribe(audio_path):
             raise APIError(
                 f"Unsupported audio format: {audio_path.suffix}. "
@@ -359,7 +349,6 @@ class GeminiTranscriber(TranscriptionPlugin):
             )
 
         try:
-            # Check if audio needs chunking (>15 minutes)
             should_chunk = needs_chunking(audio_path)
             logger.info(f"needs_chunking() returned {should_chunk} for {audio_path}")
 
@@ -373,7 +362,6 @@ class GeminiTranscriber(TranscriptionPlugin):
                 response = await asyncio.to_thread(self._transcribe_sync, audio_path)
                 transcript = self._parse_response(response, audio_path, episode_url)
 
-            # Add cost metadata
             transcript.cost_usd = estimate.estimated_cost_usd
 
             return transcript
@@ -422,7 +410,6 @@ class GeminiTranscriber(TranscriptionPlugin):
                 chunk_transcript = self._parse_response(response, chunk_path, episode_url)
                 chunk_transcripts.append(chunk_transcript)
 
-            # Merge all chunk transcripts
             logger.info(
                 f"Merging {len(chunk_transcripts)} chunk transcripts "
                 f"(total segments before merge: {sum(len(c.segments) for c in chunk_transcripts)})"
@@ -434,14 +421,12 @@ class GeminiTranscriber(TranscriptionPlugin):
             )
             logger.info(f"Merged transcript has {len(merged.segments)} segments")
 
-            # Set proper source and episode URL
             merged.source = "gemini"
             merged.episode_url = episode_url or str(audio_path)
 
             return merged
 
         finally:
-            # Clean up temporary chunk files
             if chunk_paths:
                 cleanup_chunks(chunk_paths)
 
@@ -457,7 +442,6 @@ class GeminiTranscriber(TranscriptionPlugin):
         Returns:
             Gemini API response
         """
-        # Apply rate limiting before API call
         limiter = get_rate_limiter("gemini")
         limiter.acquire()
 
@@ -493,7 +477,6 @@ class GeminiTranscriber(TranscriptionPlugin):
             ),
         )
 
-        # Check if output was truncated
         if (
             response.candidates
             and response.candidates[0].finish_reason
@@ -529,12 +512,10 @@ class GeminiTranscriber(TranscriptionPlugin):
         step = chunk_duration - overlap  # Time step between chunk starts
 
         for chunk_idx, chunk in enumerate(chunks):
-            # Calculate time offset for this chunk
             time_offset = chunk_idx * step
 
             # For each segment in this chunk, adjust timestamps
             for segment in chunk.segments:
-                # Skip segments in the overlap zone (except for first/last chunk)
                 # For middle chunks, skip first `overlap` seconds (covered by previous chunk)
                 if chunk_idx > 0 and segment.start < overlap:
                     continue
@@ -547,7 +528,6 @@ class GeminiTranscriber(TranscriptionPlugin):
                 )
                 merged_segments.append(adjusted_segment)
 
-        # Sort by start time and remove potential duplicates
         merged_segments.sort(key=lambda s: s.start)
 
         # Recalculate durations
@@ -575,7 +555,6 @@ class GeminiTranscriber(TranscriptionPlugin):
         Returns:
             Gemini API response with structured JSON output
         """
-        # Apply rate limiting before API call
         limiter = get_rate_limiter("gemini")
         limiter.acquire()
 
@@ -613,7 +592,6 @@ class GeminiTranscriber(TranscriptionPlugin):
             ),
         )
 
-        # Check if output was truncated due to token limit
         if (
             response.candidates
             and response.candidates[0].finish_reason
@@ -652,7 +630,6 @@ class GeminiTranscriber(TranscriptionPlugin):
         if summary_match:
             summary = summary_match.group(1).strip()
 
-        # Parse timestamp markers: [HH:MM:SS] or [MM:SS] followed by Speaker: text
         # Pattern matches: [00:00] Speaker Name: text or [00:00:00] Speaker: text
         timestamp_pattern = r"\[(\d{1,2}:\d{2}(?::\d{2})?)\]\s*([^:]+):\s*"
 
@@ -663,12 +640,10 @@ class GeminiTranscriber(TranscriptionPlugin):
             timestamp_str = match.group(1)
             speaker = match.group(2).strip()
 
-            # Get text until next timestamp or end
             start_pos = match.end()
             end_pos = matches[i + 1].start() if i + 1 < len(matches) else len(text)
             segment_text = text[start_pos:end_pos].strip()
 
-            # Parse timestamp to seconds
             start_seconds = self._parse_timestamp(timestamp_str)
 
             # Format text with speaker label (preserve original format)
@@ -682,7 +657,6 @@ class GeminiTranscriber(TranscriptionPlugin):
                 )
             )
 
-        # Calculate durations from consecutive timestamps
         for i in range(len(segments) - 1):
             segments[i].duration = segments[i + 1].start - segments[i].start
 
@@ -793,7 +767,6 @@ class GeminiTranscriberWithSegments(GeminiTranscriber):
             match = re.match(timestamp_pattern, line)
 
             if match:
-                # Save previous segment if we have text
                 if current_text_parts:
                     segments.append(
                         TranscriptSegment(
@@ -804,7 +777,6 @@ class GeminiTranscriberWithSegments(GeminiTranscriber):
                     )
                     current_text_parts = []
 
-                # Parse new timestamp
                 hours_or_mins = int(match.group(1))
                 mins_or_secs = int(match.group(2))
                 secs = int(match.group(3)) if match.group(3) is not None else None
@@ -815,9 +787,7 @@ class GeminiTranscriberWithSegments(GeminiTranscriber):
                 else:  # MM:SS format
                     current_time = hours_or_mins * 60 + mins_or_secs
 
-                # Get text after timestamp
                 text_after_timestamp = line[match.end() :].strip()
-                # Remove "Speaker:" prefix if present
                 text_after_timestamp = re.sub(
                     r"^[Ss]peaker\s*\d*\s*:?\s*", "", text_after_timestamp
                 )
@@ -828,7 +798,6 @@ class GeminiTranscriberWithSegments(GeminiTranscriber):
                 if line.strip():
                     current_text_parts.append(line.strip())
 
-        # Add final segment
         if current_text_parts:
             segments.append(
                 TranscriptSegment(
@@ -838,7 +807,6 @@ class GeminiTranscriberWithSegments(GeminiTranscriber):
                 )
             )
 
-        # Calculate durations (difference between consecutive timestamps)
         for i in range(len(segments) - 1):
             segments[i].duration = segments[i + 1].start - segments[i].start
 

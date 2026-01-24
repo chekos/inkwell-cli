@@ -46,7 +46,6 @@ def on_post_page(output: str, page, config) -> str:
                 seen.add(line)
                 unique_lines.append(line)
 
-        # Return WITHOUT <code> wrapper - Material for MkDocs expects
         # content directly inside <pre class="mermaid">
         return f'<pre class="mermaid">\n{chr(10).join(unique_lines)}\n</pre>'
 

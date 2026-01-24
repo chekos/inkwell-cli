@@ -87,7 +87,6 @@ class TestTranscriptionPluginBase:
     def test_default_estimate_cost_is_zero(self) -> None:
         """Test that default estimate_cost returns 0 (free)."""
 
-        # Create a concrete test plugin
         class TestPlugin(TranscriptionPlugin):
             NAME = "test"
             VERSION = "1.0.0"
@@ -197,11 +196,9 @@ class TestGeminiPluginIntegration:
         from inkwell.transcription.gemini import GeminiTranscriber
 
         # Can't instantiate without API key in normal mode
-        # Create with lazy_init to skip API key requirement
         transcriber = GeminiTranscriber.__new__(GeminiTranscriber)
         object.__setattr__(transcriber, "_lazy_init", True)
 
-        # Create a test audio file
         audio_file = tmp_path / "test.mp3"
         audio_file.write_bytes(b"fake audio data")
 
@@ -310,7 +307,6 @@ class TestTranscriptionPluginConfigure:
         """Test that configure() can set preferred languages."""
         from inkwell.transcription.youtube import YouTubeTranscriber
 
-        # Create with lazy init (like plugin discovery does)
         transcriber = YouTubeTranscriber(lazy_init=True)
 
         # Configure should set up preferred languages
@@ -326,7 +322,6 @@ class TestTranscriptionPluginConfigure:
         monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
         monkeypatch.delenv("GOOGLE_AI_API_KEY", raising=False)
 
-        # Create with lazy init (like plugin discovery does)
         transcriber = GeminiTranscriber(lazy_init=True)
 
         # Configure should set up the API key

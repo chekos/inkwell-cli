@@ -35,7 +35,6 @@ class TestE2ESimulation:
         """Test that E2E framework is properly structured."""
         assert len(E2E_TEST_CASES) == 5, "Should have 5 diverse test cases"
 
-        # Validate test case coverage
         content_types = {tc.content_type for tc in E2E_TEST_CASES}
         assert "technical" in content_types
         assert "interview" in content_types
@@ -43,7 +42,6 @@ class TestE2ESimulation:
         assert "educational" in content_types
         assert "storytelling" in content_types
 
-        # Validate duration diversity
         durations = [tc.duration_minutes for tc in E2E_TEST_CASES]
         assert min(durations) <= 20, "Should have short episode"
         assert max(durations) >= 60, "Should have long episode"
@@ -90,7 +88,6 @@ class TestE2ESimulation:
 
         total_time = time.time() - start_time
 
-        # Create test result
         result = E2ETestResult(
             test_case_name=test_case.name,
             success=True,
@@ -217,7 +214,6 @@ class TestE2ESimulation:
             )
             results.append(result)
 
-        # Create benchmark
         benchmark = E2EBenchmark.from_results(results)
 
         # Assertions
@@ -233,11 +229,9 @@ class TestE2ESimulation:
         """Test output validation logic."""
         test_case = E2E_TEST_CASES[0]  # short-technical
 
-        # Create mock output
         output_dir = tmp_path / "output"
         output_dir.mkdir()
 
-        # Create expected files
         metadata_file = output_dir / ".metadata.yaml"
         metadata_file.write_text("podcast: Test\nepisode: Test Episode\n")
 
@@ -247,7 +241,6 @@ class TestE2ESimulation:
             content = f"---\ntitle: {section}\n---\n\n# {section}\n\nTest content with [[wikilink]] and #tag.\n\nAdditional content to make file larger than 100 bytes threshold for validation.\nThis ensures the validation framework doesn't generate warnings about file size."
             section_file.write_text(content)
 
-        # Validate
         passed, errors, warnings = validate_e2e_output(output_dir, test_case)
 
         assert passed, f"Validation should pass. Errors: {errors}"
@@ -258,7 +251,6 @@ class TestE2ESimulation:
         """Test validation catches missing expected files."""
         test_case = E2E_TEST_CASES[0]
 
-        # Create incomplete output (missing sections)
         output_dir = tmp_path / "output"
         output_dir.mkdir()
 
@@ -270,7 +262,6 @@ class TestE2ESimulation:
             section_file = output_dir / f"{test_case.expected_sections[0]}.md"
             section_file.write_text("---\n---\n\nContent")
 
-        # Validate
         passed, errors, warnings = validate_e2e_output(output_dir, test_case)
 
         assert not passed, "Validation should fail for missing files"
@@ -293,7 +284,6 @@ class TestE2ESimulation:
 
         transcript = "\n".join(transcript_lines)
 
-        # Save to file
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_text(transcript)
 
@@ -318,7 +308,6 @@ class TestE2ESimulation:
             }
             results[section] = content
 
-            # Save extraction result
             result_file = output_dir / f"{section}.json"
             result_file.write_text(json.dumps(content, indent=2))
 
@@ -346,7 +335,6 @@ class TestE2ESimulation:
         for section, content in extraction_results.items():
             md_file = output_dir / f"{section}.md"
 
-            # Create content with frontmatter, wikilinks, and tags
             frontmatter = f"""---
 title: {content["title"]}
 podcast: {test_case.podcast_name}
@@ -358,7 +346,6 @@ tags: [podcast, {test_case.content_type}]
 """
             body = f"# {content['title']}\n\n{content['content']}\n\n"
 
-            # Add wikilinks for entities
             if content["entities"]:
                 body += "## Related\n\n"
                 for entity in content["entities"]:

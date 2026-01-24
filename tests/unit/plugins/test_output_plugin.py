@@ -144,14 +144,12 @@ class TestMarkdownOutputRender:
         """Test basic render functionality."""
         content = await markdown_output.render(sample_result, sample_metadata)
 
-        # Check frontmatter is present
         assert content.startswith("---")
         assert "template: summary" in content
         assert "podcast: Test Podcast" in content
         # YAML may quote strings with colons, so check for the title content
         assert "Episode 1: Testing" in content
 
-        # Check content is present
         assert "This is a test summary." in content
 
     @pytest.mark.asyncio
@@ -163,7 +161,6 @@ class TestMarkdownOutputRender:
             sample_result, sample_metadata, include_frontmatter=False
         )
 
-        # Check frontmatter is NOT present
         assert not content.startswith("---")
         # Content should still be there
         assert "This is a test summary." in content
@@ -187,7 +184,6 @@ class TestMarkdownOutputRender:
 
         content = await markdown_output.render(result, sample_metadata)
 
-        # Check structured content is formatted
         assert "# Quotes" in content
         assert "Test quote" in content
         assert "John" in content
@@ -266,7 +262,6 @@ class TestOutputPluginRegistry:
 
         registry: PluginRegistry[OutputPlugin] = PluginRegistry(OutputPlugin)
 
-        # Create and register plugins with different priorities
         md1 = MarkdownOutput(lazy_init=True)
         md2 = MarkdownOutput(lazy_init=True)
 
@@ -291,7 +286,6 @@ class TestOutputPluginDiscovery:
         # Should find at least the built-in markdown plugin
         assert len(results) >= 1
 
-        # Find the markdown plugin
         markdown_result = next((r for r in results if r.name == "markdown"), None)
         assert markdown_result is not None
         assert markdown_result.success is True

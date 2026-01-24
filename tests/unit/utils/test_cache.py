@@ -151,7 +151,6 @@ class TestFileCache:
             deserializer=lambda d: d["value"],
         )
 
-        # Add multiple entries
         await cache.set("key1", value="value1")
         await cache.set("key2", value="value2")
         await cache.set("key3", value="value3")
@@ -175,7 +174,6 @@ class TestFileCache:
     @pytest.mark.asyncio
     async def test_clear_expired(self, temp_cache_dir: Path) -> None:
         """Test clearing only expired entries."""
-        # Create cache with short TTL
         short_cache = FileCache[str](
             cache_dir=temp_cache_dir,
             ttl_days=1 / 86400,
@@ -183,11 +181,9 @@ class TestFileCache:
             deserializer=lambda d: d["value"],
         )
 
-        # Add entry that will expire
         await short_cache.set("old", value="old value")
         time.sleep(1.1)
 
-        # Create new cache with long TTL
         long_cache = FileCache[str](
             cache_dir=temp_cache_dir,
             ttl_days=30,
@@ -195,7 +191,6 @@ class TestFileCache:
             deserializer=lambda d: d["value"],
         )
 
-        # Add entry that won't expire
         await long_cache.set("new", value="new value")
 
         # Clear expired using short cache
@@ -227,7 +222,6 @@ class TestFileCache:
             deserializer=lambda d: d["value"],
         )
 
-        # Add entries
         await cache.set("key1", value="value1")
         await cache.set("key2", value="value2")
 
@@ -246,7 +240,6 @@ class TestFileCache:
             deserializer=lambda d: d["value"],
         )
 
-        # Create corrupted cache file
         cache_key = cache.key_generator("key1")
         cache_file = temp_cache_dir / f"{cache_key}.json"
         cache_file.write_text("not valid json {{{")
@@ -305,11 +298,9 @@ class TestFileCache:
 
         await cache.set("key1", value="test")
 
-        # Find the cache file
         cache_files = list(temp_cache_dir.glob("*.json"))
         assert len(cache_files) == 1
 
-        # Check structure
         with cache_files[0].open("r") as f:
             data = json.load(f)
 

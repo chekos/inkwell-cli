@@ -104,7 +104,6 @@ class ExtractionPlugin(InkwellPlugin, BaseExtractor):
             ValidationError: If JSON parsing fails or required fields are missing
         """
         try:
-            # Use safe JSON parsing with size/depth limits
             # 5MB for extraction results, depth of 10 for structured data
             data = safe_json_loads(output, max_size=5_000_000, max_depth=10)
         except JSONParsingError as e:

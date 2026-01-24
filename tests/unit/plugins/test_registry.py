@@ -237,7 +237,6 @@ class TestPluginRegistry:
         registry.register("plugin-a", plugin_a, priority=100)
         registry.register("plugin-b", plugin_b, priority=50)
 
-        # Find plugins with NAME starting with "plugin"
         results = registry.find_capable(lambda p: p.NAME.startswith("plugin"))
 
         assert len(results) == 2

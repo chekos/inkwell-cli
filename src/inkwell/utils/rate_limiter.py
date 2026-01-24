@@ -47,10 +47,8 @@ class RateLimiter:
         now = time.time()
         elapsed = now - self.last_update
 
-        # Calculate tokens to add
         tokens_to_add = elapsed * (self.max_calls / self.period)
 
-        # Add tokens (cap at max_calls)
         self.tokens = min(self.max_calls, self.tokens + tokens_to_add)
         self.last_update = now
 
@@ -86,7 +84,6 @@ class RateLimiter:
             if not blocking:
                 return False
 
-            # Calculate exact wait time until next token is available
             # tokens_needed = 1 - self.tokens (fractional tokens currently available)
             # time_per_token = self.period / self.max_calls
             wait_time = (1.0 - self.tokens) * (self.period / self.max_calls)

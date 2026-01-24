@@ -202,7 +202,6 @@ class TestConductInterviewFromOutput:
     @patch("inkwell.interview.simple_interviewer.SimpleInterviewer.conduct_interview")
     async def test_conduct_interview_from_output(self, mock_conduct, tmp_path: Path):
         """Test loading content from output directory."""
-        # Create mock output files
         output_dir = tmp_path / "episode-output"
         output_dir.mkdir()
 
@@ -244,7 +243,6 @@ class TestConductInterviewFromOutput:
     @patch("inkwell.interview.simple_interviewer.SimpleInterviewer.conduct_interview")
     async def test_conduct_interview_from_output_missing_files(self, mock_conduct, tmp_path: Path):
         """Test handling missing output files gracefully."""
-        # Create directory without files
         output_dir = tmp_path / "episode-output"
         output_dir.mkdir()
 

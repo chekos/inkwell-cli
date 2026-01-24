@@ -17,10 +17,8 @@ def setup_logging(verbose: bool = False, log_file: Path | None = None) -> None:
         >>> setup_logging(verbose=True)
         >>> setup_logging(log_file=Path("inkwell.log"))
     """
-    # Set level based on verbosity
     level = logging.DEBUG if verbose else logging.INFO
 
-    # Create handlers
     handlers: list[logging.Handler] = []
 
     # Console handler with Rich formatting
@@ -49,7 +47,6 @@ def setup_logging(verbose: bool = False, log_file: Path | None = None) -> None:
         format="%(message)s",
     )
 
-    # Set external library log levels to reduce noise
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("anthropic").setLevel(logging.WARNING)
     logging.getLogger("google").setLevel(logging.WARNING)

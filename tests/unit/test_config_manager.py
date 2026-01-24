@@ -67,16 +67,13 @@ class TestConfigManager:
         """Test saving and loading feeds."""
         manager = ConfigManager(config_dir=tmp_path)
 
-        # Create a feed
         feed_config = FeedConfig(
             url="https://example.com/feed.rss",  # type: ignore
             category="tech",
         )
 
-        # Add feed
         manager.add_feed("test-podcast", feed_config)
 
-        # Load feeds
         feeds = manager.load_feeds()
 
         assert "test-podcast" in feeds.feeds
@@ -107,11 +104,9 @@ class TestConfigManager:
         """Test updating an existing feed."""
         manager = ConfigManager(config_dir=tmp_path)
 
-        # Add feed
         feed_config = FeedConfig(url="https://example.com/feed.rss", category="tech")  # type: ignore
         manager.add_feed("my-podcast", feed_config)
 
-        # Update feed
         updated_config = FeedConfig(url="https://example.com/feed.rss", category="interview")  # type: ignore
         manager.update_feed("my-podcast", updated_config)
 
@@ -131,11 +126,9 @@ class TestConfigManager:
         """Test removing a feed."""
         manager = ConfigManager(config_dir=tmp_path)
 
-        # Add feed
         feed_config = FeedConfig(url="https://example.com/feed.rss")  # type: ignore
         manager.add_feed("my-podcast", feed_config)
 
-        # Remove feed
         manager.remove_feed("my-podcast")
 
         # Verify removal
@@ -153,11 +146,9 @@ class TestConfigManager:
         """Test getting a single feed."""
         manager = ConfigManager(config_dir=tmp_path)
 
-        # Add feed
         feed_config = FeedConfig(url="https://example.com/feed.rss")  # type: ignore
         manager.add_feed("my-podcast", feed_config)
 
-        # Get feed
         feed = manager.get_feed("my-podcast")
 
         assert str(feed.url) == "https://example.com/feed.rss"
@@ -180,7 +171,6 @@ class TestConfigManager:
         """Test listing multiple feeds."""
         manager = ConfigManager(config_dir=tmp_path)
 
-        # Add multiple feeds
         for i in range(3):
             feed_config = FeedConfig(url=f"https://example.com/feed{i}.rss")  # type: ignore
             manager.add_feed(f"podcast-{i}", feed_config)
@@ -192,7 +182,6 @@ class TestConfigManager:
         """Test that credentials are encrypted when saved to disk."""
         manager = ConfigManager(config_dir=tmp_path)
 
-        # Add feed with auth
         feed_config = FeedConfig(
             url="https://example.com/feed.rss",  # type: ignore
             auth=AuthConfig(type="basic", username="user", password="secret"),
@@ -212,14 +201,12 @@ class TestConfigManager:
         """Test that credentials are decrypted when loaded."""
         manager = ConfigManager(config_dir=tmp_path)
 
-        # Add feed with auth
         feed_config = FeedConfig(
             url="https://example.com/feed.rss",  # type: ignore
             auth=AuthConfig(type="basic", username="user", password="secret"),
         )
         manager.add_feed("private-podcast", feed_config)
 
-        # Load feed
         feed = manager.get_feed("private-podcast")
 
         # Credentials should be decrypted
@@ -230,7 +217,6 @@ class TestConfigManager:
         """Test that bearer tokens are encrypted."""
         manager = ConfigManager(config_dir=tmp_path)
 
-        # Add feed with bearer token
         feed_config = FeedConfig(
             url="https://example.com/feed.rss",  # type: ignore
             auth=AuthConfig(type="bearer", token="secret-token-123"),
@@ -263,7 +249,6 @@ class TestConfigManager:
         """Test that saving and loading config preserves all data."""
         manager = ConfigManager(config_dir=tmp_path)
 
-        # Create custom config
         original = GlobalConfig(
             log_level="DEBUG",
             youtube_check=False,
@@ -281,7 +266,6 @@ class TestConfigManager:
         """Test that empty decrypted username raises InvalidConfigError."""
         manager = ConfigManager(config_dir=tmp_path)
 
-        # Add feed with auth
         feed_config = FeedConfig(
             url="https://example.com/feed.rss",  # type: ignore
             auth=AuthConfig(type="basic", username="user", password="secret"),
@@ -309,7 +293,6 @@ class TestConfigManager:
         """Test that null bytes in decrypted password raises InvalidConfigError."""
         manager = ConfigManager(config_dir=tmp_path)
 
-        # Add feed with auth
         feed_config = FeedConfig(
             url="https://example.com/feed.rss",  # type: ignore
             auth=AuthConfig(type="basic", username="user", password="secret"),
@@ -339,7 +322,6 @@ class TestConfigManager:
         """Test that oversized token raises InvalidConfigError."""
         manager = ConfigManager(config_dir=tmp_path)
 
-        # Add feed with bearer token
         feed_config = FeedConfig(
             url="https://example.com/feed.rss",  # type: ignore
             auth=AuthConfig(type="bearer", token="secret-token"),
@@ -368,7 +350,6 @@ class TestConfigManager:
         """Test that corrupted keyfile raises clear InvalidConfigError."""
         manager = ConfigManager(config_dir=tmp_path)
 
-        # Add feed with auth
         feed_config = FeedConfig(
             url="https://example.com/feed.rss",  # type: ignore
             auth=AuthConfig(type="basic", username="user", password="secret"),
@@ -379,7 +360,6 @@ class TestConfigManager:
         keyfile_path = tmp_path / ".keyfile"
         keyfile_path.write_text("corrupted-keyfile-data-123")
 
-        # Create a new manager instance to bypass cipher caching
         manager_new = ConfigManager(config_dir=tmp_path)
 
         with pytest.raises(ConfigError) as exc_info:
@@ -394,14 +374,12 @@ class TestConfigManager:
         """Test that valid credentials decrypt and validate successfully."""
         manager = ConfigManager(config_dir=tmp_path)
 
-        # Add feed with auth (various credential types)
         feed_config = FeedConfig(
             url="https://example.com/feed.rss",  # type: ignore
             auth=AuthConfig(type="basic", username="validuser", password="validpass123"),
         )
         manager.add_feed("test-podcast", feed_config)
 
-        # Load feeds - should not raise
         feeds = manager.load_feeds()
 
         assert "test-podcast" in feeds.feeds
@@ -412,7 +390,6 @@ class TestConfigManager:
         """Test that username length limit is enforced."""
         manager = ConfigManager(config_dir=tmp_path)
 
-        # Add feed with auth
         feed_config = FeedConfig(
             url="https://example.com/feed.rss",  # type: ignore
             auth=AuthConfig(type="basic", username="user", password="secret"),
@@ -440,7 +417,6 @@ class TestConfigManager:
         """Test that error message provides helpful recovery steps."""
         manager = ConfigManager(config_dir=tmp_path)
 
-        # Add feed with auth
         feed_config = FeedConfig(
             url="https://example.com/feed.rss",  # type: ignore
             auth=AuthConfig(type="basic", username="user", password="secret"),
@@ -451,7 +427,6 @@ class TestConfigManager:
         keyfile_path = tmp_path / ".keyfile"
         keyfile_path.write_text("corrupted")
 
-        # Create a new manager instance to bypass cipher caching
         manager_new = ConfigManager(config_dir=tmp_path)
 
         with pytest.raises(ConfigError) as exc_info:
@@ -475,7 +450,6 @@ class TestAuditLog:
 
         manager.add_feed("test-feed", feed_config)
 
-        # Check audit log
         audit_log = tmp_path / "audit.log"
         assert audit_log.exists()
 
@@ -497,12 +471,10 @@ class TestAuditLog:
 
         manager = ConfigManager(config_dir=tmp_path)
 
-        # Add then remove feed
         feed_config = FeedConfig(url="https://example.com/feed.xml")  # type: ignore
         manager.add_feed("test-feed", feed_config)
         manager.remove_feed("test-feed")
 
-        # Check removal was logged with details
         audit_log = tmp_path / "audit.log"
         with open(audit_log) as f:
             entries = [json.loads(line) for line in f]
@@ -520,15 +492,12 @@ class TestAuditLog:
 
         manager = ConfigManager(config_dir=tmp_path)
 
-        # Add feed
         feed_config = FeedConfig(url="https://example.com/feed.xml")  # type: ignore
         manager.add_feed("test-feed", feed_config)
 
-        # Update feed URL
         new_config = FeedConfig(url="https://newhost.com/feed.xml")  # type: ignore
         manager.update_feed("test-feed", new_config)
 
-        # Check update was logged with changes
         audit_log = tmp_path / "audit.log"
         with open(audit_log) as f:
             entries = [json.loads(line) for line in f]
@@ -549,15 +518,12 @@ class TestAuditLog:
 
         manager = ConfigManager(config_dir=tmp_path)
 
-        # Save initial config
         config1 = GlobalConfig(log_level="INFO")
         manager.save_config(config1)
 
-        # Update config
         config2 = GlobalConfig(log_level="DEBUG")
         manager.save_config(config2)
 
-        # Check change was logged
         audit_log = tmp_path / "audit.log"
         assert audit_log.exists()
 
@@ -604,7 +570,6 @@ class TestAuditLog:
         """Verify get_recent_changes returns most recent entries."""
         manager = ConfigManager(config_dir=tmp_path)
 
-        # Add multiple feeds
         for i in range(5):
             feed_config = FeedConfig(url=f"https://example.com/feed{i}.xml")  # type: ignore
             manager.add_feed(f"feed-{i}", feed_config)
@@ -628,7 +593,6 @@ class TestAuditLog:
 
         manager = ConfigManager(config_dir=tmp_path)
 
-        # Add valid entry
         feed_config = FeedConfig(url="https://example.com/feed.xml")  # type: ignore
         manager.add_feed("test-feed", feed_config)
 
@@ -637,7 +601,6 @@ class TestAuditLog:
         with open(audit_log, "a") as f:
             f.write("this is not valid json\n")
 
-        # Add another valid entry
         feed_config2 = FeedConfig(url="https://example.com/feed2.xml")  # type: ignore
         manager.add_feed("test-feed-2", feed_config2)
 

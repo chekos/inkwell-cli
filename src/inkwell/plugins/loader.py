@@ -107,12 +107,10 @@ def resolve_dependencies(plugins: list[InkwellPlugin]) -> list[InkwellPlugin]:
     if not plugins:
         return []
 
-    # Build dependency graph
     plugin_map = {p.NAME: p for p in plugins}
     in_degree: dict[str, int] = {p.NAME: 0 for p in plugins}
     dependents: dict[str, list[str]] = {p.NAME: [] for p in plugins}
 
-    # Check for missing dependencies and build graph
     for plugin in plugins:
         for dep_name in plugin.DEPENDS_ON:
             if dep_name not in plugin_map:
@@ -121,7 +119,6 @@ def resolve_dependencies(plugins: list[InkwellPlugin]) -> list[InkwellPlugin]:
             in_degree[plugin.NAME] += 1
 
     # Kahn's algorithm for topological sort
-    # Use deque for O(1) popleft, sort once at start for determinism
     queue: deque[str] = deque(sorted(name for name, degree in in_degree.items() if degree == 0))
     result: list[InkwellPlugin] = []
 
@@ -132,12 +129,9 @@ def resolve_dependencies(plugins: list[InkwellPlugin]) -> list[InkwellPlugin]:
         for dependent in dependents[name]:
             in_degree[dependent] -= 1
             if in_degree[dependent] == 0:
-                # Use bisect.insort to maintain sorted order for determinism
                 bisect.insort(queue, dependent)
 
-    # Check for cycles
     if len(result) != len(plugins):
-        # Find a cycle for error reporting
         remaining = set(in_degree.keys()) - {p.NAME for p in result}
         cycle = _find_cycle(remaining, dependents, plugin_map)
         raise DependencyError(cycle[0], cycle=cycle)
@@ -220,12 +214,10 @@ def load_plugins_into_registry(
     for result in discover_plugins(group):
         plugin_config = config.get(result.name, {})
 
-        # Check if plugin is disabled
         if not plugin_config.get("enabled", True):
             logger.debug("Plugin %s is disabled in config", result.name)
             continue
 
-        # Get priority from config or use default
         priority = plugin_config.get("priority", default_priority)
 
         if result.success and result.plugin is not None:
@@ -270,7 +262,6 @@ def load_plugins_into_registry(
             # Configure
             plugin.configure(plugin_specific_config, cost_tracker)
 
-            # Validate
             plugin.validate()
 
             logger.debug("Plugin %s configured and validated", plugin.NAME)

@@ -331,14 +331,12 @@ class EpisodeOutput(BaseModel):
         """
         import yaml
 
-        # Check directory exists
         if not output_dir.exists():
             raise FileNotFoundError(f"Output directory not found: {output_dir}")
 
         if not output_dir.is_dir():
             raise ValueError(f"Path is not a directory: {output_dir}")
 
-        # Load metadata
         metadata_file = output_dir / ".metadata.yaml"
         if not metadata_file.exists():
             raise FileNotFoundError(
@@ -349,20 +347,17 @@ class EpisodeOutput(BaseModel):
         with metadata_file.open("r") as f:
             metadata_dict = yaml.safe_load(f)
 
-        # Handle schema migration: ensure templates_versions exists
         if "templates_versions" not in metadata_dict:
             # v1 schema - initialize empty, will be populated from frontmatter
             metadata_dict["templates_versions"] = {}
 
         metadata = EpisodeMetadata(**metadata_dict)
 
-        # Load all markdown files and extract template versions from frontmatter
         files: list[OutputFile] = []
         for md_file in sorted(output_dir.glob("*.md")):
             # Read file content
             content = md_file.read_text(encoding="utf-8")
 
-            # Parse frontmatter if present
             frontmatter: dict[str, Any] = {}
             file_content = content
 
@@ -383,7 +378,6 @@ class EpisodeOutput(BaseModel):
                 version = frontmatter.get("template_version", "unknown")
                 metadata.templates_versions[template_name] = version
 
-            # Create OutputFile
             output_file = OutputFile(
                 filename=md_file.name,
                 template_name=template_name,
@@ -395,7 +389,6 @@ class EpisodeOutput(BaseModel):
 
             files.append(output_file)
 
-        # Create EpisodeOutput
         episode_output = cls(
             metadata=metadata,
             output_dir=output_dir,

@@ -55,7 +55,6 @@ def main(
     log_file: Path | None = typer.Option(None, "--log-file", help="Write logs to file"),
 ) -> None:
     """Inkwell - Transform podcasts into structured markdown notes."""
-    # Initialize logging before any command runs
     setup_logging(verbose=verbose, log_file=log_file)
 
 
@@ -96,7 +95,6 @@ def add_feed(
                 default="basic",
             )
 
-            # Validate auth_type
             if auth_type not in ["basic", "bearer"]:
                 console.print("[red]✗[/red] Invalid auth type. Must be 'basic' or 'bearer'")
                 sys.exit(1)
@@ -109,7 +107,6 @@ def add_feed(
                 token = typer.prompt("Bearer token", hide_input=True)
                 auth_config = AuthConfig(type="bearer", token=token)
 
-        # Create feed config
         from pydantic import HttpUrl
 
         feed_config = FeedConfig(
@@ -118,7 +115,6 @@ def add_feed(
             category=category,
         )
 
-        # Add feed
         manager.add_feed(name, feed_config)
 
         console.print(f"\n[green]✓[/green] Feed '[bold]{name}[/bold]' added successfully")
@@ -153,14 +149,12 @@ def list_feeds() -> None:
             console.print("\nAdd a feed: [cyan]inkwell add <url> --name <name>[/cyan]")
             return
 
-        # Create table
         table = Table(title="[bold]Configured Podcast Feeds[/bold]")
         table.add_column("Name", style="cyan", no_wrap=True)
         table.add_column("URL", style="blue")
         table.add_column("Auth", justify="center", style="yellow")
         table.add_column("Category", style="green")
 
-        # Add rows
         for name, feed in feeds.items():
             auth_status = "✓" if feed.auth.type != "none" else "—"
             category_display = feed.category or "—"
@@ -191,7 +185,6 @@ def remove_feed(
     try:
         manager = ConfigManager()
 
-        # Check if feed exists
         try:
             feed = manager.get_feed(name)
         except NotFoundError:
@@ -211,7 +204,6 @@ def remove_feed(
                 console.print("[yellow]Cancelled[/yellow]")
                 return
 
-        # Remove feed
         manager.remove_feed(name)
         console.print(f"[green]✓[/green] Feed '[bold]{name}[/bold]' removed")
 
@@ -237,7 +229,6 @@ def episodes_command(
         try:
             manager = ConfigManager()
 
-            # Get feed config
             try:
                 feed_config = manager.get_feed(name)
             except NotFoundError:
@@ -273,7 +264,6 @@ def episodes_command(
                     duration = ep.duration_formatted if ep.duration_seconds else "—"
                     table.add_row(str(i), title, date, duration)
                 except Exception:
-                    # Skip entries that fail to parse
                     pass
 
             console.print(table)
@@ -349,7 +339,6 @@ def config_command(
                 """Format API key status with source indicator."""
                 if key:
                     masked = f"{'•' * 8}{key[-4:]}"
-                    # Check if it came from env or config
                     if os_module.getenv(env_var) == key:
                         return f"[green]✓[/green] {masked} [dim](${env_var})[/dim]"
                     return f"[green]✓[/green] {masked} [dim](config)[/dim]"
@@ -389,7 +378,6 @@ def config_command(
             # Extract just the executable name (handle paths like /usr/bin/vim)
             editor_name = Path(editor).name
 
-            # Validate editor against whitelist
             if editor_name not in allowed_editors:
                 console.print(f"[red]✗[/red] Unsupported editor: {editor}")
                 console.print(f"Allowed editors: {', '.join(sorted(allowed_editors))}")
@@ -419,13 +407,11 @@ def config_command(
 
             config = manager.load_config()
 
-            # Handle nested keys (e.g., transcription.api_key)
             key_parts = key.split(".")
 
             if len(key_parts) == 1:
                 # Top-level key
                 if hasattr(config, key):
-                    # Get the field type to do proper conversion
                     field_type = type(getattr(config, key))
 
                     value_converted: bool | Path | str
@@ -472,7 +458,6 @@ def config_command(
                         console.print(f"  • {parent_key}.{field_name}")
                     sys.exit(1)
 
-                # Get field type for conversion
                 field_type = (
                     type(getattr(parent_obj, child_key))
                     if getattr(parent_obj, child_key) is not None
@@ -559,16 +544,13 @@ def transcribe_command(
 
     async def run_transcription() -> None:
         try:
-            # Load config to get transcription model
             config_manager = ConfigManager()
             config = config_manager.load_config()
 
-            # Initialize manager with cost confirmation and config model
             manager = TranscriptionManager(
                 model_name=config.transcription_model, cost_confirmation_callback=confirm_cost
             )
 
-            # Run transcription with progress indicator
             with Progress(
                 SpinnerColumn(),
                 TextColumn("[progress.description]{task.description}"),
@@ -582,7 +564,6 @@ def transcribe_command(
 
                 progress.update(task, completed=True)
 
-            # Handle result
             if not result.success:
                 console.print(f"[red]✗[/red] Transcription failed: {result.error}")
                 sys.exit(1)
@@ -601,7 +582,6 @@ def transcribe_command(
             if result.from_cache:
                 console.print("[dim]✓ Retrieved from cache[/dim]")
 
-            # Get transcript text
             transcript_text = result.transcript.full_text
 
             # Output
@@ -621,7 +601,6 @@ def transcribe_command(
             console.print(f"[red]✗[/red] Error: {e}")
             sys.exit(1)
 
-    # Run async function
     asyncio.run(run_transcription())
 
 
@@ -787,7 +766,6 @@ def fetch_command(
 
     async def run_fetch() -> None:
         try:
-            # Load configuration
             manager = ConfigManager()
             config = manager.load_config()
 
@@ -800,7 +778,6 @@ def fetch_command(
             # Episode from RSS feed (if applicable)
             ep: Episode | None = None
 
-            # Check if url_or_feed is a configured feed name (not a URL)
             is_url = url_or_feed.startswith(("http://", "https://", "www."))
 
             if not is_url:
@@ -836,7 +813,6 @@ def fetch_command(
                     with console.status("[bold]Parsing RSS feed...[/bold]"):
                         feed = await parser.fetch_feed(str(feed_config.url), feed_config.auth)
 
-                    # Get the episode(s)
                     if latest:
                         selected_episodes = [parser.get_latest_episode(feed, url_or_feed)]
                         console.print(
@@ -857,7 +833,6 @@ def fetch_command(
                                 f"[green]✓[/green] Found {len(selected_episodes)} episodes"
                             )
 
-                    # Use feed's category if not overridden
                     if not resolved_category and feed_config.category:
                         resolved_category = feed_config.category
 
@@ -866,7 +841,6 @@ def fetch_command(
                         auth_username = feed_config.auth.username
                         auth_password = feed_config.auth.password
 
-            # Build list of episodes to process
             # For feed mode: selected_episodes from RSS parsing
             # For URL mode: single placeholder with url already set
             episodes_to_process: list[Episode | None]
@@ -904,7 +878,6 @@ def fetch_command(
                 console.print("[bold cyan]Inkwell Extraction Pipeline[/bold cyan]")
                 console.print(f"[dim]Output: {effective_output_dir}[/dim]\n")
 
-                # Create pipeline options from CLI arguments
                 options = PipelineOptions(
                     url=url,
                     category=resolved_category,
@@ -928,10 +901,8 @@ def fetch_command(
                     transcriber=transcriber,
                 )
 
-                # Create orchestrator
                 orchestrator = PipelineOrchestrator(config)
 
-                # Use PipelineProgress for Docker-style multi-stage display
                 pipeline_progress = PipelineProgress(
                     console=console,
                     include_interview=will_interview,
@@ -946,7 +917,6 @@ def fetch_command(
                     "caching_result": "Caching result...",
                 }
 
-                # Track results for summary display after progress
                 completion_details: dict[str, object] = {}
 
                 # Progress callback for pipeline stages
@@ -1043,7 +1013,6 @@ def fetch_command(
                             progress_callback=handle_progress,
                         )
                 finally:
-                    # Restore original log levels
                     for logger_name, level in original_levels.items():
                         logging.getLogger(logger_name).setLevel(level)
 
@@ -1091,7 +1060,6 @@ def fetch_command(
             console.print(f"[dim]{traceback.format_exc()}[/dim]")
             sys.exit(1)
 
-    # Run async function
     asyncio.run(run_fetch())
 
 
@@ -1137,7 +1105,6 @@ def costs_command(
     try:
         tracker = CostTracker()
 
-        # Handle clear
         if clear:
             if typer.confirm("Are you sure you want to clear all cost history?"):
                 tracker.clear()
@@ -1146,7 +1113,6 @@ def costs_command(
                 console.print("Cancelled")
             return
 
-        # Handle recent
         if recent:
             recent_usage = tracker.get_recent_usage(limit=recent)
 
@@ -1183,12 +1149,10 @@ def costs_command(
             console.print(f"\n[bold]Total:[/bold] ${sum(u.cost_usd for u in recent_usage):.4f}")
             return
 
-        # Calculate since date if days provided
         since = None
         if days:
             since = now_utc() - timedelta(days=days)
 
-        # Get summary with filters
         summary = tracker.get_summary(
             provider=provider,
             operation=operation,

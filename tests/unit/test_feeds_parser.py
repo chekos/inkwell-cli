@@ -63,7 +63,6 @@ class TestRSSParser:
         auth = AuthConfig(type="basic", username="user", password="pass")
         await parser.fetch_feed("https://example.com/feed.rss", auth=auth)
 
-        # Check that Authorization header was sent
         request = route.calls[0].request
         assert "Authorization" in request.headers
         assert request.headers["Authorization"].startswith("Basic ")
@@ -80,7 +79,6 @@ class TestRSSParser:
         auth = AuthConfig(type="bearer", token="secret-token")
         await parser.fetch_feed("https://example.com/feed.rss", auth=auth)
 
-        # Check that Authorization header was sent
         request = route.calls[0].request
         assert "Authorization" in request.headers
         assert request.headers["Authorization"] == "Bearer secret-token"

@@ -59,7 +59,6 @@ class GeminiExtractor(ExtractionPlugin):
         """
         super().__init__()
 
-        # Store provided key for lazy initialization
         self._provided_api_key = api_key
         self._client: genai.Client | None = None
 
@@ -98,7 +97,6 @@ class GeminiExtractor(ExtractionPlugin):
         """
         super().configure(config, cost_tracker)
 
-        # Initialize client with config API key if provided
         api_key = config.get("api_key") or self._provided_api_key
         if api_key or self._client is None:
             self._init_client(api_key)
@@ -133,20 +131,17 @@ class GeminiExtractor(ExtractionPlugin):
             # Transcript is already the full batched prompt
             full_prompt = transcript
         else:
-            # Build prompt normally
             user_prompt = self.build_prompt(template, transcript, metadata)
             # Combine system prompt and user prompt
             # Gemini doesn't have separate system message, so prepend it
             full_prompt = f"{template.system_prompt}\n\n{user_prompt}"
 
-        # Build generation config
         max_tokens = max_tokens_override if max_tokens_override else template.max_tokens
         config_kwargs: dict[str, Any] = {
             "temperature": template.temperature,
             "max_output_tokens": max_tokens,
         }
 
-        # Add JSON mode if expected format is JSON or forced (for batch extraction)
         if force_json or (template.expected_format == "json" and template.output_schema):
             config_kwargs["response_mime_type"] = "application/json"
             # Pass schema if available and not in batch mode (batch has its own schema)
@@ -156,7 +151,6 @@ class GeminiExtractor(ExtractionPlugin):
         config = types.GenerateContentConfig(**config_kwargs)
 
         try:
-            # Apply rate limiting before API call
             limiter = get_rate_limiter("gemini")
             limiter.acquire()
 
@@ -174,7 +168,6 @@ class GeminiExtractor(ExtractionPlugin):
 
             result = response.text
 
-            # Validate JSON if schema provided (and not forced - batch handles its own validation)
             if not force_json and template.expected_format == "json" and template.output_schema:
                 self._validate_json_output(result, template.output_schema)
 
@@ -206,7 +199,6 @@ class GeminiExtractor(ExtractionPlugin):
         user_prompt_base = self._count_tokens(template.user_prompt_template)
         transcript_tokens = self._count_tokens(" " * transcript_length)
 
-        # Add tokens for few-shot examples
         examples_tokens = 0
         if template.few_shot_examples:
             for example in template.few_shot_examples:
@@ -217,7 +209,6 @@ class GeminiExtractor(ExtractionPlugin):
         # Output tokens from template config
         output_tokens = template.max_tokens
 
-        # Calculate input cost (tiered pricing)
         if input_tokens < self.CONTEXT_THRESHOLD:
             input_cost = (input_tokens / 1_000_000) * self.INPUT_PRICE_PER_M_SHORT
         else:
@@ -227,7 +218,6 @@ class GeminiExtractor(ExtractionPlugin):
             long_cost = (long_tokens / 1_000_000) * self.INPUT_PRICE_PER_M_LONG
             input_cost = short_cost + long_cost
 
-        # Calculate output cost
         output_cost = (output_tokens / 1_000_000) * self.OUTPUT_PRICE_PER_M
 
         return input_cost + output_cost

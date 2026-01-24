@@ -58,7 +58,6 @@ class ExtractionCache:
         # Expose cache_dir for compatibility
         self.cache_dir = cache_dir
 
-        # Store ttl_seconds for compatibility with existing code
         self.ttl_seconds = ttl_days * 24 * 60 * 60
 
     def _make_key(self, template_name: str, template_version: str, transcript: str) -> str:
@@ -118,7 +117,6 @@ class ExtractionCache:
         cache_key = self._make_key(template_name, template_version, transcript)
         cache_file = self.cache_dir / f"{cache_key}.json"
 
-        # Check for temp file existence (indicates active write)
         temp_file = cache_file.with_suffix(".tmp")
         if temp_file.exists():
             # Another process is writing, treat as cache miss
@@ -175,7 +173,6 @@ class ExtractionCache:
         try:
             await self._cache.set(template_name, template_version, transcript, value=result)
         finally:
-            # Restore original serializer
             self._cache.serializer = original_serializer
 
     async def delete(self, template_name: str, template_version: str, transcript: str) -> bool:
@@ -223,7 +220,6 @@ class ExtractionCache:
                 "oldest_entry_age_days": 0,
             }
 
-        # Calculate total size in parallel
         import asyncio
 
         async def get_size(path: Path) -> int:
@@ -234,7 +230,6 @@ class ExtractionCache:
         total_size = sum(sizes)
         total_size_mb = total_size / (1024 * 1024)
 
-        # Find oldest entry in parallel
         import json
 
         async def get_timestamp(cache_file: Path) -> float:

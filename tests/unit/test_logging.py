@@ -23,7 +23,6 @@ class TestLoggingSetup:
 
         logger = setup_logging(level="DEBUG", log_file=log_file)
 
-        # Log a message
         logger.info("Test message")
 
         # File should be created

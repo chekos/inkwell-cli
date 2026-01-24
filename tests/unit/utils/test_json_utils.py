@@ -102,14 +102,12 @@ class TestSafeJsonLoads:
 
     def test_size_limit_enforcement(self):
         """Test that JSON exceeding size limit is rejected."""
-        # Create JSON string larger than limit
         large_json = '{"data": "' + ("x" * 1_000_000) + '"}'
         with pytest.raises(JSONParsingError, match="exceeds maximum"):
             safe_json_loads(large_json, max_size=500_000)
 
     def test_size_limit_exact_boundary(self):
         """Test JSON at exact size limit is accepted."""
-        # Create JSON at exact limit
         json_str = '{"data": "x"}'
         size = len(json_str.encode("utf-8"))
         # Should succeed at exact limit
@@ -126,7 +124,6 @@ class TestSafeJsonLoads:
 
     def test_depth_limit_enforcement(self):
         """Test that deeply nested JSON is rejected."""
-        # Create deeply nested structure
         data = {"level": 1}
         current = data
         for i in range(20):
@@ -140,7 +137,6 @@ class TestSafeJsonLoads:
 
     def test_depth_limit_exact_boundary(self):
         """Test JSON at exact depth limit is accepted."""
-        # Create structure at exact depth
         data = {"level": 1}
         current = data
         for i in range(4):
@@ -154,7 +150,6 @@ class TestSafeJsonLoads:
 
     def test_depth_limit_one_over(self):
         """Test JSON one level over depth limit is rejected."""
-        # Create structure one level over
         data = {"level": 1}
         current = data
         for i in range(5):
@@ -168,7 +163,6 @@ class TestSafeJsonLoads:
 
     def test_billion_laughs_style_attack(self):
         """Test protection against JSON bomb with large strings."""
-        # Create many large strings (JSON bomb pattern)
         large_strings = [{"name": "x" * 100000} for _ in range(100)]
         json_str = json.dumps({"tags": large_strings})
 
@@ -291,7 +285,6 @@ I hope this helps!
 
     def test_depth_limit_applied(self):
         """Test that depth limit is applied during extraction."""
-        # Create deeply nested structure
         data = {"level": 1}
         current = data
         for i in range(20):
@@ -329,7 +322,6 @@ class TestSecurityScenarios:
 
     def test_protection_against_stack_overflow(self):
         """Test protection against stack overflow attacks."""
-        # Create deep nesting (50 levels - enough to be malicious but not hit Python's recursion limit during testing)
         data = {"level": 0}
         current = data
         for i in range(49):
@@ -379,7 +371,6 @@ I will now return the tags as requested:
 {
   "tags": [
 """
-        # Add 1000 large tags
         for i in range(1000):
             malicious_text += f'    {{"name": "{"x" * 10000}", "category": "topic"}},\n'
 

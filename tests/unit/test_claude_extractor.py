@@ -14,7 +14,6 @@ from inkwell.utils.errors import APIError, ValidationError
 @pytest.fixture
 def mock_api_key(monkeypatch: pytest.MonkeyPatch) -> str:
     """Set mock API key."""
-    # Use a valid-format API key for testing (meets length and format requirements)
     api_key = "sk-ant-api03-" + "X" * 32  # Valid Claude key format
     monkeypatch.setenv("ANTHROPIC_API_KEY", api_key)
     return api_key
@@ -60,7 +59,6 @@ class TestClaudeExtractorInit:
 
     def test_init_with_api_key(self) -> None:
         """Test initializing with explicit API key."""
-        # Use a valid-format test key
         test_key = "sk-ant-api03-" + "X" * 32
         extractor = ClaudeExtractor(api_key=test_key)
         assert extractor.api_key == test_key
@@ -331,7 +329,6 @@ class TestClaudeExtractorCostEstimation:
 
         cost_with_examples = extractor.estimate_cost(template, transcript_length=5000)
 
-        # Create template without examples
         template_no_examples = ExtractionTemplate(
             name="test",
             version="1.0",

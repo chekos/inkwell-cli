@@ -206,7 +206,6 @@ class TranscriptCache:
         async def analyze_file(cache_file: Path) -> dict[str, Any] | None:
             """Analyze a single cache file. Returns stats dict or None if error."""
             try:
-                # Get size
                 stat = await asyncio.to_thread(cache_file.stat)
                 file_size = stat.st_size
 
@@ -215,12 +214,9 @@ class TranscriptCache:
                     content = await f.read()
                     data = json.loads(content)
 
-                # Check expiration
                 cached_at = datetime.fromisoformat(data["cached_at"])
                 is_expired = self._is_expired(cached_at)
 
-                # Get source from transcript data
-                # Handle old format (data["transcript"]) and new format
                 # (data["value"]["transcript"])
                 value_data = data.get("value", data)  # Fallback for old format
                 source = value_data.get("transcript", {}).get("source", "unknown")

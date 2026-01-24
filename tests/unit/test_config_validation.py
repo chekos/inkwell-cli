@@ -13,7 +13,6 @@ class TestConfigValidationErrors:
 
     def test_invalid_log_level_shows_friendly_error(self, tmp_path: Path) -> None:
         """Test that invalid log level shows user-friendly error."""
-        # Create config with invalid log_level
         config_file = tmp_path / "config.yaml"
         config_file.write_text(
             """
@@ -153,7 +152,6 @@ class TestConfigEdgeCases:
 
         manager = ConfigManager(config_dir=tmp_path)
 
-        # Create a very long URL
         long_url = "https://example.com/" + "a" * 500 + "/feed.rss"
 
         feed_config = FeedConfig(
@@ -178,7 +176,6 @@ class TestConfigEdgeCases:
             auth=AuthConfig(type="none"),
         )
 
-        # Use name with hyphens, underscores
         feed_name = "my-podcast_v2.0"
 
         manager.add_feed(feed_name, feed_config)

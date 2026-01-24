@@ -32,7 +32,6 @@ def _get_config_path(
         return "extraction.claude_api_key"
     elif provider == "gemini":
         # Gemini is used for both transcription and extraction
-        # Check context from key_name to give best suggestion
         if "transcription" in key_name.lower():
             return "transcription.api_key"
         return "extraction.gemini_api_key"
@@ -66,7 +65,6 @@ def validate_api_key(
         ...     "GOOGLE_API_KEY"
         ... )
     """
-    # Check if key exists
     if key is None or not key.strip():
         # Map provider to config path for helpful error message
         config_path = _get_config_path(provider, key_name)
@@ -75,8 +73,6 @@ def validate_api_key(
             f"Run: inkwell config set {config_path} YOUR_API_KEY"
         )
 
-    # Check for common mistakes BEFORE stripping
-    # Check for quotes (on original, non-stripped key)
     if (key.strip().startswith('"') and key.strip().endswith('"')) or (
         key.strip().startswith("'") and key.strip().endswith("'")
     ):
@@ -86,7 +82,6 @@ def validate_api_key(
             f"Example: export {key_name}=your-api-key-here"
         )
 
-    # Check for invalid characters BEFORE stripping
     if any(char in key for char in ["\n", "\r", "\0", "\t"]):
         raise APIKeyError(
             f"{provider.title()} API key contains invalid characters.\n"

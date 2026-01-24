@@ -151,11 +151,9 @@ class TranscriptionPlugin(InkwellPlugin):
         """
         caps = self.CAPABILITIES
 
-        # Check source type support
         if request.source_type == "url":
             if not caps.get("supports_url", False):
                 return False
-            # Check URL pattern match
             if self.HANDLES_URLS and request.url:
                 return any(pattern in request.url for pattern in self.HANDLES_URLS)
             return True

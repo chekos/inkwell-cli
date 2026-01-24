@@ -89,7 +89,6 @@ def split_audio_into_chunks(
     step = chunk_duration - overlap  # Move forward by chunk_duration minus overlap
 
     while start < duration:
-        # Calculate end time (don't exceed total duration)
         end = min(start + chunk_duration, duration)
         actual_duration = end - start
 
@@ -101,7 +100,6 @@ def split_audio_into_chunks(
             f"(duration: {actual_duration:.1f}s)"
         )
 
-        # Use ffmpeg to extract chunk
         # -ss before -i for fast seeking, -t for duration
         subprocess.run(
             [
@@ -156,7 +154,6 @@ def needs_chunking(audio_path: Path, threshold: int = MIN_DURATION_FOR_CHUNKING)
         )
         return needs_it
     except RuntimeError as e:
-        # Log the failure - this can cause transcripts to be truncated!
         logger.warning(
             f"Failed to determine audio duration for {audio_path}: {e}. "
             f"Skipping chunking - transcript may be incomplete for long audio."

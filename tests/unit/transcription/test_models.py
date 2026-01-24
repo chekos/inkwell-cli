@@ -203,7 +203,6 @@ class TestTranscript:
             episode_url="https://example.com/episode",
         )
 
-        # Get segments overlapping 7-12 range
         # Should include B (5-10) and C (10-15)
         result = transcript.get_segments_in_range(7.0, 12.0)
         assert len(result) == 2
@@ -244,7 +243,6 @@ class TestTranscript:
 
     def test_segments_auto_sorted(self):
         """Test that segments are sorted by start time."""
-        # Create segments out of order
         segments = [
             TranscriptSegment(text="Third", start=20.0, duration=5.0),
             TranscriptSegment(text="First", start=0.0, duration=5.0),
@@ -493,7 +491,6 @@ class TestTranscriptionResult:
 
     def test_cost_saved_by_cache(self):
         """Test cost_saved_by_cache calculation."""
-        # Cache hit - cost saved
         cached_result = TranscriptionResult(
             success=True,
             transcript=Transcript(

@@ -296,12 +296,10 @@ def validate_e2e_output(
     errors = []
     warnings = []
 
-    # Check directory exists
     if not output_dir.exists():
         errors.append(f"Output directory does not exist: {output_dir}")
         return False, errors, warnings
 
-    # Check expected files exist
     metadata_file = output_dir / ".metadata.yaml"
     if not metadata_file.exists():
         errors.append("Missing .metadata.yaml file")
@@ -312,11 +310,9 @@ def validate_e2e_output(
         if not filepath.exists():
             errors.append(f"Missing expected file: {filename}")
         else:
-            # Check file is not empty
             if filepath.stat().st_size < 100:
                 warnings.append(f"File {filename} is suspiciously small (<100 bytes)")
 
-    # Check frontmatter exists in files
     for filename in expected_files:
         filepath = output_dir / filename
         if filepath.exists():
@@ -324,7 +320,6 @@ def validate_e2e_output(
             if not content.startswith("---"):
                 warnings.append(f"File {filename} missing frontmatter")
 
-    # Check for wikilinks
     has_wikilinks = False
     for filename in expected_files:
         filepath = output_dir / filename
@@ -337,7 +332,6 @@ def validate_e2e_output(
     if not has_wikilinks:
         warnings.append("No wikilinks found in any output files")
 
-    # Check for tags
     has_tags = False
     for filename in expected_files:
         filepath = output_dir / filename

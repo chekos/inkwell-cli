@@ -112,7 +112,6 @@ class SimpleInterviewer:
         key_quotes = key_quotes or []
         key_concepts = key_concepts or []
 
-        # Build context
         context = self._build_context(
             episode_title=episode_title,
             podcast_name=podcast_name,
@@ -140,16 +139,13 @@ class SimpleInterviewer:
                 # Display question
                 self.console.print(f"\n[bold blue]Question {i + 1}:[/bold blue] {question}")
 
-                # Get user response
                 self.console.print("[dim]Type your response (or 'quit' to end early):[/dim]")
                 response = Prompt.ask("[green]>>[/green]", default="")
 
-                # Handle early exit
                 if response.lower() in ["quit", "exit", "done", "q"]:
                     self.console.print("[yellow]Ending interview early.[/yellow]")
                     break
 
-                # Skip empty responses
                 if not response.strip():
                     self.console.print("[yellow]Skipping empty response.[/yellow]")
                     continue
@@ -227,7 +223,6 @@ class SimpleInterviewer:
         Returns:
             Generated question text
         """
-        # Build system prompt (reflective template, hardcoded)
         system_prompt = """You are conducting a thoughtful interview to help someone \
 reflect on a podcast episode they listened to.
 
@@ -243,7 +238,6 @@ Guidelines:
 - Avoid yes/no questions
 - Build on what they've already shared"""
 
-        # Build user prompt
         user_parts = [context, ""]
 
         if exchanges:
@@ -268,16 +262,13 @@ Guidelines:
             messages=[{"role": "user", "content": user_prompt}],
         )
 
-        # Track costs
         input_tokens = response.usage.input_tokens
         output_tokens = response.usage.output_tokens
         self.total_tokens += input_tokens + output_tokens
 
-        # Calculate cost (Claude Sonnet 4.5 pricing)
         cost = (input_tokens / 1_000_000 * 3.00) + (output_tokens / 1_000_000 * 15.00)
         self.total_cost += cost
 
-        # Track in CostTracker if available
         if self.cost_tracker:
             self.cost_tracker.add_cost(
                 provider="claude",
@@ -380,11 +371,9 @@ async def conduct_interview_from_output(
     Raises:
         FileNotFoundError: If output directory or required files don't exist
     """
-    # Load summary
     summary_path = output_dir / "summary.md"
     summary = summary_path.read_text() if summary_path.exists() else ""
 
-    # Load quotes
     quotes: list[str] = []
     quotes_path = output_dir / "quotes.md"
     if quotes_path.exists():
@@ -396,7 +385,6 @@ async def conduct_interview_from_output(
             if line.strip().startswith(">")
         ]
 
-    # Load concepts
     concepts: list[str] = []
     concepts_path = output_dir / "key-concepts.md"
     if concepts_path.exists():

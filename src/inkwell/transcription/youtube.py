@@ -111,7 +111,6 @@ class YouTubeTranscriber(TranscriptionPlugin):
         """
         super().configure(config, cost_tracker)
 
-        # Get preferred languages from config or use parameter/default
         preferred_languages = config.get("preferred_languages", self._preferred_languages_param)
         self._initialize_api(preferred_languages)
 
@@ -183,7 +182,6 @@ class YouTubeTranscriber(TranscriptionPlugin):
             >>> transcriber._extract_video_id("https://youtu.be/xyz789")
             'xyz789'
         """
-        # Parse URL
         parsed = urlparse(url)
 
         # Format: youtube.com/watch?v=VIDEO_ID
@@ -228,7 +226,6 @@ class YouTubeTranscriber(TranscriptionPlugin):
             TranscriptionError: If transcript cannot be retrieved
             APIError: If URL is invalid or video ID cannot be extracted
         """
-        # Handle both interfaces
         if isinstance(url_or_request, TranscriptionRequest):
             if url_or_request.url is None:
                 raise APIError(
@@ -290,7 +287,6 @@ class YouTubeTranscriber(TranscriptionPlugin):
             # Fetch transcript data
             transcript_data = transcript_obj.fetch()
 
-            # Convert to our model
             # youtube_transcript_api FetchedTranscript supports indexing but lacks proper type stubs
             segments = [
                 TranscriptSegment(

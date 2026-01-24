@@ -280,7 +280,6 @@ class TestExtractionEngineExtract:
             gemini_api_key="AIzaSyD" + "X" * 32,
         )
 
-        # Create mock extractor
         mock_extractor = Mock()
         mock_extractor.extract = AsyncMock(return_value="Extracted summary")
         mock_extractor.estimate_cost = Mock(return_value=0.01)
@@ -310,7 +309,6 @@ class TestExtractionEngineExtract:
             gemini_api_key="AIzaSyD" + "X" * 32,
         )
 
-        # Create mock extractor (quotes template uses Claude by default)
         json_output = '{"quotes": ["one", "two"]}'
         mock_extractor = Mock()
         mock_extractor.extract = AsyncMock(return_value=json_output)
@@ -338,7 +336,6 @@ class TestExtractionEngineExtract:
             gemini_api_key="AIzaSyD" + "X" * 32,
         )
 
-        # Create mock extractor
         mock_extract = AsyncMock(return_value="Extracted summary")
         mock_extractor = Mock()
         mock_extractor.extract = mock_extract
@@ -376,7 +373,6 @@ class TestExtractionEngineExtract:
             gemini_api_key="AIzaSyD" + "X" * 32,
         )
 
-        # Create mock extractor
         mock_extract = AsyncMock(return_value="Extracted summary")
         mock_extractor = Mock()
         mock_extractor.extract = mock_extract
@@ -413,7 +409,6 @@ class TestExtractionEngineExtract:
             gemini_api_key="AIzaSyD" + "X" * 32,
         )
 
-        # Create mock extractor returning invalid JSON
         mock_extractor = Mock()
         mock_extractor.extract = AsyncMock(return_value="not valid json")
         mock_extractor.estimate_cost = Mock(return_value=0.10)
@@ -447,10 +442,8 @@ class TestExtractionEngineProviderSelection:
             claude_api_key="sk-ant-api03-" + "X" * 32,
         )
 
-        # Set Claude preference
         text_template.model_preference = "claude"
 
-        # Create mock Claude extractor
         mock_claude_extract = AsyncMock(return_value="Claude result")
         mock_extractor = Mock()
         mock_extractor.extract = mock_claude_extract
@@ -480,10 +473,8 @@ class TestExtractionEngineProviderSelection:
             claude_api_key="sk-ant-api03-" + "X" * 32,
         )
 
-        # Set Gemini preference
         text_template.model_preference = "gemini"
 
-        # Create mock Gemini extractor
         mock_gemini_extract = AsyncMock(return_value="Gemini result")
         mock_extractor = Mock()
         mock_extractor.extract = mock_gemini_extract
@@ -523,7 +514,6 @@ class TestExtractionEngineProviderSelection:
             expected_format="json",
         )
 
-        # Create mock Claude extractor
         mock_claude_extract = AsyncMock(return_value='{"quotes": []}')
         mock_extractor = Mock()
         mock_extractor.extract = mock_claude_extract
@@ -554,7 +544,6 @@ class TestExtractionEngineProviderSelection:
             claude_api_key="sk-ant-api03-" + "X" * 32,
         )
 
-        # Create mock Claude extractor
         mock_claude_extract = AsyncMock(return_value="Result")
         mock_extractor = Mock()
         mock_extractor.extract = mock_claude_extract
@@ -589,7 +578,6 @@ class TestExtractionEngineMultipleExtractions:
             claude_api_key="sk-ant-api03-" + "X" * 32,
         )
 
-        # Create mock extractors for different templates
         def create_mock_extractor(return_value: str, class_name: str) -> Mock:
             mock = Mock()
             mock.extract = AsyncMock(return_value=return_value)
@@ -630,7 +618,6 @@ class TestExtractionEngineMultipleExtractions:
             gemini_api_key="AIzaSyD" + "X" * 32,
         )
 
-        # Track call count
         call_count = {"count": 0}
 
         def create_mock_extractor() -> Mock:
@@ -680,7 +667,6 @@ class TestExtractionEngineCostTracking:
         """Test that costs are tracked with injected CostTracker."""
         from inkwell.utils.costs import CostTracker
 
-        # Create cost tracker with temp file
         cost_tracker = CostTracker(costs_file=tmp_path / "costs.json")
         engine = ExtractionEngine(
             cache=temp_cache,
@@ -688,7 +674,6 @@ class TestExtractionEngineCostTracking:
             gemini_api_key="AIzaSyD" + "X" * 32,
         )
 
-        # Create mock extractor
         mock_extractor = Mock()
         mock_extractor.extract = AsyncMock(return_value="Result")
         mock_extractor.estimate_cost = Mock(return_value=0.05)
@@ -738,7 +723,6 @@ class TestExtractionEngineCostTracking:
             gemini_api_key="AIzaSyD" + "X" * 32,
         )
 
-        # Create mock extractor
         mock_extractor = Mock()
         mock_extractor.extract = AsyncMock(return_value="Result")
         mock_extractor.estimate_cost = Mock(return_value=0.05)
@@ -772,7 +756,6 @@ class TestExtractionEngineCostTracking:
             claude_api_key="sk-ant-api03-" + "X" * 32,
         )
 
-        # Create mock extractor
         mock_extractor = Mock()
         mock_extractor.estimate_cost = Mock(return_value=0.05)
 

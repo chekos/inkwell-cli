@@ -178,7 +178,6 @@ def with_retry(
         )
 
     def decorator(func: Callable) -> Callable:
-        # Create retry decorator with exponential backoff + jitter
         # Note: wait_exponential_jitter adds jitter as a random value between 0 and jitter parameter
         # To get ±25% jitter, we pass 25% of max wait time
         jitter_amount = config.max_wait_seconds * 0.25 if config.jitter else 0
@@ -199,7 +198,6 @@ def with_retry(
             try:
                 return retry_decorator(func)(*args, **kwargs)
             except Exception as e:
-                # Log final failure
                 logger.error(
                     f"Function {func.__name__} failed after {config.max_attempts} attempts: "
                     f"{type(e).__name__}: {e}"

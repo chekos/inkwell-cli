@@ -75,7 +75,6 @@ class TranscriptionManager:
             - Set INKWELL_TRANSCRIBER env var to force a specific transcriber
             - Otherwise, the multi-tier strategy is used (YouTube → Gemini fallback)
         """
-        # Warn if using deprecated individual parameters
         if config is None and (gemini_api_key is not None or model_name is not None):
             warnings.warn(
                 "Individual parameters (gemini_api_key, model_name) are deprecated. "
@@ -90,13 +89,11 @@ class TranscriptionManager:
         self.cost_tracker = cost_tracker
         self._use_plugin_registry = use_plugin_registry
 
-        # Store config for plugin configuration
         self._config = config
         self._gemini_api_key = gemini_api_key
         self._model_name = model_name
         self._cost_confirmation_callback = cost_confirmation_callback
 
-        # Initialize plugin registry
         self._registry: PluginRegistry[TranscriptionPlugin] = PluginRegistry(
             TranscriptionPlugin  # type: ignore[type-abstract]
         )
@@ -117,7 +114,6 @@ class TranscriptionManager:
             1.0,
         )
 
-        # Initialize transcribers directly (legacy mode or when explicitly passed)
         # These will also be available via the plugin registry if loaded
         self.youtube_transcriber = youtube_transcriber or YouTubeTranscriber()
         self.gemini_transcriber: GeminiTranscriber | None
@@ -274,7 +270,6 @@ class TranscriptionManager:
             if progress_callback:
                 progress_callback(step, kwargs)
 
-        # Check for transcriber override (parameter takes precedence over env var)
         override = transcriber_override or os.environ.get("INKWELL_TRANSCRIBER")
         if override:
             return await self._transcribe_with_override(
@@ -286,7 +281,6 @@ class TranscriptionManager:
                 progress_callback,
             )
 
-        # Step 1: Check cache
         if use_cache:
             _progress("checking_cache")
             attempts.append("cache")
@@ -302,14 +296,12 @@ class TranscriptionManager:
                     from_cache=True,
                 )
 
-        # Step 2: Try YouTube (Tier 1)
         if not skip_youtube and await self.youtube_transcriber.can_transcribe(episode_url):
             _progress("trying_youtube")
             attempts.append("youtube")
             try:
                 transcript = await self.youtube_transcriber.transcribe(episode_url)
 
-                # Cache successful result
                 if use_cache:
                     _progress("caching_result")
                     await self.cache.set(episode_url, transcript)
@@ -328,7 +320,6 @@ class TranscriptionManager:
                 # YouTube failed - continue to Gemini tier
                 pass
 
-        # Step 3: Try Gemini (Tier 2)
         if self.gemini_transcriber is None:
             # Gemini not available - provide helpful error message
             duration = (datetime.now(timezone.utc) - start_time).total_seconds()
@@ -369,7 +360,6 @@ class TranscriptionManager:
                 if transcript.cost_usd:
                     total_cost += transcript.cost_usd
 
-                    # Track in CostTracker if available
                     if self.cost_tracker:
                         # Estimate token counts from transcript
                         # Note: This is approximate; real counts would come from Gemini API
@@ -385,7 +375,6 @@ class TranscriptionManager:
             except Exception as e:
                 logger.warning(f"Failed to track transcription cost: {e}")
 
-            # Cache successful result
             if use_cache:
                 _progress("caching_result")
                 await self.cache.set(episode_url, transcript)
@@ -404,7 +393,6 @@ class TranscriptionManager:
             # All tiers failed - provide detailed error message
             duration = (datetime.now(timezone.utc) - start_time).total_seconds()
 
-            # Build helpful error message based on error type
             error_str = str(e)
             error_msg = f"Transcription failed after {duration:.1f}s.\n\n"
 
@@ -479,7 +467,6 @@ class TranscriptionManager:
             if progress_callback:
                 progress_callback(step, kwargs)
 
-        # Check cache first
         if use_cache:
             _progress("checking_cache")
             cached = await self.cache.get(episode_url)
@@ -494,7 +481,6 @@ class TranscriptionManager:
                     from_cache=True,
                 )
 
-        # Get the plugin from registry
         plugin = self.transcription_registry.get(transcriber_name)
         if not plugin:
             # Unknown transcriber
@@ -532,7 +518,6 @@ class TranscriptionManager:
                 request = TranscriptionRequest(file_path=audio_path)
                 transcript = await plugin.transcribe(request)
 
-            # Cache result
             if use_cache:
                 _progress("caching_result")
                 await self.cache.set(episode_url, transcript)

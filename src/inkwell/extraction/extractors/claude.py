@@ -52,7 +52,6 @@ class ClaudeExtractor(ExtractionPlugin):
         """
         super().__init__()
 
-        # Store provided key for lazy initialization
         self._provided_api_key = api_key
         self._client: AsyncAnthropic | None = None
         self._sync_client: Anthropic | None = None
@@ -93,7 +92,6 @@ class ClaudeExtractor(ExtractionPlugin):
         """
         super().configure(config, cost_tracker)
 
-        # Initialize clients with config API key if provided
         api_key = config.get("api_key") or self._provided_api_key
         if api_key or self._client is None:
             self._init_clients(api_key)
@@ -122,7 +120,6 @@ class ClaudeExtractor(ExtractionPlugin):
             ProviderError: If API call fails
             ValidationError: If response format invalid
         """
-        # Build prompt
         user_prompt = self.build_prompt(template, transcript, metadata)
 
         # Prepare request parameters
@@ -134,12 +131,10 @@ class ClaudeExtractor(ExtractionPlugin):
             "messages": [{"role": "user", "content": user_prompt}],
         }
 
-        # Add JSON mode if expected format is JSON
         if template.expected_format == "json" and template.output_schema:
             request_params["response_format"] = {"type": "json_object"}
 
         try:
-            # Apply rate limiting before API call
             limiter = get_rate_limiter("claude")
             limiter.acquire()
 
@@ -158,7 +153,6 @@ class ClaudeExtractor(ExtractionPlugin):
 
             result = "".join(text_content)
 
-            # Validate JSON if schema provided
             if template.expected_format == "json" and template.output_schema:
                 self._validate_json_output(result, template.output_schema)
 
@@ -194,7 +188,6 @@ class ClaudeExtractor(ExtractionPlugin):
         user_prompt_base = self._count_tokens(template.user_prompt_template)
         transcript_tokens = self._count_tokens(" " * transcript_length)  # Approximate
 
-        # Add tokens for few-shot examples
         examples_tokens = 0
         if template.few_shot_examples:
             for example in template.few_shot_examples:
@@ -205,7 +198,6 @@ class ClaudeExtractor(ExtractionPlugin):
         # Output tokens from template config
         output_tokens = template.max_tokens
 
-        # Calculate costs
         input_cost = (input_tokens / 1_000_000) * self.INPUT_PRICE_PER_M
         output_cost = (output_tokens / 1_000_000) * self.OUTPUT_PRICE_PER_M
 

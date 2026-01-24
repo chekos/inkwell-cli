@@ -60,7 +60,6 @@ class AudioDownloader:
         self.output_dir = output_dir or Path.cwd() / "downloads"
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
-        # Use platform-appropriate cache directory for audio files
         self.cache_dir = cache_dir or Path(platformdirs.user_cache_dir("inkwell")) / "audio"
         self.cache_dir.mkdir(parents=True, exist_ok=True)
 
@@ -75,7 +74,6 @@ class AudioDownloader:
         Returns:
             Path where cached audio would be stored
         """
-        # Create a hash of the URL for the filename
         url_hash = hashlib.sha256(url.encode()).hexdigest()[:16]
         return self.cache_dir / f"{url_hash}.m4a"
 
@@ -101,7 +99,6 @@ class AudioDownloader:
 
         status = progress_dict.get("status", "unknown")
 
-        # Build progress object
         total_bytes = progress_dict.get("total_bytes") or progress_dict.get("total_bytes_estimate")
         progress = DownloadProgress(
             status=status,
@@ -136,13 +133,11 @@ class AudioDownloader:
         Raises:
             AudioDownloadError: If download fails
         """
-        # Check cache first
         if use_cache:
             cached_path = self._check_cache(url)
             if cached_path:
                 return cached_path
 
-        # Use cache directory for consistent storage
         cache_path = self._get_cache_path(url)
         output_template = str(cache_path.with_suffix(".%(ext)s"))
 
@@ -162,7 +157,6 @@ class AudioDownloader:
             "no_warnings": True,
         }
 
-        # Add authentication if provided
         if username:
             ydl_opts["username"] = username
         if password:

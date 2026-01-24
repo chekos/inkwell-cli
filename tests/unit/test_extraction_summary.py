@@ -291,7 +291,6 @@ class TestExtractionEngineWithSummary:
             claude_api_key="sk-ant-api03-" + "X" * 32,
         )
 
-        # Track which template is being extracted
         def create_mock_extractor(return_value: str, class_name: str) -> Mock:
             mock = Mock()
             mock.extract = AsyncMock(return_value=return_value)
@@ -337,7 +336,6 @@ class TestExtractionEngineWithSummary:
             claude_api_key="sk-ant-api03-" + "X" * 32,
         )
 
-        # Create mock extractor - first succeeds, second fails
         call_count = {"count": 0}
 
         def create_mock_extractor() -> Mock:
@@ -389,7 +387,6 @@ class TestExtractionEngineWithSummary:
             claude_api_key="sk-ant-api03-" + "X" * 32,
         )
 
-        # Create mock extractor
         mock_extractor = Mock()
         mock_extractor.extract = AsyncMock(return_value='{"summary": "test", "quotes": []}')
         mock_extractor.estimate_cost = lambda t, l: 0.01
@@ -482,7 +479,6 @@ class TestExtractionEngineWithSummary:
             claude_api_key="sk-ant-api03-" + "X" * 32,
         )
 
-        # Track which template is being extracted
         def create_mock_extractor(return_value: str, class_name: str) -> Mock:
             mock = Mock()
             mock.extract = AsyncMock(return_value=return_value)

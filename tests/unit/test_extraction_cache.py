@@ -62,13 +62,10 @@ class TestExtractionCache:
         """Test that changing template version invalidates cache."""
         cache = ExtractionCache(cache_dir=temp_cache_dir)
 
-        # Cache with v1.0
         await cache.set("summary", "1.0", "transcript", "result v1")
 
-        # Get with v1.0 - should hit
         assert await cache.get("summary", "1.0", "transcript") == "result v1"
 
-        # Get with v1.1 - should miss
         assert await cache.get("summary", "1.1", "transcript") is None
 
     @pytest.mark.asyncio
@@ -115,7 +112,6 @@ class TestExtractionCache:
         """Test clearing all cache entries."""
         cache = ExtractionCache(cache_dir=temp_cache_dir)
 
-        # Add multiple entries
         await cache.set("summary", "1.0", "transcript1", "result1")
         await cache.set("quotes", "1.0", "transcript2", "result2")
         await cache.set("concepts", "1.0", "transcript3", "result3")
@@ -132,15 +128,12 @@ class TestExtractionCache:
     @pytest.mark.asyncio
     async def test_clear_expired(self, temp_cache_dir: Path) -> None:
         """Test clearing only expired entries."""
-        # Create two caches with different TTLs
         short_ttl_cache = ExtractionCache(cache_dir=temp_cache_dir, ttl_days=1 / 86400)
         long_ttl_cache = ExtractionCache(cache_dir=temp_cache_dir, ttl_days=30)
 
-        # Add entry with short TTL that will expire
         await short_ttl_cache.set("old", "1.0", "transcript_old", "old result")
         time.sleep(1.1)
 
-        # Add entry with long TTL that won't expire
         await long_ttl_cache.set("new", "1.0", "transcript_new", "new result")
 
         # Clear expired using short TTL - both should check against short TTL
@@ -166,7 +159,6 @@ class TestExtractionCache:
         """Test stats with cached entries."""
         cache = ExtractionCache(cache_dir=temp_cache_dir)
 
-        # Add some entries
         await cache.set("summary", "1.0", "transcript1", "result1")
         await cache.set("quotes", "1.0", "transcript2", "result2")
 
@@ -181,12 +173,10 @@ class TestExtractionCache:
         """Test that corrupted cache files are ignored and deleted."""
         cache = ExtractionCache(cache_dir=temp_cache_dir)
 
-        # Create corrupted cache file
         cache_file = temp_cache_dir / "corrupted.json"
         cache_file.write_text("not valid json {{{")
 
         # Try to get from cache (should handle gracefully)
-        # Cache won't match any key, so we just verify it doesn't crash
 
         # Now set a valid entry
         await cache.set("summary", "1.0", "transcript", "result")
@@ -258,11 +248,9 @@ class TestExtractionCache:
 
         await cache.set("summary", "1.0", "transcript", "result")
 
-        # Find the cache file
         cache_files = list(temp_cache_dir.glob("*.json"))
         assert len(cache_files) == 1
 
-        # Check structure
         with cache_files[0].open("r") as f:
             data = json.load(f)
 
@@ -297,7 +285,6 @@ class TestExtractionCache:
         """Test cache read during write returns None (cache miss)."""
         cache = ExtractionCache(cache_dir=temp_cache_dir)
 
-        # Create temp file to simulate active write
         cache_key = cache._make_key("template", "v1", "transcript")
         cache_file = temp_cache_dir / f"{cache_key}.json"
         temp_file = cache_file.with_suffix(".tmp")
@@ -355,7 +342,6 @@ class TestExtractionCache:
         """Test valid cache file passes all corruption checks."""
         cache = ExtractionCache(cache_dir=temp_cache_dir)
 
-        # Set valid cache entry
         await cache.set("template", "v1", "transcript", "valid result")
 
         # Should pass all checks and return result

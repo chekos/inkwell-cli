@@ -78,7 +78,6 @@ class FileCache(Generic[T]):
         self.deserializer = deserializer or (lambda d: cast(T, d))
         self.key_generator = key_generator or self._default_key_generator
 
-        # Create cache directory
         self.cache_dir.mkdir(parents=True, exist_ok=True)
 
     def _default_key_generator(self, *args: Any) -> str:
@@ -127,10 +126,8 @@ class FileCache(Generic[T]):
                 content = await f.read()
                 data = json.loads(content)
 
-            # Check expiration
             cached_at = datetime.fromisoformat(data["cached_at"])
             if self._is_expired(cached_at):
-                # Remove expired entry asynchronously
                 await self._delete_file(cache_file)
                 return None
 
@@ -139,7 +136,6 @@ class FileCache(Generic[T]):
             return value
 
         except (json.JSONDecodeError, KeyError, ValueError):
-            # Cache file is corrupted - remove it
             await self._delete_file(cache_file)
             return None
 
@@ -172,7 +168,6 @@ class FileCache(Generic[T]):
             await asyncio.to_thread(temp_file.replace, cache_file)
 
         except (OSError, TypeError) as e:
-            # Clean up temp file if it exists
             if temp_file.exists():
                 await self._delete_file(temp_file)
             raise CacheError(f"Failed to cache value: {e}") from e
@@ -239,7 +234,6 @@ class FileCache(Generic[T]):
 
             return False
 
-        # Check and delete expired files in parallel
         results = await asyncio.gather(*[check_and_delete(f) for f in cache_files])
 
         # Count deletions
@@ -266,7 +260,6 @@ class FileCache(Generic[T]):
         async def analyze_file(cache_file: Path) -> dict[str, Any] | None:
             """Analyze a single cache file. Returns stats dict or None if error."""
             try:
-                # Get size
                 stat = await asyncio.to_thread(cache_file.stat)
                 file_size = stat.st_size
 
@@ -275,7 +268,6 @@ class FileCache(Generic[T]):
                     content = await f.read()
                     data = json.loads(content)
 
-                # Check expiration
                 cached_at = datetime.fromisoformat(data["cached_at"])
                 is_expired = self._is_expired(cached_at)
 

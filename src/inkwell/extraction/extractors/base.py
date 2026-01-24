@@ -95,7 +95,6 @@ class BaseExtractor(ABC):
         """
         from jinja2 import Template
 
-        # Add few-shot examples if present
         examples_text = ""
         if template.few_shot_examples:
             examples_text = "\n\nExamples:\n"
@@ -109,7 +108,6 @@ class BaseExtractor(ABC):
                     output_str = json.dumps(example["output"], indent=2)
                     examples_text += f"Output:\n{output_str}\n"
 
-        # Build context with all variables
         context = {
             "transcript": transcript,
             "metadata": metadata,
@@ -120,7 +118,6 @@ class BaseExtractor(ABC):
         jinja_template = Template(template.user_prompt_template)
         prompt = jinja_template.render(**context)
 
-        # Add examples if present
         if examples_text:
             prompt = examples_text + "\n\n" + prompt
 

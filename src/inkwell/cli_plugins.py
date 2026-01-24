@@ -130,7 +130,6 @@ def list_plugins(
 
         inkwell plugins list --all
     """
-    # Validate plugin type if provided
     if plugin_type and plugin_type not in ENTRY_POINT_GROUPS:
         valid_types = ", ".join(ENTRY_POINT_GROUPS.keys())
         console.print(f"[red]✗[/red] Unknown plugin type: {plugin_type}")
@@ -139,11 +138,9 @@ def list_plugins(
 
     registries = _load_all_registries()
 
-    # Filter to specific type if requested
     if plugin_type:
         registries = {plugin_type: registries[plugin_type]}
 
-    # Track if we have any plugins
     total_plugins = 0
     broken_plugins: list[PluginEntry] = []
 
@@ -153,7 +150,6 @@ def list_plugins(
         if not entries:
             continue
 
-        # Filter disabled if not showing all
         if not show_all:
             entries = [e for e in entries if e.status != "disabled"]
 
@@ -176,7 +172,6 @@ def list_plugins(
             if entry.status == "broken":
                 broken_plugins.append(entry)
 
-            # Get description from plugin if available
             description = ""
             if entry.plugin:
                 description = getattr(entry.plugin, "DESCRIPTION", "")
@@ -347,7 +342,6 @@ def validate_plugin(
     registries = _load_all_registries()
 
     if name:
-        # Validate specific plugin
         result = _find_plugin_entry(name, registries)
 
         if not result:
@@ -379,7 +373,6 @@ def validate_plugin(
             sys.exit(1)
 
     else:
-        # Validate all plugins
         validation_errors = []
         validated_count = 0
 

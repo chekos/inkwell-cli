@@ -76,12 +76,10 @@ class MarkdownOutput(OutputPlugin):
         """
         parts = []
 
-        # Add frontmatter
         if include_frontmatter:
             frontmatter = self._generate_frontmatter(result, episode_metadata)
             parts.append(frontmatter)
 
-        # Add content
         content = self._format_content(result)
         parts.append(content)
 
@@ -148,11 +146,9 @@ class MarkdownOutput(OutputPlugin):
             "cost_usd": round(result.cost_usd, 4),
         }
 
-        # Add episode URL if available
         if "episode_url" in episode_metadata:
             frontmatter_data["url"] = episode_metadata["episode_url"]
 
-        # Add custom tags based on template type
         tags = self._generate_tags(result.template_name)
         if tags:
             frontmatter_data["tags"] = tags
@@ -171,7 +167,6 @@ class MarkdownOutput(OutputPlugin):
         """
         tags = ["podcast", "inkwell"]
 
-        # Add template-specific tags
         if "quote" in template_name.lower():
             tags.append("quotes")
         elif "summary" in template_name.lower():
@@ -199,7 +194,6 @@ class MarkdownOutput(OutputPlugin):
 
         content = result.extracted_content
 
-        # Check if content is dict (structured data) or string (text)
         if isinstance(content.content, dict):
             return self._format_json_content(result.template_name, content)
         else:
@@ -220,7 +214,6 @@ class MarkdownOutput(OutputPlugin):
         """
         data = content.content if isinstance(content.content, dict) else {}
 
-        # Use template-specific formatter if available
         if "quote" in template_name.lower():
             return self._format_quotes(data)
         elif "concept" in template_name.lower():

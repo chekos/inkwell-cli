@@ -67,7 +67,6 @@ class TemplateSelector:
         """
         selected = []
 
-        # Step 1: Always include default templates
         default_templates = ["summary", "quotes", "key-concepts"]
         for name in default_templates:
             try:
@@ -77,33 +76,27 @@ class TemplateSelector:
             except Exception as e:
                 logger.warning(f"Default template '{name}' not found: {e}")
 
-        # Step 2: Auto-detect category if not provided
         if category is None and transcript:
             category = self.detect_category(transcript)
             if category:
                 logger.info(f"Auto-detected category: {category}")
 
-        # Step 3: Add category-specific templates
         if category:
             category_templates = self.loader.list_templates(category=category)
             for name in category_templates:
-                # Skip if already included (default templates)
                 if any(t.name == name for t in selected):
                     continue
 
                 try:
                     template = self.loader.load_template(name)
-                    # Check if template applies to this category
                     if category in template.applies_to or "all" in template.applies_to:
                         selected.append(template)
                         logger.debug(f"Added category template: {name}")
                 except Exception as e:
                     logger.warning(f"Failed to load category template '{name}': {e}")
 
-        # Step 4: Add custom templates
         if custom_templates:
             for name in custom_templates:
-                # Skip if already included
                 if any(t.name == name for t in selected):
                     continue
 
@@ -114,7 +107,6 @@ class TemplateSelector:
                 except Exception as e:
                     logger.error(f"Custom template '{name}' not found: {e}")
 
-        # Step 5: Sort by priority (lower = earlier)
         selected.sort(key=lambda t: t.priority)
 
         logger.info(

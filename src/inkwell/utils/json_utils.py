@@ -128,7 +128,6 @@ def safe_json_loads(
             f"This may indicate a malicious or malformed LLM response."
         )
 
-    # Parse JSON
     try:
         data = json.loads(json_str)
     except json.JSONDecodeError as e:
@@ -181,7 +180,6 @@ def extract_json_from_text(
         It assumes there is only one JSON object. For multiple objects,
         use safe_json_loads() on each separately.
     """
-    # Find JSON boundaries
     json_start = text.find("{")
     json_end = text.rfind("}") + 1
 

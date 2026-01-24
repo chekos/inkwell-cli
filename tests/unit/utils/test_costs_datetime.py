@@ -139,7 +139,6 @@ class TestAPIUsageDatetimeHandling:
         with tempfile.TemporaryDirectory() as tmpdir:
             tracker = CostTracker(costs_file=Path(tmpdir) / "costs.json")
 
-            # Add some usage records
             usage1 = APIUsage(
                 provider="gemini",
                 model="gemini-2.5-flash",
@@ -157,7 +156,6 @@ class TestAPIUsageDatetimeHandling:
             tracker.track(usage1)
             tracker.track(usage2)
 
-            # Filter by date (should work without TypeError)
             since = datetime.now(timezone.utc) - timedelta(hours=1)
             summary = tracker.get_summary(since=since)
 

@@ -225,7 +225,6 @@ class GlobalConfig(BaseModel):
         """
         # Migrate transcription_model only if user didn't explicitly set transcription config
         if self.transcription_model is not None:
-            # Check if 'transcription' was explicitly provided during initialization
             if "transcription" not in self.model_fields_set:
                 self.transcription.model_name = self.transcription_model
             # else: User explicitly set new config, respect their choice

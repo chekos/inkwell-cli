@@ -185,7 +185,6 @@ class TestResetAllRateLimiters:
 
     def test_reset_all(self):
         """Test resetting all rate limiters."""
-        # Create and exhaust multiple limiters
         gemini = get_rate_limiter("gemini")
         claude = get_rate_limiter("claude")
 
@@ -202,7 +201,6 @@ class TestResetAllRateLimiters:
         # Reset all (clears the dictionary)
         reset_all_rate_limiters()
 
-        # Get fresh limiters
         gemini_new = get_rate_limiter("gemini")
         claude_new = get_rate_limiter("claude")
 

@@ -96,19 +96,16 @@ class TemplateLoader:
             TemplateNotFoundError: If template file not found
             TemplateLoadError: If template fails to load or validate
         """
-        # Check cache first
         if name in self._template_cache:
             logger.debug(f"Template '{name}' loaded from cache")
             return self._template_cache[name]
 
-        # Find template file
         template_path = self._find_template(name)
         if not template_path:
             raise NotFoundError(
                 "Template", f"Template '{name}' not found in any template directory"
             )
 
-        # Load and validate template
         try:
             template = self._load_template_file(template_path)
         except Exception as e:
@@ -116,7 +113,6 @@ class TemplateLoader:
                 f"Failed to load template '{name}' from {template_path}: {e}"
             ) from e
 
-        # Cache and return
         self._template_cache[name] = template
         logger.info(f"Loaded template '{name}' from {template_path}")
         return template
@@ -143,13 +139,11 @@ class TemplateLoader:
             if not template_dir.exists():
                 continue
 
-            # Check direct file
             path = template_dir / f"{name}.yaml"
             if path.exists():
                 logger.debug(f"Found built-in template: {path}")
                 return path
 
-            # Check subdirectories (for categories)
             for subdir in template_dir.iterdir():
                 if subdir.is_dir():
                     path = subdir / f"{name}.yaml"
@@ -208,20 +202,16 @@ class TemplateLoader:
         """
         templates = set()
 
-        # Scan all directories
         all_dirs = [self.user_template_dir] + self.template_dirs
         for template_dir in all_dirs:
             if not template_dir.exists():
                 continue
 
-            # Scan template files
             for path in template_dir.rglob("*.yaml"):
-                # Skip schema files
                 if path.name == "schema.yaml":
                     continue
                 templates.add(path.stem)
 
-        # Filter by category if specified
         if category:
             filtered = []
             for name in templates:

@@ -13,7 +13,6 @@ from inkwell.utils.errors import APIError, ValidationError
 @pytest.fixture
 def mock_api_key(monkeypatch: pytest.MonkeyPatch) -> str:
     """Set mock API key."""
-    # Use a valid-format API key for testing (meets length and format requirements)
     api_key = "AIzaSyD" + "X" * 32  # Valid Gemini key format
     monkeypatch.setenv("GOOGLE_API_KEY", api_key)
     return api_key
@@ -59,7 +58,6 @@ class TestGeminiExtractorInit:
 
     def test_init_with_api_key(self) -> None:
         """Test initializing with explicit API key."""
-        # Use a valid-format test key
         test_key = "AIzaSyD" + "X" * 32
         with patch("inkwell.extraction.extractors.gemini.genai.Client"):
             extractor = GeminiExtractor(api_key=test_key)
@@ -270,7 +268,6 @@ class TestGeminiExtractorExtract:
                     metadata={},
                 )
 
-                # Check that system prompt was combined
                 assert len(captured_prompt) > 0
                 full_prompt = captured_prompt[0]
                 assert sample_template.system_prompt in full_prompt
@@ -394,7 +391,6 @@ class TestGeminiExtractorComparison:
             from inkwell.extraction.extractors.claude import ClaudeExtractor
 
             gemini = GeminiExtractor()
-            # Use valid-format Claude API key for testing
             claude = ClaudeExtractor(api_key="sk-ant-api03-" + "X" * 32)
 
             template = ExtractionTemplate(

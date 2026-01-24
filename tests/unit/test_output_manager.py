@@ -94,17 +94,14 @@ class TestOutputManagerWriteEpisode:
 
         output = manager.write_episode(episode_metadata, extraction_results)
 
-        # Check directory created (nested: output_dir/podcast-slug/episode-slug)
         assert output.directory.exists()
         # Parent is podcast dir, grandparent is output_dir
         assert output.directory.parent.parent == temp_output_dir
 
-        # Check files created
         assert len(output.output_files) == 2
         assert (output.directory / "summary.md").exists()
         assert (output.directory / "quotes.md").exists()
 
-        # Check metadata file
         assert output.metadata_file.exists()
         assert output.metadata_file.name == ".metadata.yaml"
 
@@ -185,7 +182,6 @@ class TestOutputManagerWriteEpisode:
 
         output = manager.write_episode(episode_metadata, extraction_results)
 
-        # Load metadata
         metadata = manager.load_episode_metadata(output.directory)
 
         # Should sum costs from all results
@@ -200,7 +196,6 @@ class TestOutputManagerWriteEpisode:
         """Test that overwrite=False raises error if directory exists."""
         manager = OutputManager(output_dir=temp_output_dir)
 
-        # Write once
         manager.write_episode(episode_metadata, extraction_results)
 
         # Try to write again without overwrite
@@ -218,12 +213,10 @@ class TestOutputManagerWriteEpisode:
         """Test that overwrite=True replaces existing directory."""
         manager = OutputManager(output_dir=temp_output_dir)
 
-        # Write once
         output1 = manager.write_episode(episode_metadata, extraction_results)
         file1 = output1.directory / "summary.md"
         original_content = file1.read_text()
 
-        # Create modified extraction results
         modified_results = [
             ExtractionResult(
                 episode_url=extraction_results[0].episode_url,
@@ -239,7 +232,6 @@ class TestOutputManagerWriteEpisode:
             extraction_results[1],
         ]
 
-        # Write again with overwrite
         output2 = manager.write_episode(episode_metadata, modified_results, overwrite=True)
 
         # Should be same directory
@@ -274,7 +266,6 @@ class TestOutputManagerAtomicWrites:
 
         manager._write_file_atomic(test_file, "Content")
 
-        # Check for temp files
         temp_files = list(temp_output_dir.glob(".tmp_*"))
         assert len(temp_files) == 0
 
@@ -284,7 +275,6 @@ class TestOutputManagerAtomicWrites:
 
         test_file = temp_output_dir / "test.md"
 
-        # Write original
         test_file.write_text("Original")
 
         # Atomic write new content
@@ -317,7 +307,6 @@ class TestOutputManagerAtomicWrites:
 
         test_file = temp_output_dir / "test.md"
 
-        # Track call order
         call_order = []
 
         def mock_flush():
@@ -426,10 +415,8 @@ class TestOutputManagerListEpisodes:
         """Test listing episodes after writing some."""
         manager = OutputManager(output_dir=temp_output_dir)
 
-        # Write one episode
         manager.write_episode(episode_metadata, extraction_results)
 
-        # Write another with different title
         episode_metadata.episode_title = "Episode 2"
         manager.write_episode(episode_metadata, extraction_results)
 
@@ -445,10 +432,8 @@ class TestOutputManagerListEpisodes:
         """Test that non-episode directories are ignored."""
         manager = OutputManager(output_dir=temp_output_dir)
 
-        # Write real episode
         manager.write_episode(episode_metadata, extraction_results)
 
-        # Create directory without metadata
         (temp_output_dir / "not-an-episode").mkdir()
 
         episodes = manager.list_episodes()
@@ -469,7 +454,6 @@ class TestOutputManagerLoadMetadata:
 
         output = manager.write_episode(episode_metadata, extraction_results)
 
-        # Load metadata
         loaded_metadata = manager.load_episode_metadata(output.directory)
 
         assert loaded_metadata.podcast_name == episode_metadata.podcast_name
@@ -480,7 +464,6 @@ class TestOutputManagerLoadMetadata:
         """Test that loading from directory without metadata raises error."""
         manager = OutputManager(output_dir=temp_output_dir)
 
-        # Create directory without metadata
         test_dir = temp_output_dir / "test-episode"
         test_dir.mkdir()
 
@@ -510,7 +493,6 @@ class TestOutputManagerStatistics:
         """Test statistics with episodes."""
         manager = OutputManager(output_dir=temp_output_dir)
 
-        # Write episode
         manager.write_episode(episode_metadata, extraction_results)
 
         stats = manager.get_statistics()
@@ -531,7 +513,6 @@ class TestOutputManagerStatistics:
         # Empty directory
         assert manager.get_total_size() == 0
 
-        # Write episode
         manager.write_episode(episode_metadata, extraction_results)
 
         # Should have size now
@@ -757,15 +738,12 @@ class TestOutputManagerSecuritySymlinkAttacks:
         """Test that symlink directories are rejected."""
         manager = OutputManager(output_dir=temp_output_dir)
 
-        # Create a symlink that points outside output directory
         target_dir = temp_output_dir.parent / "sensitive_data"
         target_dir.mkdir()
 
-        # Get the nested path components
         podcast_slug = episode_metadata.podcast_slug
         episode_slug = episode_metadata.episode_slug
 
-        # Create podcast directory, then symlink at episode level
         podcast_dir = temp_output_dir / podcast_slug
         podcast_dir.mkdir()
         symlink_path = podcast_dir / episode_slug
@@ -786,7 +764,6 @@ class TestOutputManagerSecuritySymlinkAttacks:
         """Test that regular directories work fine."""
         manager = OutputManager(output_dir=temp_output_dir)
 
-        # Create a regular directory (not a symlink)
         output = manager.write_episode(episode_metadata, extraction_results)
 
         # Should succeed
@@ -823,7 +800,6 @@ class TestOutputManagerSecurityEdgeCases:
         """Test that overwrite rejects directories without .metadata.yaml."""
         manager = OutputManager(output_dir=temp_output_dir)
 
-        # Create a directory without metadata (could be user data)
         # With nested structure: output_dir/podcast-slug/episode-slug
         podcast_slug = episode_metadata.podcast_slug
         episode_slug = episode_metadata.episode_slug
@@ -851,12 +827,10 @@ class TestOutputManagerSecurityEdgeCases:
         """Test that overwrite creates backup before deletion."""
         manager = OutputManager(output_dir=temp_output_dir)
 
-        # Write episode first time
         output1 = manager.write_episode(episode_metadata, extraction_results)
         original_dir = output1.directory
 
         # Verify backup is created and cleaned up during overwrite
-        # Write second time with overwrite
         output2 = manager.write_episode(episode_metadata, extraction_results, overwrite=True)
 
         # Should be same directory
@@ -875,7 +849,6 @@ class TestOutputManagerSecurityEdgeCases:
         """Test that backup is restored if mkdir fails during overwrite."""
         manager = OutputManager(output_dir=temp_output_dir)
 
-        # Write episode first time
         output1 = manager.write_episode(episode_metadata, extraction_results)
         original_dir = output1.directory
         original_metadata_content = (original_dir / ".metadata.yaml").read_text()
@@ -908,7 +881,6 @@ class TestOutputManagerSecurityEdgeCases:
         """Test that backup is restored if file write fails after directory creation."""
         manager = OutputManager(output_dir=temp_output_dir)
 
-        # Write episode first time
         output1 = manager.write_episode(episode_metadata, extraction_results)
         original_dir = output1.directory
         original_summary_content = (original_dir / "summary.md").read_text()
@@ -955,7 +927,6 @@ class TestOutputManagerSecurityEdgeCases:
         """Test that backup is restored if metadata write fails."""
         manager = OutputManager(output_dir=temp_output_dir)
 
-        # Write episode first time
         output1 = manager.write_episode(episode_metadata, extraction_results)
         original_dir = output1.directory
         original_metadata_content = (original_dir / ".metadata.yaml").read_text()
@@ -988,7 +959,6 @@ class TestOutputManagerSecurityEdgeCases:
         """Test that backup is removed after successful overwrite."""
         manager = OutputManager(output_dir=temp_output_dir)
 
-        # Write episode first time
         output1 = manager.write_episode(episode_metadata, extraction_results)
         original_dir = output1.directory
 
@@ -1061,11 +1031,9 @@ def test_episode_output_from_directory_basic(temp_output_dir, episode_metadata, 
 
 def test_episode_output_from_directory_with_frontmatter(temp_output_dir):
     """Test loading files with YAML frontmatter."""
-    # Create episode directory manually
     episode_dir = temp_output_dir / "test-episode"
     episode_dir.mkdir()
 
-    # Write metadata
     metadata = EpisodeMetadata(
         podcast_name="Test Podcast",
         episode_title="Test Episode",
@@ -1075,7 +1043,6 @@ def test_episode_output_from_directory_with_frontmatter(temp_output_dir):
     metadata_file = episode_dir / ".metadata.yaml"
     metadata_file.write_text(yaml.dump(metadata.model_dump()))
 
-    # Write markdown file with frontmatter
     content_with_frontmatter = """---
 date: 2025-11-13
 author: Test Author
@@ -1090,7 +1057,6 @@ This is the actual content.
 """
     (episode_dir / "summary.md").write_text(content_with_frontmatter)
 
-    # Load
     loaded_output = EpisodeOutput.from_directory(episode_dir)
 
     # Verify frontmatter was parsed
@@ -1112,7 +1078,6 @@ def test_episode_output_from_directory_missing_dir():
 
 def test_episode_output_from_directory_not_a_directory(tmp_path):
     """Test loading from a file (not directory) raises error."""
-    # Create a file instead of directory
     file_path = tmp_path / "not-a-dir.txt"
     file_path.write_text("test")
 
@@ -1122,7 +1087,6 @@ def test_episode_output_from_directory_not_a_directory(tmp_path):
 
 def test_episode_output_from_directory_missing_metadata(tmp_path):
     """Test loading from directory without metadata raises error."""
-    # Create directory without .metadata.yaml
     episode_dir = tmp_path / "episode"
     episode_dir.mkdir()
 
@@ -1135,7 +1099,6 @@ def test_episode_output_from_directory_no_markdown_files(temp_output_dir):
     episode_dir = temp_output_dir / "empty-episode"
     episode_dir.mkdir()
 
-    # Write metadata only
     metadata = EpisodeMetadata(
         podcast_name="Test",
         episode_title="Test",
@@ -1145,7 +1108,6 @@ def test_episode_output_from_directory_no_markdown_files(temp_output_dir):
     metadata_file = episode_dir / ".metadata.yaml"
     metadata_file.write_text(yaml.dump(metadata.model_dump()))
 
-    # Load should work but have no files
     loaded_output = EpisodeOutput.from_directory(episode_dir)
 
     assert loaded_output.total_files == 0
@@ -1157,7 +1119,6 @@ def test_episode_output_from_directory_multiple_files(temp_output_dir):
     episode_dir = temp_output_dir / "multi-file-episode"
     episode_dir.mkdir()
 
-    # Write metadata
     metadata = EpisodeMetadata(
         podcast_name="Test",
         episode_title="Test",
@@ -1167,13 +1128,11 @@ def test_episode_output_from_directory_multiple_files(temp_output_dir):
     metadata_file = episode_dir / ".metadata.yaml"
     metadata_file.write_text(yaml.dump(metadata.model_dump()))
 
-    # Write multiple markdown files
     (episode_dir / "summary.md").write_text("# Summary\n\nSummary content")
     (episode_dir / "quotes.md").write_text("# Quotes\n\n> Quote 1")
     (episode_dir / "key-concepts.md").write_text("# Concepts\n\n- Concept 1")
     (episode_dir / "tools-mentioned.md").write_text("# Tools\n\n- Tool 1")
 
-    # Load
     loaded_output = EpisodeOutput.from_directory(episode_dir)
 
     assert loaded_output.total_files == 4
@@ -1218,7 +1177,6 @@ class TestOutputManagerSchemaVersioning:
         episode_dir = temp_output_dir / "test-episode"
         episode_dir.mkdir()
 
-        # Create v0 metadata (no schema_version field)
         metadata_file = episode_dir / ".metadata.yaml"
         v0_metadata = {
             "podcast_name": "Test Podcast",
@@ -1234,7 +1192,6 @@ class TestOutputManagerSchemaVersioning:
         }
         metadata_file.write_text(yaml.dump(v0_metadata))
 
-        # Load should auto-migrate
         loaded_metadata = manager.load_episode_metadata(episode_dir)
 
         # Should be migrated to v1
@@ -1253,7 +1210,6 @@ class TestOutputManagerSchemaVersioning:
         episode_dir = temp_output_dir / "test-episode"
         episode_dir.mkdir()
 
-        # Create v1 metadata (with schema_version)
         metadata_file = episode_dir / ".metadata.yaml"
         v1_metadata = {
             "schema_version": 1,
@@ -1270,7 +1226,6 @@ class TestOutputManagerSchemaVersioning:
         }
         metadata_file.write_text(yaml.dump(v1_metadata))
 
-        # Load should work without migration
         loaded_metadata = manager.load_episode_metadata(episode_dir)
 
         # Should remain v1
@@ -1288,7 +1243,6 @@ class TestOutputManagerSchemaVersioning:
         episode_dir = temp_output_dir / "test-episode"
         episode_dir.mkdir()
 
-        # Create v2 metadata (future version)
         metadata_file = episode_dir / ".metadata.yaml"
         v2_metadata = {
             "schema_version": 2,
@@ -1305,7 +1259,6 @@ class TestOutputManagerSchemaVersioning:
         }
         metadata_file.write_text(yaml.dump(v2_metadata))
 
-        # Load should warn about newer version
         loaded_metadata = manager.load_episode_metadata(episode_dir)
 
         # Should load but log warning (warning goes to stderr via rich)
@@ -1323,7 +1276,6 @@ class TestOutputManagerSchemaVersioning:
         episode_dir = temp_output_dir / "test-episode"
         episode_dir.mkdir()
 
-        # Create v0 metadata with all fields
         metadata_file = episode_dir / ".metadata.yaml"
         v0_metadata = {
             "podcast_name": "Test Podcast",
@@ -1341,7 +1293,6 @@ class TestOutputManagerSchemaVersioning:
         }
         metadata_file.write_text(yaml.dump(v0_metadata))
 
-        # Load and migrate
         loaded_metadata = manager.load_episode_metadata(episode_dir)
 
         # Verify all data preserved

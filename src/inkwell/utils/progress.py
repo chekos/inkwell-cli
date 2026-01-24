@@ -92,7 +92,6 @@ class PipelineProgress:
         self._progress: Progress | None = None
         self._started = False
 
-        # Set up stages
         stage_list = stages or self.DEFAULT_STAGES.copy()
         if include_interview:
             stage_list.append(("interview", "Interview"))
@@ -115,7 +114,6 @@ class PipelineProgress:
         )
         self._progress.__enter__()
 
-        # Add all stages as tasks (visible from the start)
         for _stage_id, stage in self._stages.items():
             stage.task_id = self._progress.add_task(
                 f"[dim]{stage.name}[/dim]",

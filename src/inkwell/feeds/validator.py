@@ -35,19 +35,16 @@ class FeedValidator:
             NetworkError: If URL is not accessible
             AuthenticationError: If authentication is required but not provided/invalid
         """
-        # Validate URL format
         try:
             HttpUrl(url)
         except ValidationError as e:
             raise InkwellValidationError(f"Invalid URL format: {url}") from e
 
-        # Check if URL is accessible
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 headers = self._build_auth_headers(auth)
                 response = await client.head(url, headers=headers, follow_redirects=True)
 
-                # Handle 405 Method Not Allowed (some servers don't support HEAD)
                 if response.status_code == 405:
                     # Try GET instead
                     response = await client.get(url, headers=headers, follow_redirects=True)
@@ -96,7 +93,6 @@ class FeedValidator:
                 headers = self._build_auth_headers(auth)
                 response = await client.head(url, headers=headers, follow_redirects=True)
 
-                # Handle 405 Method Not Allowed
                 if response.status_code == 405:
                     response = await client.get(url, headers=headers, follow_redirects=True)
 

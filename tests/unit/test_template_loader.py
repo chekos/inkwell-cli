@@ -70,7 +70,6 @@ class TestTemplateLoader:
         self, temp_template_dir: Path, valid_template_yaml: str
     ) -> None:
         """Test loading template from YAML file."""
-        # Create test template file
         template_file = temp_template_dir / "test-template.yaml"
         template_file.write_text(valid_template_yaml)
 
@@ -97,7 +96,6 @@ class TestTemplateLoader:
             template_dirs=[],
         )
 
-        # Load template twice
         template1 = loader.load_template("test-template")
         template2 = loader.load_template("test-template")
 
@@ -114,7 +112,6 @@ class TestTemplateLoader:
         user_dir.mkdir()
         builtin_dir.mkdir()
 
-        # Create template in both directories with different versions
         user_template = user_dir / "summary.yaml"
         user_template.write_text(valid_template_yaml.replace('"1.0"', '"2.0"'))
 
@@ -185,7 +182,6 @@ class TestTemplateLoader:
         template_dir = tmp_path / "templates"
         template_dir.mkdir()
 
-        # Create multiple template files
         (template_dir / "summary.yaml").write_text(valid_template_yaml)
         (template_dir / "quotes.yaml").write_text(valid_template_yaml)
         (template_dir / "concepts.yaml").write_text(valid_template_yaml)
@@ -210,7 +206,6 @@ class TestTemplateLoader:
         user_dir.mkdir()
         builtin_dir.mkdir()
 
-        # Create same template in both directories
         (user_dir / "summary.yaml").write_text(valid_template_yaml)
         (builtin_dir / "summary.yaml").write_text(valid_template_yaml)
 
@@ -229,7 +224,6 @@ class TestTemplateLoader:
         template_dir = tmp_path / "templates"
         template_dir.mkdir()
 
-        # Create templates with different categories
         tech_template = """
 name: tools
 version: "1.0"
@@ -308,11 +302,9 @@ expected_format: json
             template_dirs=[],
         )
 
-        # Load template (caches it)
         template1 = loader.load_template("test-template")
         assert len(loader._template_cache) == 1
 
-        # Load again - should return same cached instance
         template2 = loader.load_template("test-template")
         assert template1 is template2
         assert len(loader._template_cache) == 1

@@ -82,7 +82,6 @@ class TestGeminiTranscriber:
     def audio_file(self, tmp_path: Path) -> Path:
         """Create temporary audio file."""
         audio_path = tmp_path / "test_audio.m4a"
-        # Create 10MB file
         audio_path.write_bytes(b"0" * (10 * 1024 * 1024))
         return audio_path
 

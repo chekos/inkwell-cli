@@ -128,7 +128,6 @@ class TestDatetimeComparisons:
         # Current time
         now = now_utc()
 
-        # Calculate age (should work without TypeError)
         age = now - cached_at
 
         assert isinstance(age, timedelta)
@@ -170,7 +169,6 @@ class TestBackwardCompatibility:
         class TestModel(BaseModel):
             timestamp: datetime = Field(default_factory=now_utc)
 
-        # Create instance
         model = TestModel()
 
         # Verify timestamp is aware

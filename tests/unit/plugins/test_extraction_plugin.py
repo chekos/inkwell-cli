@@ -99,7 +99,6 @@ class TestExtractionPluginRegistry:
         """Test registering an extraction plugin."""
         from inkwell.extraction.extractors.claude import ClaudeExtractor
 
-        # Set up API key
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-api03-" + "X" * 32)
 
         registry: PluginRegistry[ExtractionPlugin] = PluginRegistry(ExtractionPlugin)
@@ -174,7 +173,6 @@ class TestExtractionPluginConfigure:
         # Don't set env var
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
 
-        # Create with lazy init (like plugin discovery does)
         extractor = ClaudeExtractor(lazy_init=True)
 
         # Configure should set up the API key

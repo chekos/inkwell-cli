@@ -238,14 +238,14 @@ def enable_plugin(
     result = _find_plugin_entry(name, registries)
 
     if not result:
-        console.print(f"[red]x[/red] Plugin '{name}' not found")
+        console.print(f"[red]✗[/red] Plugin '{name}' not found")
         console.print("\nUse [cyan]inkwell plugins list --all[/cyan] to see available plugins")
         sys.exit(1)
 
     plugin_type, entry = result
 
     if entry.status == "broken":
-        console.print(f"[red]x[/red] Cannot enable broken plugin '{name}'")
+        console.print(f"[red]✗[/red] Cannot enable broken plugin '{name}'")
         if entry.error:
             console.print(f"  Error: {entry.error}")
         if entry.recovery_hint:
@@ -294,7 +294,7 @@ def disable_plugin(
     result = _find_plugin_entry(name, registries)
 
     if not result:
-        console.print(f"[red]x[/red] Plugin '{name}' not found")
+        console.print(f"[red]✗[/red] Plugin '{name}' not found")
         console.print("\nUse [cyan]inkwell plugins list[/cyan] to see available plugins")
         sys.exit(1)
 

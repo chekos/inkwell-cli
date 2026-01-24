@@ -20,7 +20,6 @@ from inkwell.feeds.parser import RSSParser
 from inkwell.pipeline import PipelineOptions, PipelineOrchestrator
 from inkwell.transcription import CostEstimate, TranscriptionManager
 from inkwell.utils.datetime import now_utc
-from inkwell.utils.display import truncate_url
 from inkwell.utils.errors import (
     ConfigError,
     InkwellError,
@@ -39,8 +38,10 @@ console = Console()
 
 def _register_subcommands() -> None:
     """Register subcommand apps (lazy import to avoid circular deps)."""
+    from inkwell.cli_list import app as list_app
     from inkwell.cli_plugins import app as plugins_app
 
+    app.add_typer(list_app, name="list")
     app.add_typer(plugins_app, name="plugins")
 
 
@@ -134,42 +135,6 @@ def add_feed(
         sys.exit(1)
 
 
-@app.command("list")
-def list_feeds() -> None:
-    """List all configured podcast feeds.
-
-    Displays a table showing feed names, URLs, authentication status, and categories.
-    """
-    try:
-        manager = ConfigManager()
-        feeds = manager.list_feeds()
-
-        if not feeds:
-            console.print("[yellow]No feeds configured yet.[/yellow]")
-            console.print("\nAdd a feed: [cyan]inkwell add <url> --name <name>[/cyan]")
-            return
-
-        table = Table(title="[bold]Configured Podcast Feeds[/bold]")
-        table.add_column("Name", style="cyan", no_wrap=True)
-        table.add_column("URL", style="blue")
-        table.add_column("Auth", justify="center", style="yellow")
-        table.add_column("Category", style="green")
-
-        for name, feed in feeds.items():
-            auth_status = "✓" if feed.auth.type != "none" else "—"
-            category_display = feed.category or "—"
-            url_display = truncate_url(str(feed.url), max_length=50)
-
-            table.add_row(name, url_display, auth_status, category_display)
-
-        console.print(table)
-        console.print(f"\n[dim]Total: {len(feeds)} feed(s)[/dim]")
-
-    except InkwellError as e:
-        console.print(f"[red]✗[/red] Error: {e}")
-        sys.exit(1)
-
-
 @app.command("remove")
 def remove_feed(
     name: str = typer.Argument(..., help="Feed name to remove"),
@@ -210,75 +175,6 @@ def remove_feed(
     except InkwellError as e:
         console.print(f"[red]✗[/red] Error: {e}")
         sys.exit(1)
-
-
-@app.command("episodes")
-def episodes_command(
-    name: str = typer.Argument(..., help="Feed name to list episodes from"),
-    limit: int = typer.Option(10, "--limit", "-n", help="Number of episodes to show"),
-) -> None:
-    """List episodes from a configured feed.
-
-    Examples:
-        inkwell episodes my-podcast
-
-        inkwell episodes my-podcast --limit 20
-    """
-
-    async def run_episodes() -> None:
-        try:
-            manager = ConfigManager()
-
-            try:
-                feed_config = manager.get_feed(name)
-            except NotFoundError:
-                console.print(f"[red]✗[/red] Feed '{name}' not found.")
-                console.print("  Use [cyan]inkwell list[/cyan] to see configured feeds.")
-                sys.exit(1)
-
-            # Fetch and parse the RSS feed
-            console.print(f"[bold]Fetching episodes from:[/bold] {name}\n")
-            parser = RSSParser()
-
-            with Progress(
-                SpinnerColumn(),
-                TextColumn("[progress.description]{task.description}"),
-                console=console,
-            ) as progress:
-                progress.add_task("Parsing RSS feed...", total=None)
-                feed = await parser.fetch_feed(str(feed_config.url), feed_config.auth)
-
-            # Display episodes in a table
-            table = Table(title=f"Episodes from {name}", show_lines=True)
-            table.add_column("#", style="dim", width=4)
-            table.add_column("Title", style="cyan", max_width=60)
-            table.add_column("Date", style="green", width=12)
-            table.add_column("Duration", style="yellow", width=10)
-
-            for i, entry in enumerate(feed.entries[:limit], 1):
-                try:
-                    ep = parser.extract_episode_metadata(entry, name)
-                    # Truncate title if too long
-                    title = ep.title[:57] + "..." if len(ep.title) > 60 else ep.title
-                    date = ep.published.strftime("%Y-%m-%d")
-                    duration = ep.duration_formatted if ep.duration_seconds else "—"
-                    table.add_row(str(i), title, date, duration)
-                except Exception:
-                    pass
-
-            console.print(table)
-            shown = min(limit, len(feed.entries))
-            total = len(feed.entries)
-            console.print(f"\n[dim]Showing {shown} of {total} episodes[/dim]")
-            console.print("\n[bold]To fetch an episode:[/bold]")
-            console.print(f"  inkwell fetch {name} --latest")
-            console.print(f'  inkwell fetch {name} --episode "keyword"')
-
-        except InkwellError as e:
-            console.print(f"[red]✗[/red] Error: {e}")
-            sys.exit(1)
-
-    asyncio.run(run_episodes())
 
 
 @app.command("config")

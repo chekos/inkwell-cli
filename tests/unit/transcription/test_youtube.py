@@ -68,6 +68,16 @@ class TestYouTubeURLDetection:
         for url in urls:
             assert await transcriber.can_transcribe(url) is True
 
+    @pytest.mark.asyncio
+    async def test_shorts_url_detected(self, transcriber):
+        """Shorts URLs emitted by the RSS parser must be recognised as YouTube."""
+        assert await transcriber.can_transcribe("https://www.youtube.com/shorts/abc123")
+
+    @pytest.mark.asyncio
+    async def test_live_url_detected(self, transcriber):
+        """Live-VOD permalinks must be recognised as YouTube."""
+        assert await transcriber.can_transcribe("https://www.youtube.com/live/xyz789")
+
 
 class TestVideoIDExtraction:
     """Tests for extracting video IDs from URLs."""
@@ -106,6 +116,25 @@ class TestVideoIDExtraction:
         url = "https://www.youtube.com/embed/embed123"
         video_id = transcriber._extract_video_id(url)
         assert video_id == "embed123"
+
+    def test_extract_from_shorts_url(self, transcriber):
+        """Shorts URLs come through the RSS parser's YouTube branch — must route
+        to the free transcript API, not Gemini fallback."""
+        url = "https://www.youtube.com/shorts/shortsID1"
+        video_id = transcriber._extract_video_id(url)
+        assert video_id == "shortsID1"
+
+    def test_extract_from_shorts_url_with_params(self, transcriber):
+        """Shorts URLs with tracking params still extract cleanly."""
+        url = "https://www.youtube.com/shorts/shortsID1?si=abc"
+        video_id = transcriber._extract_video_id(url)
+        assert video_id == "shortsID1"
+
+    def test_extract_from_live_url(self, transcriber):
+        """Live-VOD permalinks (/live/<id>) must route the same as /watch."""
+        url = "https://www.youtube.com/live/liveID12"
+        video_id = transcriber._extract_video_id(url)
+        assert video_id == "liveID12"
 
     def test_extract_returns_none_for_invalid_url(self, transcriber):
         """Test that invalid URLs return None."""

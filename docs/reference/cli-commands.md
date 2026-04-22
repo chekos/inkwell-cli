@@ -152,8 +152,8 @@ inkwell fetch <SOURCE> [OPTIONS]
 | `--resume-session` | | string | | Resume specific interview session by ID |
 | `--extractor` | | string | Auto | Force specific extraction plugin (e.g., claude, gemini) |
 | `--transcriber` | | string | Auto | Force specific transcription plugin (e.g., youtube, gemini) |
-| `--save-source` | | flag | false | After a successful YouTube URL fetch, also save the channel as a feed (requires `--source-name`) |
-| `--source-name` | | string | | Name for the saved source (required with `--save-source`) |
+| `--save-source` | | flag | false | After a successful YouTube URL fetch, also save the channel as a feed. Auto-names the feed from channel metadata unless `--source-name` is set. |
+| `--source-name` | | string | auto | Feed name for `--save-source`. Optional; derived from channel metadata if omitted. |
 
 ### Examples
 
@@ -194,7 +194,10 @@ inkwell fetch URL --provider gemini
 # Force specific plugins
 inkwell fetch URL --extractor claude --transcriber youtube
 
-# One-time YouTube video; save the channel for future fetches
+# One-time YouTube video; save the channel for future fetches (auto-named)
+inkwell fetch https://www.youtube.com/watch?v=abc123 --save-source
+
+# Same, with an explicit feed name
 inkwell fetch https://www.youtube.com/watch?v=abc123 --save-source --source-name some-creator
 
 # Using environment variable overrides
@@ -435,10 +438,13 @@ inkwell version
 | Code | Meaning |
 |------|---------|
 | 0 | Success |
-| 1 | General error |
-| 2 | Configuration error |
-| 3 | Network error |
-| 4 | API error |
+| 1 | Any error (configuration, network, API, validation) |
+| 130 | Interrupted (SIGINT) |
+
+> Inkwell currently returns a single non-zero code (`1`) for all error
+> categories. Fine-grained codes per error class may be added in a future
+> release; scripts should gate retry logic on the stderr message rather
+> than the exit code.
 
 ---
 

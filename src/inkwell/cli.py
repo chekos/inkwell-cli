@@ -3,11 +3,14 @@
 import asyncio
 import logging
 import os
+import re
 import sys
 from datetime import timedelta
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 import typer
+from pydantic import HttpUrl
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
@@ -17,7 +20,12 @@ from inkwell.config.manager import ConfigManager
 from inkwell.config.schema import AuthConfig, FeedConfig
 from inkwell.feeds.models import Episode
 from inkwell.feeds.parser import RSSParser
-from inkwell.feeds.youtube_resolver import is_youtube_url, resolve_youtube_url
+from inkwell.feeds.youtube_resolver import (
+    ResolvedFeed,
+    is_youtube_playlist_url,
+    is_youtube_url,
+    resolve_youtube_url,
+)
 from inkwell.pipeline import PipelineOptions, PipelineOrchestrator
 from inkwell.transcription import CostEstimate, TranscriptionManager
 from inkwell.utils.datetime import now_utc
@@ -35,6 +43,10 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 console = Console()
+# Secondary console routed to stderr so agents capturing stdout can isolate
+# the structured result (the summary table) from operational chatter (hints,
+# post-fetch save notices).
+err_console = Console(stderr=True)
 
 
 def _register_subcommands() -> None:
@@ -68,19 +80,60 @@ def show_version() -> None:
     console.print(f"[bold cyan]Inkwell CLI[/bold cyan] v{__version__}")
 
 
-def _should_show_save_source_hint(*, url: str, save_source: bool, input_was_url: bool) -> bool:
+def _should_show_save_source_hint(*, url: str, input_was_url: bool) -> bool:
     """Decide whether to print the --save-source hint after a YouTube fetch.
 
-    Hint fires only when the user pasted a raw YouTube URL and didn't already
-    opt into saving. Suppressed for saved-feed-name lookups, non-YouTube URLs,
-    and when --save-source was passed.
+    The sole callsite already guards on `not save_source`; this helper just
+    covers the remaining two conditions (URL-shaped input + YouTube host).
+    Suppressed for saved-feed-name lookups and non-YouTube URLs.
     """
-    return input_was_url and not save_source and is_youtube_url(url)
+    return input_was_url and is_youtube_url(url)
+
+
+_NAME_SLUG_RE = re.compile(r"[^a-z0-9]+")
+
+
+def _slugify(s: str) -> str:
+    """Collapse any string into a [a-z0-9-] feed-name slug."""
+    return _NAME_SLUG_RE.sub("-", s.lower()).strip("-")
+
+
+def _derive_source_name(resolved: ResolvedFeed, existing: set[str]) -> str:
+    """Auto-derive a feed name from channel metadata when --source-name is omitted.
+
+    Preference: slugified channel name → channel_id from the feed URL →
+    generic "youtube-feed". Collisions are disambiguated with a numeric
+    suffix so `--save-source` can always succeed when the URL is valid.
+    """
+    candidate = ""
+    if resolved.channel_name:
+        candidate = _slugify(resolved.channel_name)
+    if not candidate:
+        # Pure URL-shape branch, or slugification produced an empty string.
+        # Fall back to the channel_id carried in the feed URL query string.
+        cid_list = parse_qs(urlparse(resolved.feed_url).query).get("channel_id", [])
+        if cid_list and cid_list[0]:
+            candidate = cid_list[0].lower()
+    if not candidate:
+        candidate = "youtube-feed"
+
+    if candidate not in existing:
+        return candidate
+    i = 2
+    while f"{candidate}-{i}" in existing:
+        i += 1
+    return f"{candidate}-{i}"
 
 
 @app.command("add")
 def add_feed(
-    url: str = typer.Argument(..., help="RSS feed URL"),
+    url: str = typer.Argument(
+        ...,
+        help=(
+            "RSS feed URL or YouTube URL (watch, @handle, /channel/UC…, youtu.be). "
+            "YouTube URLs are auto-resolved to the channel's RSS feed. Playlist URLs are rejected."
+        ),
+    ),
     name: str = typer.Option(..., "--name", "-n", help="Feed identifier name"),
     auth: bool = typer.Option(False, "--auth", help="Prompt for authentication"),
     category: str | None = typer.Option(
@@ -94,7 +147,8 @@ def add_feed(
 
         inkwell add https://private.com/feed.rss --name private --auth
     """
-    try:
+
+    async def run_add_feed() -> None:
         manager = ConfigManager()
 
         # Collect auth credentials if needed
@@ -121,10 +175,8 @@ def add_feed(
 
         # Resolve YouTube URLs of any shape to the channel's media-RSS feed.
         # Non-YouTube URLs pass through as-is (resolver returns None).
-        resolved = asyncio.run(resolve_youtube_url(url))
-        feed_url = resolved[0] if resolved else url
-
-        from pydantic import HttpUrl
+        resolved = await resolve_youtube_url(url)
+        feed_url = resolved.feed_url if resolved else url
 
         feed_config = FeedConfig(
             url=HttpUrl(feed_url),
@@ -135,11 +187,17 @@ def add_feed(
         manager.add_feed(name, feed_config)
 
         console.print(f"\n[green]✓[/green] Feed '[bold]{name}[/bold]' added successfully")
+        # Surface the stored URL when it differs from what the user typed so
+        # they can spot a mis-resolved channel without running `inkwell list`.
+        if feed_url != url:
+            console.print(f"[dim]  Resolved to {feed_url}[/dim]")
         if auth:
             console.print("[dim]  Credentials encrypted and stored securely[/dim]")
 
+    try:
+        asyncio.run(run_add_feed())
     except ValidationError as e:
-        console.print(f"[red]✗[/red] {e}")
+        console.print(f"[red]✗[/red] {e.message}")
         if e.suggestion:
             console.print(f"[dim]  {e.suggestion}[/dim]")
         sys.exit(1)
@@ -652,12 +710,15 @@ def fetch_command(
     save_source: bool = typer.Option(
         False,
         "--save-source",
-        help="Also save this video's channel as a feed (YouTube URLs only, requires --source-name)",
+        help=(
+            "Also save this video's channel as a feed (YouTube URLs only). "
+            "Auto-names from channel metadata unless --source-name is set."
+        ),
     ),
     source_name: str | None = typer.Option(
         None,
         "--source-name",
-        help="Name for the saved source (required when --save-source is set)",
+        help="Feed name for --save-source (optional; derived from channel metadata if omitted).",
     ),
 ) -> None:
     """Fetch and process a podcast episode.
@@ -699,25 +760,35 @@ def fetch_command(
             auth_password: str | None = None
             # Episode from RSS feed (if applicable)
             ep: Episode | None = None
+            # Set when the argument resolves to a configured feed (and we fan
+            # out into its episodes); stays None for direct-URL mode.
+            selected_episodes: list[Episode] | None = None
 
-            is_url = url_or_feed.startswith(("http://", "https://", "www."))
+            # `www.foo.com` (no scheme) is not a URL — urlparse returns empty
+            # scheme/host for it, which breaks is_youtube_url and friends.
+            # Route it through the scheme-less fallback below.
+            is_url = url_or_feed.startswith(("http://", "https://"))
 
             # Pre-fetch validation for --save-source (fail fast, before the
             # long-running pipeline starts).
             if save_source:
-                if source_name is None:
-                    raise ValidationError(
-                        "--save-source requires --source-name",
-                        suggestion=(
-                            "Pass --source-name <name> to save the channel with a specific name."
-                        ),
-                    )
                 if not is_url or not is_youtube_url(url_or_feed):
                     raise ValidationError(
                         "--save-source only supports YouTube URLs currently",
                         suggestion=(
                             "For non-YouTube sources, use "
                             "'inkwell add <feed-url> --name <name>' instead."
+                        ),
+                    )
+                # Fail fast on playlists before the pipeline runs. Without this
+                # the playlist-rejection inside resolve_youtube_url only fires
+                # *after* transcription/extraction completes, wasting API spend.
+                if is_youtube_playlist_url(url_or_feed):
+                    raise ValidationError(
+                        "Playlist URLs aren't supported yet — try the channel URL instead",
+                        suggestion=(
+                            "Visit the playlist on YouTube and copy the channel's "
+                            "@handle or /channel/UC… URL from the creator."
                         ),
                     )
 
@@ -782,13 +853,11 @@ def fetch_command(
                         auth_username = feed_config.auth.username
                         auth_password = feed_config.auth.password
 
-            # For feed mode: selected_episodes from RSS parsing
-            # For URL mode: single placeholder with url already set
-            episodes_to_process: list[Episode | None]
-            if "selected_episodes" in dir():
-                episodes_to_process = list(selected_episodes)  # Copy to allow None type
-            else:
-                episodes_to_process = [None]  # URL mode: process once with ep=None
+            # For feed mode: selected_episodes set by RSS parsing above.
+            # For URL mode: run once with ep=None.
+            episodes_to_process: list[Episode | None] = (
+                list(selected_episodes) if selected_episodes is not None else [None]
+            )
 
             # Process each episode
             for ep in episodes_to_process:
@@ -988,33 +1057,43 @@ def fetch_command(
                 # Post-fetch: save channel as a feed (--save-source) or show
                 # a hint about --save-source on raw YouTube URL fetches.
                 if save_source:
-                    assert source_name is not None  # validated pre-fetch
                     try:
                         resolved = await resolve_youtube_url(url_or_feed)
                         if resolved is None:
                             raise ValidationError("Couldn't save source: URL isn't a YouTube URL")
-                        from pydantic import HttpUrl
-
-                        resolved_feed_url, _ = resolved
+                        # Auto-derive the feed name when --source-name is omitted.
+                        # The user pasted a YouTube URL; they shouldn't have to
+                        # know a good feed name up front.
+                        if source_name is None:
+                            existing = set(manager.list_feeds().keys())
+                            effective_name = _derive_source_name(resolved, existing)
+                        else:
+                            effective_name = source_name
                         manager.add_feed(
-                            source_name,
+                            effective_name,
                             FeedConfig(
-                                url=HttpUrl(resolved_feed_url),
+                                url=HttpUrl(resolved.feed_url),
                                 auth=AuthConfig(type="none"),
                             ),
                         )
-                        console.print(
-                            f"[green]✓[/green] Saved channel as feed '[bold]{source_name}[/bold]'"
+                        err_console.print(
+                            f"[green]✓[/green] Saved channel as feed "
+                            f"'[bold]{effective_name}[/bold]'"
                         )
-                    except Exception as e:
-                        console.print(f"[yellow]⚠[/yellow] Couldn't save source: {e}")
-                elif _should_show_save_source_hint(
-                    url=url_or_feed, save_source=save_source, input_was_url=is_url
-                ):
-                    console.print(
+                        if source_name is None:
+                            err_console.print(
+                                f"[dim]  Auto-named from channel metadata. "
+                                f"To rename: [cyan]inkwell remove {effective_name}[/cyan] "
+                                f"then [cyan]inkwell add <url> --name <new-name>[/cyan]. "
+                                f"Pass [cyan]--source-name[/cyan] next time to skip "
+                                f"this.[/dim]"
+                            )
+                    except (ValidationError, ConfigError) as e:
+                        err_console.print(f"[yellow]⚠[/yellow] Couldn't save source: {e}")
+                elif _should_show_save_source_hint(url=url_or_feed, input_was_url=is_url):
+                    err_console.print(
                         "\n[dim]Want to track this channel? Re-run with "
-                        "[cyan]--save-source --source-name <name>[/cyan] to save "
-                        "it as a feed.[/dim]"
+                        "[cyan]--save-source[/cyan] to save it as a feed.[/dim]"
                     )
 
         except KeyboardInterrupt:
@@ -1024,7 +1103,11 @@ def fetch_command(
             console.print(f"\n[red]✗[/red] {e}")
             sys.exit(1)
         except InkwellError as e:
-            console.print(f"\n[red]✗[/red] Error: {e}")
+            # Print message and suggestion separately so agents parsing
+            # line-by-line can capture both cleanly (matches add_feed's pattern).
+            console.print(f"\n[red]✗[/red] {e.message}")
+            if e.suggestion:
+                console.print(f"[dim]  {e.suggestion}[/dim]")
             sys.exit(1)
         except Exception as e:
             console.print(f"\n[red]✗[/red] Unexpected error: {e}")

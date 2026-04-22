@@ -83,13 +83,21 @@ inkwell add https://www.youtube.com/channel/UC_tSQ6UQy2pROm-I0J7UBoA --name oren
 If you just want to process one video without tracking the channel, use `inkwell fetch <video-url>`. You'll see a hint at the end inviting you to save the channel:
 
 ```
-Want to track this channel? Re-run with --save-source --source-name <name> to save it as a feed.
+Want to track this channel? Re-run with --save-source to save it as a feed.
 ```
 
-To take it up on the offer, re-run with the flag:
+To take it up on the offer, re-run with `--save-source` — the feed name is auto-derived from the channel name, so you don't have to invent one:
 
 ```bash
-inkwell fetch https://www.youtube.com/watch?v=pKeZ5XK2vp4 --save-source --source-name oren-meets-world
+inkwell fetch https://www.youtube.com/watch?v=pKeZ5XK2vp4 --save-source
+# → ✓ Saved channel as feed 'oren-meets-world'
+#     Auto-named from channel metadata. Pass --source-name next time to skip this.
+```
+
+Pass `--source-name` if you want a specific name:
+
+```bash
+inkwell fetch https://www.youtube.com/watch?v=pKeZ5XK2vp4 --save-source --source-name oren
 ```
 
 !!! note "Playlist URLs"

@@ -379,12 +379,30 @@ class TestRSSParserYouTube:
         parser = RSSParser()
         entry = {
             "title": "Entry with no link",
-            "yt_videoid": "fallbackVideoId",
+            # 11-char ID matching YouTube's URL-safe base64 alphabet.
+            "yt_videoid": "fallbackID_",
         }
 
         episode = parser.extract_episode_metadata(entry, "Test Channel")
 
-        assert str(episode.url) == "https://www.youtube.com/watch?v=fallbackVideoId"
+        assert str(episode.url) == "https://www.youtube.com/watch?v=fallbackID_"
+
+    def test_malformed_yt_videoid_rejected_when_link_missing(self) -> None:
+        """An attacker-controlled feed can't inject extra query params via yt_videoid.
+
+        Without validation, `yt_videoid='abc123&list=PL_evil'` would produce
+        `https://www.youtube.com/watch?v=abc123&list=PL_evil`, attaching a
+        playlist context to the downstream yt-dlp call.
+        """
+        parser = RSSParser()
+        entry = {
+            "title": "Injection attempt",
+            "yt_videoid": "abc123&list=PL_evil",
+        }
+
+        # No link + invalid yt_videoid -> no URL -> downstream validation fails.
+        with pytest.raises(ValidationError, match="no audio enclosure"):
+            parser.extract_episode_metadata(entry, "Test Channel")
 
     def test_non_youtube_feed_regression(self, valid_rss_feed: str) -> None:
         """Existing podcast RSS feeds still extract URL from <enclosure>, unaffected."""
@@ -394,6 +412,21 @@ class TestRSSParserYouTube:
         episode = parser.extract_episode_metadata(feed.entries[0], "Tech Talks")
 
         assert str(episode.url) == "https://example.com/audio/ep100.mp3"
+
+    def test_enclosure_takes_priority_over_yt_videoid(self) -> None:
+        """When both an audio enclosure and yt_videoid are present, the
+        enclosure wins — the YouTube fallback must only fire as a fallback."""
+        parser = RSSParser()
+        entry = {
+            "title": "Entry with both",
+            "enclosures": [{"type": "audio/mpeg", "href": "https://cdn.example.com/ep.mp3"}],
+            "yt_videoid": "shouldNotBeUsed",
+            "link": "https://www.youtube.com/watch?v=shouldNotBeUsed",
+        }
+
+        episode = parser.extract_episode_metadata(entry, "Mixed Feed")
+
+        assert str(episode.url) == "https://cdn.example.com/ep.mp3"
 
 
 class TestParseAndFetchEpisodes:

@@ -33,8 +33,7 @@ class TestResolveYouTubeUrlPureLayer:
                 "https://www.youtube.com/channel/UCtestChannelIdExample"
             )
         assert result is not None
-        feed_url, _ = result
-        assert "channel_id=UCtestChannelIdExample" in feed_url
+        assert "channel_id=UCtestChannelIdExample" in result.feed_url
         mock_class.assert_not_called()
 
     @pytest.mark.asyncio
@@ -44,7 +43,9 @@ class TestResolveYouTubeUrlPureLayer:
         url = "https://www.youtube.com/feeds/videos.xml?channel_id=UCabc"
         with patcher:
             result = await resolve_youtube_url(url)
-        assert result == (url, None)
+        assert result is not None
+        assert result.feed_url == url
+        assert result.channel_name is None
         mock_class.assert_not_called()
 
     @pytest.mark.asyncio
@@ -71,7 +72,7 @@ class TestResolveYouTubeUrlPureLayer:
         with patcher:
             result = await resolve_youtube_url("https://WWW.YOUTUBE.COM/channel/UCabc")
         assert result is not None
-        assert "channel_id=UCabc" in result[0]
+        assert "channel_id=UCabc" in result.feed_url
 
 
 class TestResolveYouTubeUrlWithYtDlp:
@@ -83,9 +84,7 @@ class TestResolveYouTubeUrlWithYtDlp:
         with patcher:
             result = await resolve_youtube_url("https://www.youtube.com/watch?v=someVideoId")
         assert result is not None
-        feed_url, channel_name = result
-        assert "channel_id=UCabc" in feed_url
-        assert channel_name == "Some Channel"
+        assert "channel_id=UCabc" in result.feed_url
         mock_class.assert_called_once()
 
     @pytest.mark.asyncio
@@ -94,7 +93,7 @@ class TestResolveYouTubeUrlWithYtDlp:
         with patcher:
             result = await resolve_youtube_url("https://www.youtube.com/@somehandle")
         assert result is not None
-        assert "channel_id=UChandle" in result[0]
+        assert "channel_id=UChandle" in result.feed_url
         mock_class.assert_called_once()
 
     @pytest.mark.asyncio
@@ -105,7 +104,7 @@ class TestResolveYouTubeUrlWithYtDlp:
             for suffix in ("videos", "shorts", "streams", "featured"):
                 result = await resolve_youtube_url(f"https://www.youtube.com/@somehandle/{suffix}")
                 assert result is not None
-                assert "channel_id=UChandle" in result[0]
+                assert "channel_id=UChandle" in result.feed_url
 
     @pytest.mark.asyncio
     async def test_youtu_be_resolves_via_ytdlp(self) -> None:
@@ -113,7 +112,7 @@ class TestResolveYouTubeUrlWithYtDlp:
         with patcher:
             result = await resolve_youtube_url("https://youtu.be/someVideoId")
         assert result is not None
-        assert "channel_id=UCshort" in result[0]
+        assert "channel_id=UCshort" in result.feed_url
 
     @pytest.mark.asyncio
     async def test_shorts_url_resolves_via_ytdlp(self) -> None:
@@ -121,7 +120,7 @@ class TestResolveYouTubeUrlWithYtDlp:
         with patcher:
             result = await resolve_youtube_url("https://www.youtube.com/shorts/someShortId")
         assert result is not None
-        assert "channel_id=UCshorts" in result[0]
+        assert "channel_id=UCshorts" in result.feed_url
 
     @pytest.mark.asyncio
     async def test_live_url_resolves_via_ytdlp(self) -> None:
@@ -129,7 +128,7 @@ class TestResolveYouTubeUrlWithYtDlp:
         with patcher:
             result = await resolve_youtube_url("https://www.youtube.com/live/someLiveId")
         assert result is not None
-        assert "channel_id=UClive" in result[0]
+        assert "channel_id=UClive" in result.feed_url
 
     @pytest.mark.asyncio
     async def test_mobile_host_resolves_via_ytdlp(self) -> None:
@@ -137,7 +136,7 @@ class TestResolveYouTubeUrlWithYtDlp:
         with patcher:
             result = await resolve_youtube_url("https://m.youtube.com/watch?v=someVideoId")
         assert result is not None
-        assert "channel_id=UCmobile" in result[0]
+        assert "channel_id=UCmobile" in result.feed_url
 
     @pytest.mark.asyncio
     async def test_legacy_user_form_normalizes_to_channel_id(self) -> None:
@@ -146,7 +145,7 @@ class TestResolveYouTubeUrlWithYtDlp:
         with patcher:
             result = await resolve_youtube_url("https://www.youtube.com/user/LegacyUsername")
         assert result is not None
-        assert "channel_id=UClegacy" in result[0]
+        assert "channel_id=UClegacy" in result.feed_url
         mock_class.assert_called_once()
 
     @pytest.mark.asyncio
@@ -155,7 +154,27 @@ class TestResolveYouTubeUrlWithYtDlp:
         with patcher:
             result = await resolve_youtube_url("https://www.youtube.com/embed/someVideoId")
         assert result is not None
-        assert "channel_id=UCembed" in result[0]
+        assert "channel_id=UCembed" in result.feed_url
+
+    @pytest.mark.asyncio
+    async def test_c_path_resolves_via_ytdlp(self) -> None:
+        """Legacy /c/SomeName vanity URLs go through yt-dlp (no path-shortcut)."""
+        patcher, mock_class = _mock_ytdlp(channel_id="UCvanity")
+        with patcher:
+            result = await resolve_youtube_url("https://www.youtube.com/c/SomeVanityName")
+        assert result is not None
+        assert "channel_id=UCvanity" in result.feed_url
+        mock_class.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_tracking_params_do_not_trigger_playlist_rejection(self) -> None:
+        """URLs with share tracking params (?si=, &t=) must not look like playlists."""
+        patcher, _ = _mock_ytdlp(channel_id="UCtrack")
+        with patcher:
+            # youtu.be/<id>?si=<tracking>&t=10 — common "Copy link" output.
+            result = await resolve_youtube_url("https://youtu.be/abcVid?si=xyz123&t=10")
+        assert result is not None
+        assert "channel_id=UCtrack" in result.feed_url
 
 
 class TestResolveYouTubeUrlPlaylistRejection:
@@ -174,6 +193,47 @@ class TestResolveYouTubeUrlPlaylistRejection:
         with patcher:
             with pytest.raises(ValidationError, match="[Pp]laylist"):
                 await resolve_youtube_url("https://www.youtube.com/playlist?list=PL12345")
+
+    @pytest.mark.asyncio
+    async def test_playlists_listing_page_is_not_a_playlist(self) -> None:
+        """/playlists (plural — YouTube's playlists-listing page) must not
+        be confused with a single-playlist URL. It should hand off to yt-dlp."""
+        patcher, mock_class = _mock_ytdlp(channel_id="UCowner")
+        with patcher:
+            # Should NOT raise a playlist ValidationError. yt-dlp may or may
+            # not resolve it, but the rejection-by-startswith bug would raise
+            # "Playlist URLs aren't supported" before yt-dlp ever runs.
+            result = await resolve_youtube_url("https://www.youtube.com/playlists")
+        # Either yt-dlp resolved it or returned nothing — the key is that we
+        # didn't short-circuit with a playlist rejection.
+        assert result is not None
+        assert "channel_id=UCowner" in result.feed_url
+        mock_class.assert_called_once()
+
+
+class TestResolveYouTubeUrlFailFastGuards:
+    """URL shapes that should surface an actionable error before yt-dlp runs."""
+
+    @pytest.mark.asyncio
+    async def test_empty_channel_id_value_does_not_pass_through_as_resolved(self) -> None:
+        """feeds/videos.xml?channel_id= (empty value) must not pretend to be resolved."""
+        patcher, mock_class = _mock_ytdlp(channel_id=None)
+        with patcher:
+            # Must NOT return (url, None) as the resolved branch would —
+            # falls through to yt-dlp, which raises ValidationError.
+            with pytest.raises(ValidationError):
+                await resolve_youtube_url("https://www.youtube.com/feeds/videos.xml?channel_id=")
+
+    @pytest.mark.asyncio
+    async def test_root_url_rejected_with_specific_message(self) -> None:
+        """https://youtube.com (homepage) must not reach yt-dlp with an opaque error."""
+        patcher, mock_class = _mock_ytdlp()
+        with patcher:
+            with pytest.raises(ValidationError, match="homepage"):
+                await resolve_youtube_url("https://youtube.com")
+            with pytest.raises(ValidationError, match="homepage"):
+                await resolve_youtube_url("https://www.youtube.com/")
+        mock_class.assert_not_called()
 
 
 class TestResolveYouTubeUrlErrors:

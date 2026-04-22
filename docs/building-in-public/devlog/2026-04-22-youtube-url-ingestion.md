@@ -1,56 +1,51 @@
-# Devlog: YouTube URL Ingestion
+# YouTube URL ingestion
 
 **Date:** 2026-04-22
-**Focus:** Let users paste YouTube URLs into `inkwell add` and `inkwell fetch`; fix the parser so YouTube-channel feeds work end-to-end.
+**Author:** Sergio Sánchez
 
-## Context
+## Focus
 
-Session opened with a user trying to add `@orenmeetsworld` as a feed. Two distinct failures surfaced within five minutes:
+Close two gaps so users can paste any YouTube URL into `inkwell add` /
+`inkwell fetch` and have channel-feed processing work end-to-end.
 
-1. **Ingestion UX:** `inkwell add https://www.youtube.com/watch?v=pKeZ5XK2vp4 --name X` isn't supported — user had to shell out to `yt-dlp --print channel_id` and hand-craft `https://www.youtube.com/feeds/videos.xml?channel_id=UC_tSQ6UQy2pROm-I0J7UBoA`.
-2. **Parser:** Even once the media-RSS URL was added, `inkwell fetch oren-meets-world --latest` failed at `RSSParser.extract_episode_metadata` with `Episode 'Is anything cool anymore?' has no audio enclosure`. YouTube media-RSS uses `<yt:videoId>` + `<media:group>` instead of podcast `<enclosure>` tags.
+## Progress
 
-User framing: *"We should be able to point to a video and help the user figure out the rest. The user shouldn't have to know how to navigate and find the YouTube RSS feeds."*
+- Parser gained a YouTube branch: `_extract_enclosure_url` now returns
+  `entry.link` (or a constructed watch URL) when `yt_videoid` is set, so
+  channel media-RSS entries no longer raise "no audio enclosure".
+- New `src/inkwell/feeds/youtube_resolver.py` recognizes every standard
+  YouTube URL shape and resolves to `feeds/videos.xml?channel_id=UC…`.
+  Uses its own yt-dlp opts (`extract_flat: "in_playlist",
+  playlist_items: "0"`) to avoid enumerating whole channel video lists.
+- `inkwell add` calls the resolver; non-YouTube URLs pass through.
+- `inkwell fetch` gained `--save-source` / `--source-name`; pre-fetch
+  validation rejects missing name, non-YouTube URLs, and playlist URLs
+  before any API spend.
+- Dimmed post-fetch hint guides users toward `--save-source` when they
+  paste a raw YouTube URL without it.
+- ADR 036 records the key decisions.
 
-## Goals
+## Observations
 
-- [ ] Parser extracts a watchable URL from YouTube media-RSS entries (Gap B)
-- [ ] `inkwell add <youtube-url>` resolves any standard YouTube URL shape to the channel's media-RSS feed (Gap A)
-- [ ] `inkwell fetch <youtube-url>` stays one-time by default; `--save-source --source-name X` opts into saving the channel as a feed after a successful fetch
-- [ ] Post-fetch hint on YouTube URLs guides users toward `--save-source`
-- [ ] Playlist URLs rejected explicitly to prevent silent channel-widening
-- [ ] No `FeedConfig` schema change; no migration
+- Empirical feedparser probing reshaped the whole parser branch —
+  `entry.link` already carries the watch URL (including `/shorts/`),
+  so no URL construction was needed.
+- `extract_flat: False` on channel URLs silently walks the whole video
+  list. Reusing `AudioDownloader.get_info` would have burned tens of
+  seconds per `inkwell add @handle` call — caught pre-implementation.
+- Mock target matters: `patch("inkwell.feeds.youtube_resolver.YoutubeDL")`,
+  not `patch("yt_dlp.YoutubeDL")`. Patching the source module leaves the
+  resolver's bound reference unchanged.
 
-## Planning
+## Next
 
-Design plan: `docs/plans/2026-04-22-001-feat-youtube-url-ingestion-plan.md`
-ADR: `docs/building-in-public/adr/036-youtube-url-resolution.md` (to be written at close-out)
+- End-to-end smoke test against a real `@handle` URL.
+- Follow-ups tracked separately: #37 (general feed-name slugification),
+  #38 (`--save-source` auto-name + channel-collision detection).
 
-**Key decisions** (see design plan for full rationale):
-- yt-dlp Python API (not subprocess) with its own opts (`extract_flat: "in_playlist", playlist_items: "0"`) — do NOT reuse `AudioDownloader.get_info`, which would enumerate every video on a channel.
-- Parser uses `entry.yt_videoid` as the YouTube-namespace discriminator and returns `entry.link` as the watch URL (empirically verified via feedparser on a live channel feed).
-- `--save-source` requires explicit `--source-name` — auto-derivation deferred to #38 to land with general name slugification (#37).
-- Playlist URLs rejected at the resolver boundary with an actionable error.
+## Links
 
-## Deferred / Tracked
-
-- [#37](https://github.com/chekos/inkwell-cli/issues/37) — general feed-name slugification
-- [#38](https://github.com/chekos/inkwell-cli/issues/38) — `--save-source` auto-derived names + channel-collision detection
-
-## Implementation Trace
-
-- **Unit 1 — Parser YouTube branch** (commit `9b3f351`): captured a synthetic YouTube media-RSS fixture, added 6 parser tests (regular / Short / live VOD / `yt_videoid` + missing `link` fallback / get_latest_episode / non-YouTube regression). Green after a ~10-line branch in `_extract_enclosure_url`.
-- **Unit 2 — YouTube URL resolver** (commit `863fe5f`): new `src/inkwell/feeds/youtube_resolver.py`. 19 tests covering pure URL-shape detection, yt-dlp-backed resolution, playlist rejection, error mapping. Resolver uses its own `YoutubeDL` invocation with `extract_flat: "in_playlist", playlist_items: "0"` to avoid walking whole channel video lists (a real risk when pasting `/@handle` URLs).
-- **Unit 3 — `inkwell add` wires the resolver** (commit `e5ef290`): 6 integration tests (watch URL, channel URL, already-resolved feed URL, non-YouTube regression, playlist rejection, resolver failure propagation). Implementation is 2 lines in `add_feed`: `asyncio.run(resolve_youtube_url(url))` → substitute `feed_url` if the resolver returned a tuple.
-- **Unit 4 + 5 — `--save-source` flag + YouTube URL hint** (commit `ba83859`): combined into one commit because the hint is only meaningful when the flag it points at actually exists. Added `_should_show_save_source_hint` helper (4 direct unit tests), `--save-source` / `--source-name` typer options, pre-fetch validation (3 tests), post-fetch save block + dimmed hint rendering after the success summary. End-to-end save-source behavior covered by the smoke test rather than a full `PipelineOrchestrator` mock.
-- **Unit 6 — ADR 036 + devlog close-out + docs** (this commit): ADR at `docs/building-in-public/adr/036-youtube-url-resolution.md`, updates to `docs/reference/cli-commands.md` + `docs/user-guide/feeds.md`, devlog finalized.
-- **End-to-end smoke test**: pending pre-PR (see execution plan at `~/.claude/plans/misty-yawning-squirrel.md`).
-- **PR**: pending smoke test pass.
-
-## Lessons Learned
-
-- **Empirical check saves design cycles.** The feedparser probe during planning (see `context.md`) reshaped the whole parser branch: once I confirmed `entry.link` already carries the watch URL, no construction was needed. Shorts keep `/shorts/` in the URL but yt-dlp handles both shapes, so "assert `youtube.com in url`" is the right test shape — not a hardcoded `/watch?v=` match.
-- **`extract_flat: False` is expensive for channel URLs.** The feasibility review caught this before implementation — reusing `AudioDownloader.get_info` would have silently made `inkwell add https://www.youtube.com/@handle` spin for tens of seconds enumerating every video. The resolver needing its own yt-dlp opts is a critical decision buried in a seemingly mundane "reuse the existing helper" choice.
-- **Test mock target at the import site, not the source.** `patch("inkwell.feeds.youtube_resolver.YoutubeDL")`, not `patch("yt_dlp.YoutubeDL")` — patching the latter leaves the resolver's bound reference unchanged. The design plan calling this out explicitly probably saved a debugging session.
-- **Combining Units 4 + 5 was the right atomic boundary.** Shipping a dead `--save-source` flag in Unit 4 only to make it do something in Unit 5 would have created a confusing commit-level story. The "one unit one commit" rule is guidance, not gospel; the atomic-feature rule wins when they conflict.
-- **`--save-source` pre-fetch validation pays for itself.** Catching missing `--source-name` before the 5-minute transcription pipeline runs is a meaningful UX win — users don't pay API costs to discover their CLI typo.
+- Related ADR: [ADR-036](../adr/036-youtube-url-resolution.md)
+- Related lesson: [yt-dlp opts isolation](../lessons/2026-04-22-yt-dlp-resolver-opts.md)
+- PR: #39
+- Design plan: `docs/plans/2026-04-22-001-feat-youtube-url-ingestion-plan.md`

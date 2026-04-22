@@ -152,6 +152,8 @@ class YouTubeTranscriber(TranscriptionPlugin):
         - https://youtu.be/VIDEO_ID
         - https://youtube.com/embed/VIDEO_ID
         - https://m.youtube.com/watch?v=VIDEO_ID
+        - https://www.youtube.com/shorts/VIDEO_ID
+        - https://www.youtube.com/live/VIDEO_ID
 
         Args:
             url: URL to check
@@ -164,6 +166,8 @@ class YouTubeTranscriber(TranscriptionPlugin):
             r"youtu\.be/",
             r"youtube\.com/embed/",
             r"m\.youtube\.com/watch",
+            r"youtube\.com/shorts/",
+            r"youtube\.com/live/",
         ]
         return any(re.search(pattern, url, re.IGNORECASE) for pattern in patterns)
 
@@ -181,6 +185,8 @@ class YouTubeTranscriber(TranscriptionPlugin):
             'abc123'
             >>> transcriber._extract_video_id("https://youtu.be/xyz789")
             'xyz789'
+            >>> transcriber._extract_video_id("https://www.youtube.com/shorts/sID")
+            'sID'
         """
         parsed = urlparse(url)
 
@@ -201,6 +207,17 @@ class YouTubeTranscriber(TranscriptionPlugin):
         embed_match = re.search(r"youtube\.com/embed/([^/?]+)", url)
         if embed_match:
             return embed_match.group(1)
+
+        # Format: youtube.com/shorts/VIDEO_ID (parser emits this for Shorts
+        # entries in YouTube media-RSS feeds — see parser._extract_enclosure_url).
+        shorts_match = re.search(r"youtube\.com/shorts/([^/?]+)", url)
+        if shorts_match:
+            return shorts_match.group(1)
+
+        # Format: youtube.com/live/VIDEO_ID (live VOD permalinks).
+        live_match = re.search(r"youtube\.com/live/([^/?]+)", url)
+        if live_match:
+            return live_match.group(1)
 
         return None
 

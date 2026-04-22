@@ -8,6 +8,7 @@ from typer.testing import CliRunner
 
 from inkwell.cli import app
 from inkwell.config.manager import ConfigManager
+from inkwell.feeds.youtube_resolver import ResolvedFeed
 from inkwell.utils.errors import NotFoundError, ValidationError
 
 # Disable Rich formatting in tests for consistent output across environments
@@ -76,10 +77,10 @@ class TestCLIAddYouTube:
         """`inkwell add <watch-url>` resolves to the channel's RSS feed URL."""
         monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
 
-        async def fake_resolve(_url: str) -> tuple[str, str | None]:
-            return (
-                "https://www.youtube.com/feeds/videos.xml?channel_id=UCtest",
-                "Some Channel",
+        async def fake_resolve(_url: str) -> ResolvedFeed:
+            return ResolvedFeed(
+                feed_url="https://www.youtube.com/feeds/videos.xml?channel_id=UCtest",
+                channel_name="Some Channel",
             )
 
         monkeypatch.setattr("inkwell.cli.resolve_youtube_url", fake_resolve)
@@ -166,7 +167,7 @@ class TestCLIAddYouTube:
         """yt-dlp resolution failure surfaces as a CLI error with suggestion."""
         monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
 
-        async def failing_resolve(_url: str) -> tuple[str, str | None]:
+        async def failing_resolve(_url: str) -> ResolvedFeed:
             raise ValidationError(
                 "Couldn't resolve YouTube URL: video unavailable",
                 suggestion="Try the channel URL instead.",
@@ -193,21 +194,11 @@ class TestCLIAddYouTube:
 class TestShouldShowSaveSourceHint:
     """Unit tests for the hint-visibility decision helper."""
 
-    def test_shows_on_youtube_url_without_save_source(self) -> None:
+    def test_shows_on_youtube_url(self) -> None:
         from inkwell.cli import _should_show_save_source_hint
 
         assert _should_show_save_source_hint(
             url="https://www.youtube.com/watch?v=abc",
-            save_source=False,
-            input_was_url=True,
-        )
-
-    def test_suppressed_when_save_source_passed(self) -> None:
-        from inkwell.cli import _should_show_save_source_hint
-
-        assert not _should_show_save_source_hint(
-            url="https://www.youtube.com/watch?v=abc",
-            save_source=True,
             input_was_url=True,
         )
 
@@ -216,7 +207,6 @@ class TestShouldShowSaveSourceHint:
 
         assert not _should_show_save_source_hint(
             url="https://example.com/feed.rss",
-            save_source=False,
             input_was_url=True,
         )
 
@@ -225,7 +215,6 @@ class TestShouldShowSaveSourceHint:
 
         assert not _should_show_save_source_hint(
             url="https://www.youtube.com/feeds/videos.xml?channel_id=UC",
-            save_source=False,
             input_was_url=False,
         )
 
@@ -239,9 +228,39 @@ class TestCLIFetchSaveSource:
     to the simple resolve+add_feed block being tested.
     """
 
-    def test_save_source_without_source_name_errors(self, tmp_path: Path, monkeypatch) -> None:
-        """--save-source requires --source-name in v1; missing it exits non-zero."""
+    def test_save_source_auto_derives_name_from_channel_metadata(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """When --source-name is omitted, derive a name from the channel name.
+
+        The user pasted a YouTube URL; they shouldn't have to invent a feed
+        name too. The hint that follows tells them how to change it.
+        """
+        from types import SimpleNamespace
+
         monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+
+        output_dir = tmp_path / "episode-dir"
+        output_dir.mkdir()
+
+        async def fake_process(*_args, **_kwargs):
+            return SimpleNamespace(
+                episode_output=SimpleNamespace(directory=output_dir),
+                extraction_results=[],
+                interview_result=None,
+                extraction_cost_usd=0.0,
+                interview_cost_usd=0.0,
+                total_cost_usd=0.0,
+            )
+
+        async def fake_resolve(_url: str) -> ResolvedFeed:
+            return ResolvedFeed(
+                feed_url="https://www.youtube.com/feeds/videos.xml?channel_id=UCauto",
+                channel_name="Oren Meets World",
+            )
+
+        monkeypatch.setattr("inkwell.pipeline.PipelineOrchestrator.process_episode", fake_process)
+        monkeypatch.setattr("inkwell.cli.resolve_youtube_url", fake_resolve)
 
         result = runner.invoke(
             app,
@@ -250,11 +269,127 @@ class TestCLIFetchSaveSource:
                 "https://www.youtube.com/watch?v=abc",
                 "--save-source",
                 "--dry-run",
+                "--output-dir",
+                str(tmp_path),
             ],
         )
 
-        assert result.exit_code != 0
-        assert "--source-name" in result.stdout
+        assert result.exit_code == 0, result.output
+        feeds = ConfigManager(config_dir=tmp_path).list_feeds()
+        assert "oren-meets-world" in feeds
+        assert "channel_id=UCauto" in str(feeds["oren-meets-world"].url)
+        # User needs to know the derived name and how to change it.
+        assert "oren-meets-world" in result.output
+        assert "Auto-named" in result.output or "auto-named" in result.output
+        assert "--source-name" in result.output
+
+    def test_save_source_auto_derive_falls_back_to_channel_id(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """When yt-dlp returned no channel_name (pure URL-shape path), fall
+        back to the channel_id so the save can still complete."""
+        from types import SimpleNamespace
+
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+
+        output_dir = tmp_path / "episode-dir"
+        output_dir.mkdir()
+
+        async def fake_process(*_args, **_kwargs):
+            return SimpleNamespace(
+                episode_output=SimpleNamespace(directory=output_dir),
+                extraction_results=[],
+                interview_result=None,
+                extraction_cost_usd=0.0,
+                interview_cost_usd=0.0,
+                total_cost_usd=0.0,
+            )
+
+        async def fake_resolve(_url: str) -> ResolvedFeed:
+            return ResolvedFeed(
+                feed_url="https://www.youtube.com/feeds/videos.xml?channel_id=UCfallback",
+                channel_name=None,
+            )
+
+        monkeypatch.setattr("inkwell.pipeline.PipelineOrchestrator.process_episode", fake_process)
+        monkeypatch.setattr("inkwell.cli.resolve_youtube_url", fake_resolve)
+
+        result = runner.invoke(
+            app,
+            [
+                "fetch",
+                "https://www.youtube.com/channel/UCfallback",
+                "--save-source",
+                "--dry-run",
+                "--output-dir",
+                str(tmp_path),
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        feeds = ConfigManager(config_dir=tmp_path).list_feeds()
+        # Lowercased channel_id is used as the fallback name.
+        assert "ucfallback" in feeds
+
+    def test_save_source_auto_derive_disambiguates_collisions(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """If the derived name collides with an existing feed, append -2."""
+        from types import SimpleNamespace
+
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+
+        # Pre-seed a feed with the name we expect to be derived.
+        manager = ConfigManager(config_dir=tmp_path)
+        from inkwell.config.schema import AuthConfig as _AuthConfig
+        from inkwell.config.schema import FeedConfig as _FeedConfig
+
+        manager.add_feed(
+            "oren-meets-world",
+            _FeedConfig(
+                url="https://example.com/placeholder.xml",  # type: ignore[arg-type]
+                auth=_AuthConfig(type="none"),
+            ),
+        )
+
+        output_dir = tmp_path / "episode-dir"
+        output_dir.mkdir()
+
+        async def fake_process(*_args, **_kwargs):
+            return SimpleNamespace(
+                episode_output=SimpleNamespace(directory=output_dir),
+                extraction_results=[],
+                interview_result=None,
+                extraction_cost_usd=0.0,
+                interview_cost_usd=0.0,
+                total_cost_usd=0.0,
+            )
+
+        async def fake_resolve(_url: str) -> ResolvedFeed:
+            return ResolvedFeed(
+                feed_url="https://www.youtube.com/feeds/videos.xml?channel_id=UCdup",
+                channel_name="Oren Meets World",
+            )
+
+        monkeypatch.setattr("inkwell.pipeline.PipelineOrchestrator.process_episode", fake_process)
+        monkeypatch.setattr("inkwell.cli.resolve_youtube_url", fake_resolve)
+
+        result = runner.invoke(
+            app,
+            [
+                "fetch",
+                "https://www.youtube.com/watch?v=abc",
+                "--save-source",
+                "--dry-run",
+                "--output-dir",
+                str(tmp_path),
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        feeds = ConfigManager(config_dir=tmp_path).list_feeds()
+        assert "oren-meets-world-2" in feeds
+        assert "channel_id=UCdup" in str(feeds["oren-meets-world-2"].url)
 
     def test_save_source_with_non_youtube_url_errors(self, tmp_path: Path, monkeypatch) -> None:
         """--save-source only supports YouTube URLs in v1."""
@@ -309,6 +444,183 @@ class TestCLIFetchSaveSource:
 
         assert result.exit_code != 0
         assert "YouTube" in result.stdout or "URL" in result.stdout
+
+    def test_save_source_happy_path_persists_feed_after_fetch(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """R4: successful fetch + --save-source writes a feed and exits 0."""
+        from types import SimpleNamespace
+
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+
+        output_dir = tmp_path / "episode-dir"
+        output_dir.mkdir()
+
+        async def fake_process(*_args, **_kwargs):
+            return SimpleNamespace(
+                episode_output=SimpleNamespace(directory=output_dir),
+                extraction_results=[],
+                interview_result=None,
+                extraction_cost_usd=0.0,
+                interview_cost_usd=0.0,
+                total_cost_usd=0.0,
+            )
+
+        async def fake_resolve(_url: str) -> ResolvedFeed:
+            return ResolvedFeed(
+                feed_url="https://www.youtube.com/feeds/videos.xml?channel_id=UCsaved",
+                channel_name="Saved Channel",
+            )
+
+        monkeypatch.setattr("inkwell.pipeline.PipelineOrchestrator.process_episode", fake_process)
+        monkeypatch.setattr("inkwell.cli.resolve_youtube_url", fake_resolve)
+
+        result = runner.invoke(
+            app,
+            [
+                "fetch",
+                "https://www.youtube.com/watch?v=abc",
+                "--save-source",
+                "--source-name",
+                "new-channel",
+                "--dry-run",
+                "--output-dir",
+                str(tmp_path),
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        feeds = ConfigManager(config_dir=tmp_path).list_feeds()
+        assert "new-channel" in feeds
+        assert "channel_id=UCsaved" in str(feeds["new-channel"].url)
+
+    def test_save_source_failure_warns_but_does_not_fail_fetch(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """R4 invariant: if add_feed raises post-fetch, print a warning and
+        keep the fetch exit code at 0. Discarding a successful fetch because
+        the side-effect save failed is worse UX than a partial-success notice."""
+        from types import SimpleNamespace
+
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+
+        # Pre-seed the same name so manager.add_feed will raise ValidationError.
+        manager = ConfigManager(config_dir=tmp_path)
+        from inkwell.config.schema import AuthConfig as _AuthConfig
+        from inkwell.config.schema import FeedConfig as _FeedConfig
+
+        manager.add_feed(
+            "already-taken",
+            _FeedConfig(
+                url="https://www.youtube.com/feeds/videos.xml?channel_id=UCprior",  # type: ignore[arg-type]
+                auth=_AuthConfig(type="none"),
+            ),
+        )
+
+        output_dir = tmp_path / "episode-dir"
+        output_dir.mkdir()
+
+        async def fake_process(*_args, **_kwargs):
+            return SimpleNamespace(
+                episode_output=SimpleNamespace(directory=output_dir),
+                extraction_results=[],
+                interview_result=None,
+                extraction_cost_usd=0.0,
+                interview_cost_usd=0.0,
+                total_cost_usd=0.0,
+            )
+
+        async def fake_resolve(_url: str) -> ResolvedFeed:
+            return ResolvedFeed(
+                feed_url="https://www.youtube.com/feeds/videos.xml?channel_id=UCcollide",
+                channel_name="Collide Channel",
+            )
+
+        monkeypatch.setattr("inkwell.pipeline.PipelineOrchestrator.process_episode", fake_process)
+        monkeypatch.setattr("inkwell.cli.resolve_youtube_url", fake_resolve)
+
+        result = runner.invoke(
+            app,
+            [
+                "fetch",
+                "https://www.youtube.com/watch?v=abc",
+                "--save-source",
+                "--source-name",
+                "already-taken",
+                "--dry-run",
+                "--output-dir",
+                str(tmp_path),
+            ],
+        )
+
+        # Fetch succeeded; the save warning must not flip the exit code.
+        assert result.exit_code == 0, result.output
+        assert "Couldn't save source" in result.output
+
+    def test_save_source_with_playlist_url_errors_before_pipeline(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """Playlist URLs must be rejected *before* the pipeline runs.
+
+        If this regresses, users pay API costs for the full transcription
+        pipeline only to have the save degrade to a yellow warning.
+        """
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+
+        # Fail the test if the pipeline is reached — playlist rejection must
+        # happen before anything async/costly runs.
+        def _pipeline_was_reached(*_args, **_kwargs):
+            raise AssertionError("Pipeline should not run for playlist URLs")
+
+        monkeypatch.setattr(
+            "inkwell.pipeline.PipelineOrchestrator.process_episode",
+            _pipeline_was_reached,
+        )
+
+        result = runner.invoke(
+            app,
+            [
+                "fetch",
+                "https://www.youtube.com/playlist?list=PL12345",
+                "--save-source",
+                "--source-name",
+                "some-playlist",
+                "--dry-run",
+            ],
+        )
+
+        assert result.exit_code != 0
+        assert "Playlist" in result.stdout or "playlist" in result.stdout
+
+
+class TestCLIFetchHintSuppression:
+    """The --save-source hint must not fire when the fetch itself failed."""
+
+    def test_hint_suppressed_on_fetch_failure(self, tmp_path: Path, monkeypatch) -> None:
+        """If the orchestrator raises, no hint — the fetch didn't succeed."""
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+
+        from inkwell.utils.errors import InkwellError
+
+        async def _always_fail(*_args, **_kwargs):
+            raise InkwellError("simulated pipeline failure")
+
+        monkeypatch.setattr(
+            "inkwell.pipeline.PipelineOrchestrator.process_episode",
+            _always_fail,
+        )
+
+        result = runner.invoke(
+            app,
+            [
+                "fetch",
+                "https://www.youtube.com/watch?v=abc123",
+                "--dry-run",
+            ],
+        )
+
+        assert result.exit_code != 0
+        assert "--save-source" not in result.stdout
 
 
 class TestCLIList:

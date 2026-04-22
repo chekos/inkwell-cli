@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns:yt="http://www.youtube.com/xml/schemas/2015" xmlns:media="http://search.yahoo.com/mrss/" xmlns="http://www.w3.org/2005/Atom">
+ <link rel="self" href="http://www.youtube.com/feeds/videos.xml?channel_id=UCtestChannelIdExample123"/>
+ <id>yt:channel:testChannelIdExample123</id>
+ <yt:channelId>testChannelIdExample123</yt:channelId>
+ <title>Test Channel</title>
+ <link rel="alternate" href="https://www.youtube.com/channel/UCtestChannelIdExample123"/>
+ <author>
+  <name>Test Channel</name>
+  <uri>https://www.youtube.com/channel/UCtestChannelIdExample123</uri>
+ </author>
+ <published>2020-01-01T00:00:00+00:00</published>
+
+ <entry>
+  <id>yt:video:regularVideoId1</id>
+  <yt:videoId>regularVideoId1</yt:videoId>
+  <yt:channelId>UCtestChannelIdExample123</yt:channelId>
+  <title>Regular Video: First entry</title>
+  <link rel="alternate" href="https://www.youtube.com/watch?v=regularVideoId1"/>
+  <author>
+   <name>Test Channel</name>
+   <uri>https://www.youtube.com/channel/UCtestChannelIdExample123</uri>
+  </author>
+  <published>2026-04-20T12:00:00+00:00</published>
+  <updated>2026-04-21T08:00:00+00:00</updated>
+  <media:group>
+   <media:title>Regular Video: First entry</media:title>
+   <media:content url="https://www.youtube.com/v/regularVideoId1?version=3" type="application/x-shockwave-flash" width="640" height="390"/>
+   <media:thumbnail url="https://i4.ytimg.com/vi/regularVideoId1/hqdefault.jpg" width="480" height="360"/>
+   <media:description>This is a regular video description that would normally appear in the feed.</media:description>
+   <media:community>
+    <media:starRating count="100" average="5.00" min="1" max="5"/>
+    <media:statistics views="12345"/>
+   </media:community>
+  </media:group>
+ </entry>
+
+ <entry>
+  <id>yt:video:shortVideoId2</id>
+  <yt:videoId>shortVideoId2</yt:videoId>
+  <yt:channelId>UCtestChannelIdExample123</yt:channelId>
+  <title>A YouTube Short</title>
+  <link rel="alternate" href="https://www.youtube.com/shorts/shortVideoId2"/>
+  <author>
+   <name>Test Channel</name>
+   <uri>https://www.youtube.com/channel/UCtestChannelIdExample123</uri>
+  </author>
+  <published>2026-04-19T15:30:00+00:00</published>
+  <updated>2026-04-20T10:00:00+00:00</updated>
+  <media:group>
+   <media:title>A YouTube Short</media:title>
+   <media:content url="https://www.youtube.com/v/shortVideoId2?version=3" type="application/x-shockwave-flash" width="640" height="390"/>
+   <media:thumbnail url="https://i4.ytimg.com/vi/shortVideoId2/hqdefault.jpg" width="480" height="360"/>
+   <media:description>A short-form video description.</media:description>
+   <media:community>
+    <media:starRating count="200" average="5.00" min="1" max="5"/>
+    <media:statistics views="54321"/>
+   </media:community>
+  </media:group>
+ </entry>
+
+ <entry>
+  <id>yt:video:liveVideoId3</id>
+  <yt:videoId>liveVideoId3</yt:videoId>
+  <yt:channelId>UCtestChannelIdExample123</yt:channelId>
+  <title>Live Stream Archive</title>
+  <link rel="alternate" href="https://www.youtube.com/watch?v=liveVideoId3"/>
+  <author>
+   <name>Test Channel</name>
+   <uri>https://www.youtube.com/channel/UCtestChannelIdExample123</uri>
+  </author>
+  <published>2026-04-18T20:00:00+00:00</published>
+  <updated>2026-04-19T02:00:00+00:00</updated>
+  <media:group>
+   <media:title>Live Stream Archive</media:title>
+   <media:content url="https://www.youtube.com/v/liveVideoId3?version=3" type="application/x-shockwave-flash" width="640" height="390"/>
+   <media:thumbnail url="https://i4.ytimg.com/vi/liveVideoId3/hqdefault.jpg" width="480" height="360"/>
+   <media:description>Archived livestream content.</media:description>
+   <media:community>
+    <media:starRating count="50" average="5.00" min="1" max="5"/>
+    <media:statistics views="9876"/>
+   </media:community>
+  </media:group>
+ </entry>
+</feed>

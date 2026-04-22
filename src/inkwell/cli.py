@@ -3,11 +3,14 @@
 import asyncio
 import logging
 import os
+import re
 import sys
 from datetime import timedelta
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 import typer
+from pydantic import HttpUrl
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
@@ -17,6 +20,12 @@ from inkwell.config.manager import ConfigManager
 from inkwell.config.schema import AuthConfig, FeedConfig
 from inkwell.feeds.models import Episode
 from inkwell.feeds.parser import RSSParser
+from inkwell.feeds.youtube_resolver import (
+    ResolvedFeed,
+    is_youtube_playlist_url,
+    is_youtube_url,
+    resolve_youtube_url,
+)
 from inkwell.pipeline import PipelineOptions, PipelineOrchestrator
 from inkwell.transcription import CostEstimate, TranscriptionManager
 from inkwell.utils.datetime import now_utc
@@ -34,6 +43,10 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 console = Console()
+# Secondary console routed to stderr so agents capturing stdout can isolate
+# the structured result (the summary table) from operational chatter (hints,
+# post-fetch save notices).
+err_console = Console(stderr=True)
 
 
 def _register_subcommands() -> None:
@@ -67,9 +80,60 @@ def show_version() -> None:
     console.print(f"[bold cyan]Inkwell CLI[/bold cyan] v{__version__}")
 
 
+def _should_show_save_feed_hint(*, url: str, input_was_url: bool) -> bool:
+    """Decide whether to print the --save-feed hint after a YouTube fetch.
+
+    The sole callsite already guards on `not save_feed`; this helper just
+    covers the remaining two conditions (URL-shaped input + YouTube host).
+    Suppressed for saved-feed-name lookups and non-YouTube URLs.
+    """
+    return input_was_url and is_youtube_url(url)
+
+
+_NAME_SLUG_RE = re.compile(r"[^a-z0-9]+")
+
+
+def _slugify(s: str) -> str:
+    """Collapse any string into a [a-z0-9-] feed-name slug."""
+    return _NAME_SLUG_RE.sub("-", s.lower()).strip("-")
+
+
+def _derive_feed_name(resolved: ResolvedFeed, existing: set[str]) -> str:
+    """Auto-derive a feed name from channel metadata when --feed-name is omitted.
+
+    Preference: slugified channel name → channel_id from the feed URL →
+    generic "youtube-feed". Collisions are disambiguated with a numeric
+    suffix so `--save-feed` can always succeed when the URL is valid.
+    """
+    candidate = ""
+    if resolved.channel_name:
+        candidate = _slugify(resolved.channel_name)
+    if not candidate:
+        # Pure URL-shape branch, or slugification produced an empty string.
+        # Fall back to the channel_id carried in the feed URL query string.
+        cid_list = parse_qs(urlparse(resolved.feed_url).query).get("channel_id", [])
+        if cid_list and cid_list[0]:
+            candidate = cid_list[0].lower()
+    if not candidate:
+        candidate = "youtube-feed"
+
+    if candidate not in existing:
+        return candidate
+    i = 2
+    while f"{candidate}-{i}" in existing:
+        i += 1
+    return f"{candidate}-{i}"
+
+
 @app.command("add")
 def add_feed(
-    url: str = typer.Argument(..., help="RSS feed URL"),
+    url: str = typer.Argument(
+        ...,
+        help=(
+            "RSS feed URL or YouTube URL (watch, @handle, /channel/UC…, youtu.be). "
+            "YouTube URLs are auto-resolved to the channel's RSS feed. Playlist URLs are rejected."
+        ),
+    ),
     name: str = typer.Option(..., "--name", "-n", help="Feed identifier name"),
     auth: bool = typer.Option(False, "--auth", help="Prompt for authentication"),
     category: str | None = typer.Option(
@@ -83,7 +147,8 @@ def add_feed(
 
         inkwell add https://private.com/feed.rss --name private --auth
     """
-    try:
+
+    async def run_add_feed() -> None:
         manager = ConfigManager()
 
         # Collect auth credentials if needed
@@ -108,10 +173,13 @@ def add_feed(
                 token = typer.prompt("Bearer token", hide_input=True)
                 auth_config = AuthConfig(type="bearer", token=token)
 
-        from pydantic import HttpUrl
+        # Resolve YouTube URLs of any shape to the channel's media-RSS feed.
+        # Non-YouTube URLs pass through as-is (resolver returns None).
+        resolved = await resolve_youtube_url(url)
+        feed_url = resolved.feed_url if resolved else url
 
         feed_config = FeedConfig(
-            url=HttpUrl(url),
+            url=HttpUrl(feed_url),
             auth=auth_config,
             category=category,
         )
@@ -119,11 +187,17 @@ def add_feed(
         manager.add_feed(name, feed_config)
 
         console.print(f"\n[green]✓[/green] Feed '[bold]{name}[/bold]' added successfully")
+        # Surface the stored URL when it differs from what the user typed so
+        # they can spot a mis-resolved channel without running `inkwell list`.
+        if feed_url != url:
+            console.print(f"[dim]  Resolved to {feed_url}[/dim]")
         if auth:
             console.print("[dim]  Credentials encrypted and stored securely[/dim]")
 
+    try:
+        asyncio.run(run_add_feed())
     except ValidationError as e:
-        console.print(f"[red]✗[/red] {e}")
+        console.print(f"[red]✗[/red] {e.message}")
         if e.suggestion:
             console.print(f"[dim]  {e.suggestion}[/dim]")
         sys.exit(1)
@@ -633,6 +707,19 @@ def fetch_command(
         help="Force specific transcription plugin (e.g., youtube, gemini)",
         envvar="INKWELL_TRANSCRIBER",
     ),
+    save_feed: bool = typer.Option(
+        False,
+        "--save-feed",
+        help=(
+            "Also save this video's channel as a feed (YouTube URLs only). "
+            "Auto-names from channel metadata unless --feed-name is set."
+        ),
+    ),
+    feed_name: str | None = typer.Option(
+        None,
+        "--feed-name",
+        help="Feed name for --save-feed (optional; derived from channel metadata if omitted).",
+    ),
 ) -> None:
     """Fetch and process a podcast episode.
 
@@ -661,9 +748,35 @@ def fetch_command(
     """
 
     async def run_fetch() -> None:
+        nonlocal url_or_feed
         try:
             manager = ConfigManager()
             config = manager.load_config()
+
+            # --feed-name is metadata for --save-feed; it has no meaning
+            # on its own and silently ignoring it would mislead scripts into
+            # thinking the channel was persisted.
+            if feed_name is not None and not save_feed:
+                raise ValidationError(
+                    "--feed-name has no effect without --save-feed",
+                    suggestion=(
+                        "Add --save-feed to persist the channel, or drop "
+                        "--feed-name if you meant a one-time fetch."
+                    ),
+                )
+
+            # Normalize scheme-less URL-shaped inputs up-front so the
+            # --save-feed guard and the feed-name lookup both see the same
+            # URL. Feed names never contain both `.` and `/`, so this is
+            # unambiguous. Without this, `www.youtube.com/watch?v=X
+            # --save-feed` would be rejected as "not YouTube" even though
+            # the same input works in plain fetch mode.
+            if (
+                not url_or_feed.startswith(("http://", "https://"))
+                and "." in url_or_feed
+                and "/" in url_or_feed
+            ):
+                url_or_feed = f"https://{url_or_feed}"
 
             # Resolve feed name to episode URL if needed
             url = url_or_feed
@@ -673,23 +786,58 @@ def fetch_command(
             auth_password: str | None = None
             # Episode from RSS feed (if applicable)
             ep: Episode | None = None
+            # Set when the argument resolves to a configured feed (and we fan
+            # out into its episodes); stays None for direct-URL mode.
+            selected_episodes: list[Episode] | None = None
 
-            is_url = url_or_feed.startswith(("http://", "https://", "www."))
+            is_url = url_or_feed.startswith(("http://", "https://"))
+
+            # Pre-fetch validation for --save-feed (fail fast, before the
+            # long-running pipeline starts).
+            if save_feed:
+                if not is_url or not is_youtube_url(url_or_feed):
+                    raise ValidationError(
+                        "--save-feed only supports YouTube URLs currently",
+                        suggestion=(
+                            "For non-YouTube sources, use "
+                            "'inkwell add <feed-url> --name <name>' instead."
+                        ),
+                    )
+                # Fail fast on playlists before the pipeline runs. Without this
+                # the playlist-rejection inside resolve_youtube_url only fires
+                # *after* transcription/extraction completes, wasting API spend.
+                if is_youtube_playlist_url(url_or_feed):
+                    raise ValidationError(
+                        "Playlist URLs aren't supported yet — try the channel URL instead",
+                        suggestion=(
+                            "Visit the playlist on YouTube and copy the channel's "
+                            "@handle or /channel/UC… URL from the creator."
+                        ),
+                    )
+
+            # Pre-resolve YouTube URLs so the channel name becomes the podcast
+            # display name (output dirs otherwise fall back to "unknown-podcast"
+            # on direct-URL fetches). Also lets the post-fetch --save-feed
+            # block reuse the tuple instead of calling yt-dlp twice.
+            pre_resolved: ResolvedFeed | None = None
+            if is_url and is_youtube_url(url_or_feed) and not is_youtube_playlist_url(url_or_feed):
+                try:
+                    pre_resolved = await resolve_youtube_url(url_or_feed)
+                except ValidationError:
+                    # Resolution can fail for private/region-blocked videos;
+                    # the audio downloader will surface a clearer error. Don't
+                    # pre-empt it here — just fall back to "Unknown Podcast".
+                    pre_resolved = None
 
             if not is_url:
                 # Treat as feed name - look up in configured feeds
                 try:
                     feed_config = manager.get_feed(url_or_feed)
                 except NotFoundError:
-                    # Not a configured feed, maybe it's still a URL without scheme
-                    if "." in url_or_feed and "/" in url_or_feed:
-                        # Looks like a URL, assume https
-                        url = f"https://{url_or_feed}"
-                    else:
-                        console.print(f"[red]✗[/red] Feed '{url_or_feed}' not found.")
-                        console.print("  Use [cyan]inkwell list[/cyan] to see configured feeds.")
-                        console.print("  Or provide a direct episode URL.")
-                        sys.exit(1)
+                    console.print(f"[red]✗[/red] Feed '{url_or_feed}' not found.")
+                    console.print("  Use [cyan]inkwell list[/cyan] to see configured feeds.")
+                    console.print("  Or provide a direct episode URL.")
+                    sys.exit(1)
                 else:
                     # Found the feed - need --latest or --episode flag
                     if not latest and not episode:
@@ -737,13 +885,11 @@ def fetch_command(
                         auth_username = feed_config.auth.username
                         auth_password = feed_config.auth.password
 
-            # For feed mode: selected_episodes from RSS parsing
-            # For URL mode: single placeholder with url already set
-            episodes_to_process: list[Episode | None]
-            if "selected_episodes" in dir():
-                episodes_to_process = list(selected_episodes)  # Copy to allow None type
-            else:
-                episodes_to_process = [None]  # URL mode: process once with ep=None
+            # For feed mode: selected_episodes set by RSS parsing above.
+            # For URL mode: run once with ep=None.
+            episodes_to_process: list[Episode | None] = (
+                list(selected_episodes) if selected_episodes is not None else [None]
+            )
 
             # Process each episode
             for ep in episodes_to_process:
@@ -761,6 +907,17 @@ def fetch_command(
                 if ep is not None:
                     episode_title = ep.title
                     detected_podcast_name = ep.podcast_name or url_or_feed
+                elif save_feed and feed_name is not None:
+                    # Explicit --feed-name means the user told us what to call
+                    # this feed — reuse as the display name so we don't force
+                    # them to pass --podcast-name redundantly. They can still
+                    # override for display via --podcast-name explicitly.
+                    detected_podcast_name = feed_name
+                elif pre_resolved is not None and pre_resolved.channel_name:
+                    # Direct YouTube URL with no --feed-name: use the channel
+                    # name yt-dlp resolved. Without this (or --feed-name, or
+                    # --podcast-name), output dirs fall back to "unknown-podcast/".
+                    detected_podcast_name = pre_resolved.channel_name
 
                 # Compute effective output directory
                 effective_output_dir = output_dir or config.default_output_dir
@@ -940,6 +1097,51 @@ def fetch_command(
 
                 console.print(table)
 
+                # Post-fetch: save channel as a feed (--save-feed) or show
+                # a hint about --save-feed on raw YouTube URL fetches.
+                if save_feed:
+                    try:
+                        # Reuse the pre-resolved tuple from line ~824 — we
+                        # already paid for a yt-dlp round-trip to set the
+                        # podcast name, no need to pay for another one here.
+                        resolved = pre_resolved or await resolve_youtube_url(url_or_feed)
+                        if resolved is None:
+                            raise ValidationError("Couldn't save feed: URL isn't a YouTube URL")
+                        # Auto-derive the feed name when --feed-name is omitted.
+                        # The user pasted a YouTube URL; they shouldn't have to
+                        # know a good feed name up front.
+                        if feed_name is None:
+                            existing = set(manager.list_feeds().keys())
+                            effective_name = _derive_feed_name(resolved, existing)
+                        else:
+                            effective_name = feed_name
+                        manager.add_feed(
+                            effective_name,
+                            FeedConfig(
+                                url=HttpUrl(resolved.feed_url),
+                                auth=AuthConfig(type="none"),
+                            ),
+                        )
+                        err_console.print(
+                            f"[green]✓[/green] Saved channel as feed "
+                            f"'[bold]{effective_name}[/bold]'"
+                        )
+                        if feed_name is None:
+                            err_console.print(
+                                f"[dim]  Auto-named from channel metadata. "
+                                f"To rename: [cyan]inkwell remove {effective_name}[/cyan] "
+                                f"then [cyan]inkwell add <url> --name <new-name>[/cyan]. "
+                                f"Pass [cyan]--feed-name[/cyan] next time to skip "
+                                f"this.[/dim]"
+                            )
+                    except (ValidationError, ConfigError) as e:
+                        err_console.print(f"[yellow]⚠[/yellow] Couldn't save feed: {e}")
+                elif _should_show_save_feed_hint(url=url_or_feed, input_was_url=is_url):
+                    err_console.print(
+                        "\n[dim]Want to track this channel? Re-run with "
+                        "[cyan]--save-feed[/cyan] to save it as a feed.[/dim]"
+                    )
+
         except KeyboardInterrupt:
             console.print("\n[yellow]Cancelled by user[/yellow]")
             sys.exit(130)
@@ -947,7 +1149,11 @@ def fetch_command(
             console.print(f"\n[red]✗[/red] {e}")
             sys.exit(1)
         except InkwellError as e:
-            console.print(f"\n[red]✗[/red] Error: {e}")
+            # Print message and suggestion separately so agents parsing
+            # line-by-line can capture both cleanly (matches add_feed's pattern).
+            console.print(f"\n[red]✗[/red] {e.message}")
+            if e.suggestion:
+                console.print(f"[dim]  {e.suggestion}[/dim]")
             sys.exit(1)
         except Exception as e:
             console.print(f"\n[red]✗[/red] Unexpected error: {e}")

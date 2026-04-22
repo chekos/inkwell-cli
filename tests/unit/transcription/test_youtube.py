@@ -3,6 +3,7 @@
 from unittest.mock import Mock, patch
 
 import pytest
+from youtube_transcript_api import FetchedTranscriptSnippet
 from youtube_transcript_api._errors import (
     CouldNotRetrieveTranscript,
     NoTranscriptFound,
@@ -68,6 +69,16 @@ class TestYouTubeURLDetection:
         for url in urls:
             assert await transcriber.can_transcribe(url) is True
 
+    @pytest.mark.asyncio
+    async def test_shorts_url_detected(self, transcriber):
+        """Shorts URLs emitted by the RSS parser must be recognised as YouTube."""
+        assert await transcriber.can_transcribe("https://www.youtube.com/shorts/abc123")
+
+    @pytest.mark.asyncio
+    async def test_live_url_detected(self, transcriber):
+        """Live-VOD permalinks must be recognised as YouTube."""
+        assert await transcriber.can_transcribe("https://www.youtube.com/live/xyz789")
+
 
 class TestVideoIDExtraction:
     """Tests for extracting video IDs from URLs."""
@@ -107,6 +118,25 @@ class TestVideoIDExtraction:
         video_id = transcriber._extract_video_id(url)
         assert video_id == "embed123"
 
+    def test_extract_from_shorts_url(self, transcriber):
+        """Shorts URLs come through the RSS parser's YouTube branch — must route
+        to the free transcript API, not Gemini fallback."""
+        url = "https://www.youtube.com/shorts/shortsID1"
+        video_id = transcriber._extract_video_id(url)
+        assert video_id == "shortsID1"
+
+    def test_extract_from_shorts_url_with_params(self, transcriber):
+        """Shorts URLs with tracking params still extract cleanly."""
+        url = "https://www.youtube.com/shorts/shortsID1?si=abc"
+        video_id = transcriber._extract_video_id(url)
+        assert video_id == "shortsID1"
+
+    def test_extract_from_live_url(self, transcriber):
+        """Live-VOD permalinks (/live/<id>) must route the same as /watch."""
+        url = "https://www.youtube.com/live/liveID12"
+        video_id = transcriber._extract_video_id(url)
+        assert video_id == "liveID12"
+
     def test_extract_returns_none_for_invalid_url(self, transcriber):
         """Test that invalid URLs return None."""
         urls = [
@@ -128,11 +158,17 @@ class TestTranscriptFetching:
 
     @pytest.fixture
     def mock_transcript_data(self):
-        """Create mock transcript data."""
+        """Create mock transcript data.
+
+        youtube-transcript-api 1.0+ returns FetchedTranscriptSnippet dataclasses
+        (attribute access), not dicts — mirror the real library's shape so this
+        mock catches subscript-access regressions like the one that forced every
+        YouTube fetch to fall back to paid Gemini transcription.
+        """
         return [
-            {"text": "Hello world", "start": 0.0, "duration": 2.0},
-            {"text": "This is a test", "start": 2.0, "duration": 3.0},
-            {"text": "Goodbye", "start": 5.0, "duration": 1.5},
+            FetchedTranscriptSnippet(text="Hello world", start=0.0, duration=2.0),
+            FetchedTranscriptSnippet(text="This is a test", start=2.0, duration=3.0),
+            FetchedTranscriptSnippet(text="Goodbye", start=5.0, duration=1.5),
         ]
 
     @pytest.mark.asyncio

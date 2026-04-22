@@ -28,7 +28,7 @@ inkwell add <URL> --name <NAME> [OPTIONS]
 
 | Argument | Required | Description |
 |----------|----------|-------------|
-| `URL` | Yes | RSS feed URL |
+| `URL` | Yes | RSS feed URL **or** a YouTube URL (watch, `/shorts/`, `/live/`, `/channel/UC…`, `@handle`, `/c/`, `/user/`, `youtu.be`). YouTube URLs are auto-resolved to the channel's media-RSS feed. |
 
 ### Options
 
@@ -49,7 +49,14 @@ inkwell add https://example.com/feed.rss --name tech-show --category tech
 
 # With authentication
 inkwell add https://private.com/feed.rss --name premium --auth
+
+# YouTube channel — paste any shape; inkwell resolves the feed URL
+inkwell add https://www.youtube.com/@orenmeetsworld --name oren-meets-world
+inkwell add https://www.youtube.com/watch?v=abc123 --name some-creator
+inkwell add https://www.youtube.com/channel/UCxxxxxxxxxxxxxxxxxxxx --name some-creator
 ```
+
+> **Note:** Playlist URLs (`?list=…`) are rejected with a clear error — playlist ingestion is not yet supported. If you pass a video URL that includes a playlist query param (e.g. `watch?v=X&list=Y`), `inkwell` will tell you to use the channel URL instead.
 
 ---
 
@@ -145,6 +152,8 @@ inkwell fetch <SOURCE> [OPTIONS]
 | `--resume-session` | | string | | Resume specific interview session by ID |
 | `--extractor` | | string | Auto | Force specific extraction plugin (e.g., claude, gemini) |
 | `--transcriber` | | string | Auto | Force specific transcription plugin (e.g., youtube, gemini) |
+| `--save-feed` | | flag | false | After a successful YouTube URL fetch, also save the channel as a feed. Auto-names the feed from channel metadata unless `--feed-name` is set. |
+| `--feed-name` | | string | auto | Feed name for `--save-feed`. Optional; derived from channel metadata if omitted. |
 
 ### Examples
 
@@ -184,6 +193,12 @@ inkwell fetch URL --provider gemini
 
 # Force specific plugins
 inkwell fetch URL --extractor claude --transcriber youtube
+
+# One-time YouTube video; save the channel for future fetches (auto-named)
+inkwell fetch https://www.youtube.com/watch?v=abc123 --save-feed
+
+# Same, with an explicit feed name
+inkwell fetch https://www.youtube.com/watch?v=abc123 --save-feed --feed-name some-creator
 
 # Using environment variable overrides
 INKWELL_EXTRACTOR=gemini inkwell fetch URL
@@ -423,10 +438,13 @@ inkwell version
 | Code | Meaning |
 |------|---------|
 | 0 | Success |
-| 1 | General error |
-| 2 | Configuration error |
-| 3 | Network error |
-| 4 | API error |
+| 1 | Any error (configuration, network, API, validation) |
+| 130 | Interrupted (SIGINT) |
+
+> Inkwell currently returns a single non-zero code (`1`) for all error
+> categories. Fine-grained codes per error class may be added in a future
+> release; scripts should gate retry logic on the stderr message rather
+> than the exit code.
 
 ---
 

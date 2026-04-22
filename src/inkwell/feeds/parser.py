@@ -16,6 +16,12 @@ from inkwell.utils.retry import AuthenticationError
 # Prevents resource exhaustion from large ranges like "1-1000000000"
 MAX_EPISODES_PER_SELECTION = 100
 
+# YouTube video IDs are always 11 chars drawn from a URL-safe base64 alphabet.
+# Feed-sourced yt_videoid lands in a constructed URL only when entry.link is
+# missing; validating the format keeps a malicious feed from injecting extra
+# query params (e.g., `abc123&list=PL_evil`) into the downstream yt-dlp call.
+_YT_VIDEO_ID_RE = re.compile(r"^[A-Za-z0-9_-]{11}$")
+
 
 class RSSParser:
     """Parses RSS feeds and extracts episode information."""
@@ -310,6 +316,19 @@ class RSSParser:
             if link.get("rel") == "enclosure":
                 href = link.get("href")
                 return str(href) if href else None
+
+        # YouTube media-RSS: entries carry <yt:videoId> instead of <enclosure>.
+        # feedparser surfaces it as entry.yt_videoid and populates entry.link with
+        # the watch URL. yt-dlp handles both /watch?v= and /shorts/ shapes downstream.
+        yt_videoid = entry.get("yt_videoid")
+        if yt_videoid:
+            link = entry.get("link")
+            if link:
+                return str(link)
+            # Fallback only: validate the video ID format before interpolating
+            # it into a URL so a malicious feed can't inject `&list=…`.
+            if _YT_VIDEO_ID_RE.match(str(yt_videoid)):
+                return f"https://www.youtube.com/watch?v={yt_videoid}"
 
         return None
 

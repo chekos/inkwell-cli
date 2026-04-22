@@ -815,6 +815,20 @@ def fetch_command(
                         ),
                     )
 
+            # Pre-resolve YouTube URLs so the channel name becomes the podcast
+            # display name (output dirs otherwise fall back to "unknown-podcast"
+            # on direct-URL fetches). Also lets the post-fetch --save-feed
+            # block reuse the tuple instead of calling yt-dlp twice.
+            pre_resolved: ResolvedFeed | None = None
+            if is_url and is_youtube_url(url_or_feed) and not is_youtube_playlist_url(url_or_feed):
+                try:
+                    pre_resolved = await resolve_youtube_url(url_or_feed)
+                except ValidationError:
+                    # Resolution can fail for private/region-blocked videos;
+                    # the audio downloader will surface a clearer error. Don't
+                    # pre-empt it here — just fall back to "Unknown Podcast".
+                    pre_resolved = None
+
             if not is_url:
                 # Treat as feed name - look up in configured feeds
                 try:
@@ -893,6 +907,10 @@ def fetch_command(
                 if ep is not None:
                     episode_title = ep.title
                     detected_podcast_name = ep.podcast_name or url_or_feed
+                elif pre_resolved is not None and pre_resolved.channel_name:
+                    # Direct YouTube URL: use the channel name yt-dlp resolved.
+                    # Without this, output dirs fall back to "unknown-podcast/".
+                    detected_podcast_name = pre_resolved.channel_name
 
                 # Compute effective output directory
                 effective_output_dir = output_dir or config.default_output_dir
@@ -1076,7 +1094,10 @@ def fetch_command(
                 # a hint about --save-feed on raw YouTube URL fetches.
                 if save_feed:
                     try:
-                        resolved = await resolve_youtube_url(url_or_feed)
+                        # Reuse the pre-resolved tuple from line ~824 — we
+                        # already paid for a yt-dlp round-trip to set the
+                        # podcast name, no need to pay for another one here.
+                        resolved = pre_resolved or await resolve_youtube_url(url_or_feed)
                         if resolved is None:
                             raise ValidationError("Couldn't save feed: URL isn't a YouTube URL")
                         # Auto-derive the feed name when --feed-name is omitted.

@@ -51,6 +51,17 @@ def _is_youtube_host(host: str) -> bool:
     return host in YOUTUBE_HOSTS
 
 
+def is_youtube_url(url: str) -> bool:
+    """Lightweight host-only check: is this a YouTube URL?
+
+    Does not touch the network, does not validate the URL path or query
+    structure. Intended for callers that just want to gate UI on "did the
+    user paste a YouTube link?" (e.g. the `--save-source` hint).
+    """
+    parts = _parse(url)
+    return parts is not None and _is_youtube_host(parts[0])
+
+
 def _is_already_resolved_feed_url(host: str, path: str, query: dict[str, list[str]]) -> bool:
     return path == _FEED_PATH and "channel_id" in query
 

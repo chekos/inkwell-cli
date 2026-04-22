@@ -190,6 +190,127 @@ class TestCLIAddYouTube:
         assert "will-not-save" not in feeds
 
 
+class TestShouldShowSaveSourceHint:
+    """Unit tests for the hint-visibility decision helper."""
+
+    def test_shows_on_youtube_url_without_save_source(self) -> None:
+        from inkwell.cli import _should_show_save_source_hint
+
+        assert _should_show_save_source_hint(
+            url="https://www.youtube.com/watch?v=abc",
+            save_source=False,
+            input_was_url=True,
+        )
+
+    def test_suppressed_when_save_source_passed(self) -> None:
+        from inkwell.cli import _should_show_save_source_hint
+
+        assert not _should_show_save_source_hint(
+            url="https://www.youtube.com/watch?v=abc",
+            save_source=True,
+            input_was_url=True,
+        )
+
+    def test_suppressed_for_non_youtube_url(self) -> None:
+        from inkwell.cli import _should_show_save_source_hint
+
+        assert not _should_show_save_source_hint(
+            url="https://example.com/feed.rss",
+            save_source=False,
+            input_was_url=True,
+        )
+
+    def test_suppressed_when_input_was_saved_feed_name(self) -> None:
+        from inkwell.cli import _should_show_save_source_hint
+
+        assert not _should_show_save_source_hint(
+            url="https://www.youtube.com/feeds/videos.xml?channel_id=UC",
+            save_source=False,
+            input_was_url=False,
+        )
+
+
+class TestCLIFetchSaveSource:
+    """Pre-fetch validation for `inkwell fetch --save-source`.
+
+    Post-fetch save behavior (successful resolve + add_feed + error-as-warning)
+    is exercised by the end-to-end smoke test in the execution plan; mocking
+    the full PipelineOrchestrator at unit-test granularity is out of proportion
+    to the simple resolve+add_feed block being tested.
+    """
+
+    def test_save_source_without_source_name_errors(self, tmp_path: Path, monkeypatch) -> None:
+        """--save-source requires --source-name in v1; missing it exits non-zero."""
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+
+        result = runner.invoke(
+            app,
+            [
+                "fetch",
+                "https://www.youtube.com/watch?v=abc",
+                "--save-source",
+                "--dry-run",
+            ],
+        )
+
+        assert result.exit_code != 0
+        assert "--source-name" in result.stdout
+
+    def test_save_source_with_non_youtube_url_errors(self, tmp_path: Path, monkeypatch) -> None:
+        """--save-source only supports YouTube URLs in v1."""
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+
+        result = runner.invoke(
+            app,
+            [
+                "fetch",
+                "https://example.com/feed.rss",
+                "--save-source",
+                "--source-name",
+                "foo",
+                "--dry-run",
+            ],
+        )
+
+        assert result.exit_code != 0
+        assert "YouTube" in result.stdout
+
+    def test_save_source_with_saved_feed_name_errors(self, tmp_path: Path, monkeypatch) -> None:
+        """--save-source against a saved feed name (not a URL) exits non-zero.
+
+        Users should pass a URL, not a feed-name lookup, when saving sources.
+        """
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+
+        # Pre-seed a feed so the lookup succeeds far enough to reach save-source validation.
+        manager = ConfigManager(config_dir=tmp_path)
+        from inkwell.config.schema import AuthConfig, FeedConfig
+
+        manager.add_feed(
+            "my-feed",
+            FeedConfig(
+                url="https://example.com/feed.rss",  # type: ignore
+                auth=AuthConfig(type="none"),
+            ),
+        )
+
+        result = runner.invoke(
+            app,
+            [
+                "fetch",
+                "my-feed",
+                "--latest",
+                "--save-source",
+                "--source-name",
+                "another-name",
+                "--dry-run",
+            ],
+        )
+
+        assert result.exit_code != 0
+        assert "YouTube" in result.stdout or "URL" in result.stdout
+
+
 class TestCLIList:
     """Tests for list command."""
 

@@ -311,6 +311,16 @@ class RSSParser:
                 href = link.get("href")
                 return str(href) if href else None
 
+        # YouTube media-RSS: entries carry <yt:videoId> instead of <enclosure>.
+        # feedparser surfaces it as entry.yt_videoid and populates entry.link with
+        # the watch URL. yt-dlp handles both /watch?v= and /shorts/ shapes downstream.
+        yt_videoid = entry.get("yt_videoid")
+        if yt_videoid:
+            link = entry.get("link")
+            if link:
+                return str(link)
+            return f"https://www.youtube.com/watch?v={yt_videoid}"
+
         return None
 
     def _extract_published_date(self, entry: dict) -> datetime:

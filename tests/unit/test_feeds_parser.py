@@ -33,6 +33,13 @@ def malformed_feed() -> str:
     return fixture_path.read_text()
 
 
+@pytest.fixture
+def youtube_channel_feed() -> str:
+    """Load YouTube channel media-RSS fixture."""
+    fixture_path = Path(__file__).parent.parent / "fixtures" / "youtube_channel_feed.xml"
+    return fixture_path.read_text()
+
+
 class TestRSSParser:
     """Tests for RSSParser class."""
 
@@ -312,6 +319,81 @@ class TestRSSParser:
 
         assert "Authorization" in headers
         assert headers["Authorization"] == "Bearer secret-token"
+
+
+class TestRSSParserYouTube:
+    """Tests for YouTube media-RSS entry handling (Gap B)."""
+
+    def test_regular_video_entry_extracts_watch_url(self, youtube_channel_feed: str) -> None:
+        """Regular YouTube video entry produces an Episode with a watchable URL."""
+        feed = feedparser.parse(youtube_channel_feed)
+        parser = RSSParser()
+
+        episode = parser.extract_episode_metadata(feed.entries[0], "Test Channel")
+
+        assert episode.title == "Regular Video: First entry"
+        assert "youtube.com" in str(episode.url)
+        assert "regularVideoId1" in str(episode.url)
+        assert episode.description != ""
+        assert episode.podcast_name == "Test Channel"
+
+    def test_short_entry_extracts_downloadable_url(self, youtube_channel_feed: str) -> None:
+        """YouTube Short entry produces an Episode with a URL yt-dlp can handle.
+
+        feedparser preserves /shorts/ in entry.link; we don't normalize the path
+        because yt-dlp handles both /shorts/ID and /watch?v=ID.
+        """
+        feed = feedparser.parse(youtube_channel_feed)
+        parser = RSSParser()
+
+        episode = parser.extract_episode_metadata(feed.entries[1], "Test Channel")
+
+        assert episode.title == "A YouTube Short"
+        assert "youtube.com" in str(episode.url)
+        assert "shortVideoId2" in str(episode.url)
+
+    def test_live_entry_resolves_normally(self, youtube_channel_feed: str) -> None:
+        """Archived livestream VOD entry behaves like a regular video."""
+        feed = feedparser.parse(youtube_channel_feed)
+        parser = RSSParser()
+
+        episode = parser.extract_episode_metadata(feed.entries[2], "Test Channel")
+
+        assert episode.title == "Live Stream Archive"
+        assert "liveVideoId3" in str(episode.url)
+        # YouTube feeds don't carry duration; None must be tolerated downstream.
+        assert episode.duration_seconds is None
+
+    def test_get_latest_episode_on_youtube_feed(self, youtube_channel_feed: str) -> None:
+        """get_latest_episode works end-to-end over a YouTube channel feed."""
+        feed = feedparser.parse(youtube_channel_feed)
+        parser = RSSParser()
+
+        episode = parser.get_latest_episode(feed, "Test Channel")
+
+        assert episode.title == "Regular Video: First entry"
+        assert "regularVideoId1" in str(episode.url)
+
+    def test_yt_videoid_fallback_when_link_missing(self) -> None:
+        """Defensive: if yt_videoid is present but entry.link is absent, construct watch URL."""
+        parser = RSSParser()
+        entry = {
+            "title": "Entry with no link",
+            "yt_videoid": "fallbackVideoId",
+        }
+
+        episode = parser.extract_episode_metadata(entry, "Test Channel")
+
+        assert str(episode.url) == "https://www.youtube.com/watch?v=fallbackVideoId"
+
+    def test_non_youtube_feed_regression(self, valid_rss_feed: str) -> None:
+        """Existing podcast RSS feeds still extract URL from <enclosure>, unaffected."""
+        feed = feedparser.parse(valid_rss_feed)
+        parser = RSSParser()
+
+        episode = parser.extract_episode_metadata(feed.entries[0], "Tech Talks")
+
+        assert str(episode.url) == "https://example.com/audio/ep100.mp3"
 
 
 class TestParseAndFetchEpisodes:

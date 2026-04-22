@@ -17,6 +17,7 @@ from inkwell.config.manager import ConfigManager
 from inkwell.config.schema import AuthConfig, FeedConfig
 from inkwell.feeds.models import Episode
 from inkwell.feeds.parser import RSSParser
+from inkwell.feeds.youtube_resolver import resolve_youtube_url
 from inkwell.pipeline import PipelineOptions, PipelineOrchestrator
 from inkwell.transcription import CostEstimate, TranscriptionManager
 from inkwell.utils.datetime import now_utc
@@ -108,10 +109,15 @@ def add_feed(
                 token = typer.prompt("Bearer token", hide_input=True)
                 auth_config = AuthConfig(type="bearer", token=token)
 
+        # Resolve YouTube URLs of any shape to the channel's media-RSS feed.
+        # Non-YouTube URLs pass through as-is (resolver returns None).
+        resolved = asyncio.run(resolve_youtube_url(url))
+        feed_url = resolved[0] if resolved else url
+
         from pydantic import HttpUrl
 
         feed_config = FeedConfig(
-            url=HttpUrl(url),
+            url=HttpUrl(feed_url),
             auth=auth_config,
             category=category,
         )

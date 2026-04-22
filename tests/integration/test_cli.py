@@ -69,6 +69,127 @@ class TestCLIAdd:
             manager.add_feed("test-podcast", feed_config)
 
 
+class TestCLIAddYouTube:
+    """Tests for `inkwell add` accepting YouTube URLs (Gap A)."""
+
+    def test_add_watch_url_resolves_to_channel_feed(self, tmp_path: Path, monkeypatch) -> None:
+        """`inkwell add <watch-url>` resolves to the channel's RSS feed URL."""
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+
+        async def fake_resolve(_url: str) -> tuple[str, str | None]:
+            return (
+                "https://www.youtube.com/feeds/videos.xml?channel_id=UCtest",
+                "Some Channel",
+            )
+
+        monkeypatch.setattr("inkwell.cli.resolve_youtube_url", fake_resolve)
+
+        result = runner.invoke(
+            app,
+            [
+                "add",
+                "https://www.youtube.com/watch?v=someVideoId",
+                "--name",
+                "test-yt",
+            ],
+        )
+
+        assert result.exit_code == 0, result.stdout
+        feeds = ConfigManager(config_dir=tmp_path).list_feeds()
+        assert "test-yt" in feeds
+        assert "channel_id=UCtest" in str(feeds["test-yt"].url)
+
+    def test_add_channel_url_resolves_without_yt_dlp(self, tmp_path: Path, monkeypatch) -> None:
+        """/channel/UCxxx resolves via pure URL-shape layer; no yt-dlp call."""
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+
+        result = runner.invoke(
+            app,
+            [
+                "add",
+                "https://www.youtube.com/channel/UCpureShapeExample",
+                "--name",
+                "test-channel",
+            ],
+        )
+
+        assert result.exit_code == 0, result.stdout
+        feeds = ConfigManager(config_dir=tmp_path).list_feeds()
+        assert "channel_id=UCpureShapeExample" in str(feeds["test-channel"].url)
+
+    def test_add_already_resolved_feed_url_passes_through(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """Pre-resolved feeds/videos.xml URLs are stored unchanged."""
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+
+        url = "https://www.youtube.com/feeds/videos.xml?channel_id=UCalready"
+        result = runner.invoke(app, ["add", url, "--name", "pre-resolved"])
+
+        assert result.exit_code == 0, result.stdout
+        feeds = ConfigManager(config_dir=tmp_path).list_feeds()
+        assert str(feeds["pre-resolved"].url).startswith(url)
+
+    def test_add_non_youtube_url_unchanged(self, tmp_path: Path, monkeypatch) -> None:
+        """Existing RSS add behavior for non-YouTube URLs is unaffected."""
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+
+        result = runner.invoke(
+            app,
+            ["add", "https://example.com/feed.rss", "--name", "plain-rss"],
+        )
+
+        assert result.exit_code == 0, result.stdout
+        feeds = ConfigManager(config_dir=tmp_path).list_feeds()
+        assert str(feeds["plain-rss"].url).startswith("https://example.com/feed.rss")
+
+    def test_add_playlist_url_rejected(self, tmp_path: Path, monkeypatch) -> None:
+        """Playlist URLs produce an actionable error and no feed is saved."""
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+
+        result = runner.invoke(
+            app,
+            [
+                "add",
+                "https://www.youtube.com/playlist?list=PL12345",
+                "--name",
+                "will-not-save",
+            ],
+        )
+
+        assert result.exit_code != 0
+        assert "laylist" in result.stdout  # matches "Playlist"/"playlist"
+        feeds = ConfigManager(config_dir=tmp_path).list_feeds()
+        assert "will-not-save" not in feeds
+
+    def test_add_resolver_failure_propagates(self, tmp_path: Path, monkeypatch) -> None:
+        """yt-dlp resolution failure surfaces as a CLI error with suggestion."""
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+
+        async def failing_resolve(_url: str) -> tuple[str, str | None]:
+            raise ValidationError(
+                "Couldn't resolve YouTube URL: video unavailable",
+                suggestion="Try the channel URL instead.",
+            )
+
+        monkeypatch.setattr("inkwell.cli.resolve_youtube_url", failing_resolve)
+
+        result = runner.invoke(
+            app,
+            [
+                "add",
+                "https://www.youtube.com/watch?v=brokenVideoId",
+                "--name",
+                "will-not-save",
+            ],
+        )
+
+        assert result.exit_code != 0
+        assert "Couldn't resolve" in result.stdout
+        feeds = ConfigManager(config_dir=tmp_path).list_feeds()
+        assert "will-not-save" not in feeds
+
+
 class TestCLIList:
     """Tests for list command."""
 

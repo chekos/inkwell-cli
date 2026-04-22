@@ -557,6 +557,83 @@ class TestCLIFetchSaveSource:
         assert result.exit_code == 0, result.output
         assert "Couldn't save source" in result.output
 
+    def test_save_source_accepts_scheme_less_www_youtube_url(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """`www.youtube.com/...` (no scheme) must work with --save-source.
+
+        Codex review #1: the scheme-less normalization used to run only
+        inside the feed-name fallback, so --save-source rejected this shape
+        as "not YouTube" even though plain fetch accepted it.
+        """
+        from types import SimpleNamespace
+
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+
+        output_dir = tmp_path / "episode-dir"
+        output_dir.mkdir()
+
+        async def fake_process(*_args, **_kwargs):
+            return SimpleNamespace(
+                episode_output=SimpleNamespace(directory=output_dir),
+                extraction_results=[],
+                interview_result=None,
+                extraction_cost_usd=0.0,
+                interview_cost_usd=0.0,
+                total_cost_usd=0.0,
+            )
+
+        async def fake_resolve(_url: str) -> ResolvedFeed:
+            return ResolvedFeed(
+                feed_url="https://www.youtube.com/feeds/videos.xml?channel_id=UCscheme",
+                channel_name="Scheme Less",
+            )
+
+        monkeypatch.setattr("inkwell.pipeline.PipelineOrchestrator.process_episode", fake_process)
+        monkeypatch.setattr("inkwell.cli.resolve_youtube_url", fake_resolve)
+
+        result = runner.invoke(
+            app,
+            [
+                "fetch",
+                "www.youtube.com/watch?v=abc",
+                "--save-source",
+                "--source-name",
+                "scheme-less",
+                "--dry-run",
+                "--output-dir",
+                str(tmp_path),
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        feeds = ConfigManager(config_dir=tmp_path).list_feeds()
+        assert "scheme-less" in feeds
+
+    def test_source_name_without_save_source_errors(self, tmp_path: Path, monkeypatch) -> None:
+        """--source-name alone is a no-op that silently mislead users and
+        scripts into thinking the channel was persisted. Reject up-front.
+
+        Codex review #2.
+        """
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+
+        result = runner.invoke(
+            app,
+            [
+                "fetch",
+                "https://www.youtube.com/watch?v=abc",
+                "--source-name",
+                "orphan-name",
+                "--dry-run",
+            ],
+        )
+
+        assert result.exit_code != 0
+        assert "--save-source" in result.output
+        # Suggestion surfaces both remediation paths.
+        assert "persist" in result.output.lower() or "drop" in result.output.lower()
+
     def test_save_source_with_playlist_url_errors_before_pipeline(
         self, tmp_path: Path, monkeypatch
     ) -> None:

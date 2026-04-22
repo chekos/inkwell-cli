@@ -748,9 +748,35 @@ def fetch_command(
     """
 
     async def run_fetch() -> None:
+        nonlocal url_or_feed
         try:
             manager = ConfigManager()
             config = manager.load_config()
+
+            # --source-name is metadata for --save-source; it has no meaning
+            # on its own and silently ignoring it would mislead scripts into
+            # thinking the channel was persisted.
+            if source_name is not None and not save_source:
+                raise ValidationError(
+                    "--source-name has no effect without --save-source",
+                    suggestion=(
+                        "Add --save-source to persist the channel, or drop "
+                        "--source-name if you meant a one-time fetch."
+                    ),
+                )
+
+            # Normalize scheme-less URL-shaped inputs up-front so the
+            # --save-source guard and the feed-name lookup both see the same
+            # URL. Feed names never contain both `.` and `/`, so this is
+            # unambiguous. Without this, `www.youtube.com/watch?v=X
+            # --save-source` would be rejected as "not YouTube" even though
+            # the same input works in plain fetch mode.
+            if (
+                not url_or_feed.startswith(("http://", "https://"))
+                and "." in url_or_feed
+                and "/" in url_or_feed
+            ):
+                url_or_feed = f"https://{url_or_feed}"
 
             # Resolve feed name to episode URL if needed
             url = url_or_feed
@@ -764,9 +790,6 @@ def fetch_command(
             # out into its episodes); stays None for direct-URL mode.
             selected_episodes: list[Episode] | None = None
 
-            # `www.foo.com` (no scheme) is not a URL — urlparse returns empty
-            # scheme/host for it, which breaks is_youtube_url and friends.
-            # Route it through the scheme-less fallback below.
             is_url = url_or_feed.startswith(("http://", "https://"))
 
             # Pre-fetch validation for --save-source (fail fast, before the
@@ -797,15 +820,10 @@ def fetch_command(
                 try:
                     feed_config = manager.get_feed(url_or_feed)
                 except NotFoundError:
-                    # Not a configured feed, maybe it's still a URL without scheme
-                    if "." in url_or_feed and "/" in url_or_feed:
-                        # Looks like a URL, assume https
-                        url = f"https://{url_or_feed}"
-                    else:
-                        console.print(f"[red]✗[/red] Feed '{url_or_feed}' not found.")
-                        console.print("  Use [cyan]inkwell list[/cyan] to see configured feeds.")
-                        console.print("  Or provide a direct episode URL.")
-                        sys.exit(1)
+                    console.print(f"[red]✗[/red] Feed '{url_or_feed}' not found.")
+                    console.print("  Use [cyan]inkwell list[/cyan] to see configured feeds.")
+                    console.print("  Or provide a direct episode URL.")
+                    sys.exit(1)
                 else:
                     # Found the feed - need --latest or --episode flag
                     if not latest and not episode:

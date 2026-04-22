@@ -69,6 +69,32 @@ Password: ********
 !!! note "Security"
     All credentials are encrypted using Fernet symmetric encryption before storage.
 
+### YouTube Channels
+
+Inkwell accepts any standard YouTube URL in `inkwell add` — paste a video URL, channel URL, `@handle`, `/c/`, or `/user/` link and inkwell resolves the right media-RSS endpoint for you:
+
+```bash
+# Any of these work — inkwell figures out the channel's RSS feed
+inkwell add https://www.youtube.com/@orenmeetsworld --name oren-meets-world
+inkwell add https://www.youtube.com/watch?v=pKeZ5XK2vp4 --name oren-meets-world
+inkwell add https://www.youtube.com/channel/UC_tSQ6UQy2pROm-I0J7UBoA --name oren-meets-world
+```
+
+If you just want to process one video without tracking the channel, use `inkwell fetch <video-url>`. You'll see a hint at the end inviting you to save the channel:
+
+```
+Want to track this channel? Re-run with --save-source --source-name <name> to save it as a feed.
+```
+
+To take it up on the offer, re-run with the flag:
+
+```bash
+inkwell fetch https://www.youtube.com/watch?v=pKeZ5XK2vp4 --save-source --source-name oren-meets-world
+```
+
+!!! note "Playlist URLs"
+    Playlist URLs (`?list=…`) aren't supported yet — `inkwell add` rejects them with a clear error. Use the channel URL instead.
+
 ---
 
 ## Listing Feeds

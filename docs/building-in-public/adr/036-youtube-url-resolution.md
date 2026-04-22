@@ -40,9 +40,9 @@ Patch the existing RSS flow with two narrow additions:
    field avoids false positives on non-YouTube feeds that happen to
    include `<media:*>` tags.
 
-`inkwell fetch` gains `--save-source` / `--source-name` so users can
+`inkwell fetch` gains `--save-feed` / `--feed-name` so users can
 opt into saving the channel as a feed after a one-off video fetch.
-`--source-name` is **optional**: when omitted, the feed name is
+`--feed-name` is **optional**: when omitted, the feed name is
 auto-derived from the channel name (slugified), falling back to the
 channel ID and appending a numeric suffix on collision. A dimmed hint
 after a successful auto-named save tells the user the derived name and
@@ -64,7 +64,7 @@ URL.
   can block URL resolution. Mitigated by preserving the manual
   escape-hatch in `ValidationError.suggestion`
   (`inkwell add '…?channel_id=UCxxx' --name X` still works). Explicit
-  `--source-name` is less ergonomic than auto-derive (resolved by #38).
+  `--feed-name` is less ergonomic than auto-derive (resolved by #38).
 - **Risks:** YouTube could change its media-RSS endpoint (externality;
   out of our control) or rate-limit resolution with the bot-check
   interstitial (surfaced via yt-dlp's original error + the
@@ -86,7 +86,7 @@ URL.
    no functional benefit today; adds a migration. Collision detection
    (the main use case) is deferred to #38, which can add the field at
    the same time.
-4. **Require `--source-name` in v1 (auto-derivation deferred to #38).**
+4. **Require `--feed-name` in v1 (auto-derivation deferred to #38).**
    Initially accepted, then reversed during code review: requiring an
    explicit name contradicts the ingestion-UX principle ("user shouldn't
    have to know how to navigate YouTube"). Shipped a minimal inline

@@ -71,7 +71,7 @@ def is_youtube_url(url: str) -> bool:
 
     Does not touch the network, does not validate the URL path or query
     structure. Intended for callers that just want to gate UI on "did the
-    user paste a YouTube link?" (e.g. the `--save-source` hint).
+    user paste a YouTube link?" (e.g. the `--save-feed` hint).
     """
     parts = _parse(url)
     return parts is not None and _is_youtube_host(parts[0])

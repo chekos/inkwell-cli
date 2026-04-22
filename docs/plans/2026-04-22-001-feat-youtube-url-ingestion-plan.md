@@ -14,7 +14,7 @@ Close two gaps that currently block end-to-end processing of YouTube channels in
 1. **Ingestion UX (Gap A):** `inkwell add` and `inkwell fetch` accept only pre-resolved RSS URLs today. Users must manually locate a YouTube channel's media-RSS endpoint (`https://www.youtube.com/feeds/videos.xml?channel_id=UC…`) before handing it to inkwell. This plan adds YouTube URL detection and auto-resolution in the CLI layer so users can paste any standard YouTube URL.
 2. **Parser (Gap B):** `RSSParser` fails on YouTube media-RSS entries with `Episode '...' has no audio enclosure`. YouTube feeds use `<yt:videoId>` + `<media:group>` instead of podcast `<enclosure>` tags. This plan teaches the parser to recognize YouTube entries.
 
-A new `--save-source` flag on `inkwell fetch` lets users opt into saving the channel as a recurring feed when they process a one-off video. Fetch remains one-time by default to match user intent.
+A new `--save-feed` flag on `inkwell fetch` lets users opt into saving the channel as a recurring feed when they process a one-off video. Fetch remains one-time by default to match user intent.
 
 ## Problem Frame
 
@@ -29,15 +29,15 @@ User framing: *"We should be able to point to a video and help the user figure o
 
 - **R1.** `inkwell add <youtube-url> --name X` accepts YouTube URL shapes (watch, shorts, youtu.be, channel, @handle, /c/, /user/, /live/, /embed/, tab-suffixed like `/@handle/videos`) and stores the resolved channel-RSS URL (always normalized to `?channel_id=UC…` form). (Gap A)
 - **R2.** `inkwell add <youtube-feeds-url>` (already-resolved `feeds/videos.xml?channel_id=…`) passes through unchanged — no re-resolution. (Gap A, edge case)
-- **R3.** `inkwell fetch <youtube-url>` continues to process a single video by default. No feed is saved unless `--save-source` is passed. (UX invariant)
-- **R4.** `inkwell fetch <youtube-url> --save-source [--source-name X]` processes the video, then saves the channel as a feed. Save runs *after* successful fetch; save failure emits a warning but does not change fetch exit code. (New behavior)
-  - **Amended during code review (2026-04-22):** the original plan made `--source-name` REQUIRED and deferred auto-derivation to #38. Reversed: `--source-name` is **optional**; when omitted, the feed name is slugified from the channel metadata (fallback: channel ID; collisions get a numeric suffix) and a rename hint is printed. Rationale: requiring the flag contradicts the ingestion-UX principle that motivated the feature. See ADR-036 "Alternatives Considered" #4.
-- **R5.** On `inkwell fetch <youtube-url>` (without `--save-source`, successful fetch only), display a dimmed hint guiding the user to `--save-source` for future saves. (UX)
+- **R3.** `inkwell fetch <youtube-url>` continues to process a single video by default. No feed is saved unless `--save-feed` is passed. (UX invariant)
+- **R4.** `inkwell fetch <youtube-url> --save-feed [--feed-name X]` processes the video, then saves the channel as a feed. Save runs *after* successful fetch; save failure emits a warning but does not change fetch exit code. (New behavior)
+  - **Amended during code review (2026-04-22):** the original plan made `--feed-name` REQUIRED and deferred auto-derivation to #38. Reversed: `--feed-name` is **optional**; when omitted, the feed name is slugified from the channel metadata (fallback: channel ID; collisions get a numeric suffix) and a rename hint is printed. Rationale: requiring the flag contradicts the ingestion-UX principle that motivated the feature. See ADR-036 "Alternatives Considered" #4.
+- **R5.** On `inkwell fetch <youtube-url>` (without `--save-feed`, successful fetch only), display a dimmed hint guiding the user to `--save-feed` for future saves. (UX)
 - **R6.** `inkwell fetch <saved-youtube-feed> --latest` succeeds end-to-end: parser extracts a watchable URL from YouTube media-RSS entries; downloader + transcription + extraction proceed normally. (Gap B)
 - **R7.** Non-YouTube URLs behave exactly as today. Resolver is a no-op for unrecognized URLs. (Backwards compat)
-- **R8.** Playlist URLs (`?list=…`) are rejected with a clear error when passed to `add` or `fetch --save-source`. Playlist feed ingestion itself is out of scope. (Explicit error vs. silent channel-widening)
+- **R8.** Playlist URLs (`?list=…`) are rejected with a clear error when passed to `add` or `fetch --save-feed`. Playlist feed ingestion itself is out of scope. (Explicit error vs. silent channel-widening)
 
-**Terminology:** "Saved source" and "saved feed" refer to the same thing — a `FeedConfig` entry persisted by `ConfigManager`. `--save-source` is the user-facing term; `FeedConfig` is the internal persistence unit.
+**Terminology:** Everything is a "feed" — `inkwell add` creates a feed, `inkwell list feeds` lists them, `FeedConfig` is the persisted unit, and `--save-feed` is the opt-in on `fetch`. An earlier draft of this plan used "source" on the CLI surface; renamed to "feed" for consistency with the rest of the codebase after PR-39 review caught the drift.
 
 ## Scope Boundaries
 
@@ -50,7 +50,7 @@ User framing: *"We should be able to point to a video and help the user figure o
 ### Deferred to Separate Tasks
 
 - **Feed-name slugification** — accepting `"Oren Meets World"` as `--name` and slugifying to `oren-meets-world`: tracked in [#37](https://github.com/chekos/inkwell-cli/issues/37).
-- **`--save-source` auto-derived names + channel-collision detection** — tracked in [#38](https://github.com/chekos/inkwell-cli/issues/38). This PR requires explicit `--source-name`.
+- **`--save-feed` auto-derived names + channel-collision detection** — tracked in [#38](https://github.com/chekos/inkwell-cli/issues/38). This PR requires explicit `--feed-name`.
 - **Playlist ingestion** — create follow-up issue if/when needed.
 - **Universal `ContentSource` abstraction** — Q2 roadmap work at `2026-roadmap/03-universal-content-ingestion.md`.
 
@@ -59,7 +59,7 @@ User framing: *"We should be able to point to a video and help the user figure o
 ### Relevant Code and Patterns
 
 - `src/inkwell/cli.py::add_feed` (line 70) — single-file CLI command. New resolution logic attaches here as a pre-processing step before `FeedConfig(url=…)`.
-- `src/inkwell/cli.py::fetch_command` (line 569) — gains `--save-source` / `--source-name` options and the post-fetch hint.
+- `src/inkwell/cli.py::fetch_command` (line 569) — gains `--save-feed` / `--feed-name` options and the post-fetch hint.
 - `src/inkwell/feeds/parser.py::RSSParser._extract_enclosure_url` (line 290) — gains a YouTube branch. Empirical check against a live YouTube channel feed confirms:
   - `entry.yt_videoid` is populated (feedparser normalizes `yt:videoId` → `yt_videoid`).
   - `entry.link` is already `https://www.youtube.com/watch?v={id}` — no URL construction needed.
@@ -67,7 +67,7 @@ User framing: *"We should be able to point to a video and help the user figure o
   - `entry.published_parsed` is a valid `time.struct_time` → existing `_extract_published_date` works unchanged.
   - Duration isn't in the feed; `Episode.duration_seconds` is already `int | None` and all call sites gate on truthiness (`cli_list.py:169`, `cli_list.py:197`, etc.) — `None` is safe downstream.
 - `src/inkwell/audio/downloader.py` — already uses `yt_dlp.YoutubeDL` Python API (line 200+). `AudioDownloader.get_info(url)` at line 218 is the reusable metadata-extraction helper. Resolver will use the same import, not a subprocess.
-- `src/inkwell/config/manager.py::add_feed` (line 340) — raises `ValidationError` with a suggestion on duplicate names; not idempotent. v1 of `--save-source` catches this exception and downgrades it to a warning (so a repeat `--save-source` after a successful save doesn't hard-fail).
+- `src/inkwell/config/manager.py::add_feed` (line 340) — raises `ValidationError` with a suggestion on duplicate names; not idempotent. v1 of `--save-feed` catches this exception and downgrades it to a warning (so a repeat `--save-feed` after a successful save doesn't hard-fail).
 - `src/inkwell/feeds/validator.py::FeedValidator.validate_feed_url` — HEAD→GET→status-check validation is fine for YouTube feed URLs (empirically 200 + `text/xml`). No changes.
 - `src/inkwell/utils/errors.py` — `ValidationError(message, suggestion=…)` is the standard shape for CLI-surfaced errors.
 
@@ -96,9 +96,9 @@ User framing: *"We should be able to point to a video and help the user figure o
 - **YouTube host allow-list — minimal set.** Explicit set: `youtube.com`, `www.youtube.com`, `m.youtube.com`, `youtu.be`. Hosts outside this set pass through unchanged. `music.youtube.com`, `gaming.youtube.com`, `youtube-nocookie.com` deliberately excluded — niche, add on demand.
 - **Pre-resolved feed URL is a no-op.** If input URL host is `www.youtube.com` and path is `/feeds/videos.xml` with a `channel_id` query param, return it unchanged. Users who know the feed URL shouldn't be forced through resolution.
 - **Playlist URLs rejected at the resolver boundary.** If the URL contains `?list=` OR path includes `/playlist`, raise `ValidationError("Playlist URLs aren't supported yet — try the channel URL instead", suggestion="Find the channel at youtube.com/@handle")`. Prevents silent widening to full channel or silent playlist ingestion (out of scope).
-- **`--save-source` requires `--source-name`.** Auto-derivation of names from channel metadata is deferred to #38 (pairs with general slugification #37). v1 errors with a clear message when `--save-source` is passed without `--source-name`.
-- **`--save-source` runs after successful fetch.** Matches user mental model ("I liked this video, now save it"). Save errors become warnings, not exit codes — partial success (video processed, save failed) is more useful than rollback. Pre-fetch validation errors (invalid URL, missing `--source-name`) still exit non-zero *before* the pipeline starts.
-- **No emoji in the hint message.** Existing `inkwell` output has no emoji precedent (research confirmed). Style: `[dim]Want to track this channel? Re-run with [cyan]--save-source --source-name <name>[/cyan] to save it as a feed.[/dim]`.
+- **`--save-feed` requires `--feed-name`.** Auto-derivation of names from channel metadata is deferred to #38 (pairs with general slugification #37). v1 errors with a clear message when `--save-feed` is passed without `--feed-name`.
+- **`--save-feed` runs after successful fetch.** Matches user mental model ("I liked this video, now save it"). Save errors become warnings, not exit codes — partial success (video processed, save failed) is more useful than rollback. Pre-fetch validation errors (invalid URL, missing `--feed-name`) still exit non-zero *before* the pipeline starts.
+- **No emoji in the hint message.** Existing `inkwell` output has no emoji precedent (research confirmed). Style: `[dim]Want to track this channel? Re-run with [cyan]--save-feed --feed-name <name>[/cyan] to save it as a feed.[/dim]`.
 
 ## Open Questions
 
@@ -107,10 +107,10 @@ User framing: *"We should be able to point to a video and help the user figure o
 - *Use yt-dlp subprocess or Python API?* → Python API (reuses existing project pattern; fewer failure modes).
 - *Reuse `AudioDownloader.get_info`?* → **No** — its `extract_flat: False` triggers full channel-video enumeration. Resolver has its own `YoutubeDL` invocation with `extract_flat: "in_playlist", playlist_items: "0"`.
 - *Does `add <youtube-rss-url>` pass through?* → Yes, detect `feeds/videos.xml?channel_id=` and skip resolution.
-- *Auto-derive `--source-name` from channel handle?* → **No (v1)** — deferred to #38 to land with general slugification. `--source-name` is required when `--save-source` is set.
+- *Auto-derive `--feed-name` from channel handle?* → **No (v1)** — deferred to #38 to land with general slugification. `--feed-name` is required when `--save-feed` is set.
 - *Collision detection when channel already saved under different name?* → **Deferred to #38.** v1 relies on existing `ConfigManager.add_feed` duplicate-*name* error; duplicate-*channel* under different names is accepted (users can check with `inkwell list feeds`).
-- *`--save-source` ordering?* → After successful fetch; save failure = warning, not exit code. Pre-fetch validation errors (missing `--source-name`, non-YouTube URL with `--save-source`, playlist URL) exit non-zero *before* fetch runs.
-- *Hint timing on failed fetch or saved-feed fetch?* → Only on successful raw-YouTube-URL fetches when `--save-source` wasn't already passed.
+- *`--save-feed` ordering?* → After successful fetch; save failure = warning, not exit code. Pre-fetch validation errors (missing `--feed-name`, non-YouTube URL with `--save-feed`, playlist URL) exit non-zero *before* fetch runs.
+- *Hint timing on failed fetch or saved-feed fetch?* → Only on successful raw-YouTube-URL fetches when `--save-feed` wasn't already passed.
 - *Livestream/`/live/` URLs?* → In scope; yt-dlp resolves channel_id fine. Archived livestreams behave as regular videos.
 - *Playlist URL (`?list=…`) handling?* → Rejected at resolver with actionable error. Prevents silent channel-widening.
 - *Do we need a `channel_id` field on `FeedConfig`?* → No. Resolver output always has `?channel_id=` form; schema stays unchanged.
@@ -135,7 +135,7 @@ inkwell add <non-youtube-rss>    ─► unmatched  ──► pass-through ─►
 
 inkwell fetch <youtube-url>
   ├─ (default)                         ─► fetch single video; then print hint
-  └─ --save-source --source-name X     ─► validate up front; fetch single video; then resolve channel; then ConfigManager.add_feed (failure = warning, fetch exit code unchanged)
+  └─ --save-feed --feed-name X     ─► validate up front; fetch single video; then resolve channel; then ConfigManager.add_feed (failure = warning, fetch exit code unchanged)
 
 inkwell fetch <saved-name> --latest
   └─ parser sees entry.yt_videoid ─► returns entry.link as episode URL ─► downloader handles watch URL via yt-dlp
@@ -274,7 +274,7 @@ Test-first execution posture throughout. Each unit starts with a failing test th
 
 - [ ] **Unit 4: Hint message after YouTube-URL fetch**
 
-  **Goal:** `inkwell fetch <youtube-url>` (successful, no `--save-source`) prints a dimmed hint guiding the user toward `--save-source`. Suppressed on failure, for saved-feed lookups, and when `--save-source` was already passed.
+  **Goal:** `inkwell fetch <youtube-url>` (successful, no `--save-feed`) prints a dimmed hint guiding the user toward `--save-feed`. Suppressed on failure, for saved-feed lookups, and when `--save-feed` was already passed.
 
   **Requirements:** R3, R5
 
@@ -285,8 +285,8 @@ Test-first execution posture throughout. Each unit starts with a failing test th
   - Modify: `tests/integration/test_cli.py` — extend `TestCLIFetch`
 
   **Approach:**
-  - After the fetch completes successfully, if input was recognized as a YouTube URL (resolver would've returned non-None) and `--save-source` was not passed, print: `[dim]Want to track this channel? Re-run with [cyan]--save-source --source-name <name>[/cyan] to save it as a feed.[/dim]`
-  - A helper `_should_show_save_source_hint(url: str, save_source: bool, feed_name_arg: str) -> bool` centralizes the logic; unit-testable separately.
+  - After the fetch completes successfully, if input was recognized as a YouTube URL (resolver would've returned non-None) and `--save-feed` was not passed, print: `[dim]Want to track this channel? Re-run with [cyan]--save-feed --feed-name <name>[/cyan] to save it as a feed.[/dim]`
+  - A helper `_should_show_save_feed_hint(url: str, save_feed: bool, feed_name_arg: str) -> bool` centralizes the logic; unit-testable separately.
 
   **Execution note:** Test-first: write tests pinning each suppression condition, then the positive case. Implement last.
 
@@ -294,43 +294,43 @@ Test-first execution posture throughout. Each unit starts with a failing test th
   - Dimmed/cyan rendering via `rich.console.Console.print` already used in `cli.py:690` (`Use [cyan]inkwell list[/cyan]...`).
 
   **Test scenarios:**
-  - Happy path: fetch YouTube URL without `--save-source` on success → hint printed.
-  - Suppressed: fetch with `--save-source` → no hint.
+  - Happy path: fetch YouTube URL without `--save-feed` on success → hint printed.
+  - Suppressed: fetch with `--save-feed` → no hint.
   - Suppressed: fetch non-YouTube URL → no hint.
   - Suppressed: fetch of a saved feed name (not a URL) → no hint.
   - Suppressed: fetch fails (exception raised) → no hint.
-  - Integration (real console): capturing `runner.invoke(...).stdout` contains the hint text including the `--save-source` flag name.
+  - Integration (real console): capturing `runner.invoke(...).stdout` contains the hint text including the `--save-feed` flag name.
 
   **Verification:**
   - `uv run pytest tests/integration/test_cli.py::TestCLIFetch` passes.
   - Manual: run `inkwell fetch <yt-url> --dry-run`, see the hint at end of output.
 
-- [ ] **Unit 5: `--save-source` flag wires to `add_feed`**
+- [ ] **Unit 5: `--save-feed` flag wires to `add_feed`**
 
-  **Goal:** `inkwell fetch <youtube-url> --save-source --source-name X` saves the video's channel as a feed after a successful fetch. Save errors become warnings, not exit failures. Pre-fetch validation errors exit non-zero.
+  **Goal:** `inkwell fetch <youtube-url> --save-feed --feed-name X` saves the video's channel as a feed after a successful fetch. Save errors become warnings, not exit failures. Pre-fetch validation errors exit non-zero.
 
   **Requirements:** R3, R4
 
   **Dependencies:** Unit 2 (resolver).
 
   **Files:**
-  - Modify: `src/inkwell/cli.py::fetch_command` — add `--save-source` / `--source-name` options and post-fetch save block (all logic inline — no new module; totals ~30 lines)
+  - Modify: `src/inkwell/cli.py::fetch_command` — add `--save-feed` / `--feed-name` options and post-fetch save block (all logic inline — no new module; totals ~30 lines)
   - Modify: `tests/integration/test_cli.py` — new class `TestCLIFetchSaveSource`
 
   **Approach:**
   - New typer options on `fetch_command`:
-    - `save_source: bool = typer.Option(False, "--save-source", help="Also save this video's channel as a feed")`
-    - `source_name: str | None = typer.Option(None, "--source-name", help="Name for the saved source (required with --save-source)")`
+    - `save_feed: bool = typer.Option(False, "--save-feed", help="Also save this video's channel as a feed")`
+    - `feed_name: str | None = typer.Option(None, "--feed-name", help="Name for the saved feed (required with --save-feed)")`
   - **Pre-fetch validation (exit non-zero on failure — happens BEFORE fetch pipeline starts):**
-    1. If `save_source` and `source_name is None` → raise `ValidationError("--save-source requires --source-name", suggestion="Pass --source-name <name> to save the channel with a specific name")`.
-    2. If `save_source` and input URL is not a YouTube URL (i.e., resolver returns `None`) → raise `ValidationError("--save-source only supports YouTube URLs currently", suggestion="For non-YouTube sources, use 'inkwell add <feed-url> --name <name>' instead")`.
-    3. If `save_source` and input URL is a saved feed name (not a URL at all) → same error as #2 (need a YouTube URL).
+    1. If `save_feed` and `feed_name is None` → raise `ValidationError("--save-feed requires --feed-name", suggestion="Pass --feed-name <name> to save the channel with a specific name")`.
+    2. If `save_feed` and input URL is not a YouTube URL (i.e., resolver returns `None`) → raise `ValidationError("--save-feed only supports YouTube URLs currently", suggestion="For non-YouTube sources, use 'inkwell add <feed-url> --name <name>' instead")`.
+    3. If `save_feed` and input URL is a saved feed name (not a URL at all) → same error as #2 (need a YouTube URL).
   - **Post-fetch save (warnings only on failure):**
-    1. If `save_source` is False → skip entirely (Unit 4's hint block handles guidance when appropriate).
+    1. If `save_feed` is False → skip entirely (Unit 4's hint block handles guidance when appropriate).
     2. Call `resolve_youtube_url(url)` to get `(resolved_feed_url, _channel_name)`.
-    3. Call `ConfigManager.add_feed(source_name, FeedConfig(url=HttpUrl(resolved_feed_url), category=None))`.
-    4. On success: `console.print(f"[green]✓[/green] Saved channel as feed '[bold]{source_name}[/bold]'")`.
-    5. On any exception (duplicate name via existing `ConfigManager`, disk error, resolver failure): `console.print(f"[yellow]⚠[/yellow] Couldn't save source: {e}")` — do NOT re-raise; fetch exit code remains 0.
+    3. Call `ConfigManager.add_feed(feed_name, FeedConfig(url=HttpUrl(resolved_feed_url), category=None))`.
+    4. On success: `console.print(f"[green]✓[/green] Saved channel as feed '[bold]{feed_name}[/bold]'")`.
+    5. On any exception (duplicate name via existing `ConfigManager`, disk error, resolver failure): `console.print(f"[yellow]⚠[/yellow] Couldn't save feed: {e}")` — do NOT re-raise; fetch exit code remains 0.
 
   **Execution note:** Start with failing tests for each pre-fetch validation branch, then each post-fetch save branch. Characterization-adjacent enough that test-first locks each branch cleanly.
 
@@ -340,18 +340,18 @@ Test-first execution posture throughout. Each unit starts with a failing test th
   - `ConfigManager.add_feed` duplicate-name handling: rely on existing behavior (raises `ValidationError`); catch + downgrade to warning per post-fetch rule.
 
   **Test scenarios:**
-  - Happy path: `fetch <watch-url> --save-source --source-name my-channel` (mocked fetch + resolver) saves feed named `my-channel`; `list feeds` shows it.
-  - Pre-fetch error: `fetch <watch-url> --save-source` (no `--source-name`) → CLI exits non-zero with actionable ValidationError; fetch pipeline never runs.
-  - Pre-fetch error: `fetch <non-youtube-rss> --save-source --source-name foo` → CLI exits non-zero; fetch pipeline never runs.
-  - Pre-fetch error: `fetch <saved-feed-name> --save-source --source-name foo` → CLI exits non-zero (URL is not a YouTube URL).
+  - Happy path: `fetch <watch-url> --save-feed --feed-name my-channel` (mocked fetch + resolver) saves feed named `my-channel`; `list feeds` shows it.
+  - Pre-fetch error: `fetch <watch-url> --save-feed` (no `--feed-name`) → CLI exits non-zero with actionable ValidationError; fetch pipeline never runs.
+  - Pre-fetch error: `fetch <non-youtube-rss> --save-feed --feed-name foo` → CLI exits non-zero; fetch pipeline never runs.
+  - Pre-fetch error: `fetch <saved-feed-name> --save-feed --feed-name foo` → CLI exits non-zero (URL is not a YouTube URL).
   - Post-fetch error: fetch succeeds, `add_feed` raises duplicate-name → warning printed, fetch exit code remains 0.
   - Post-fetch error: fetch succeeds, resolver fails mid-run (yt-dlp transient error) → warning printed, fetch exit code remains 0.
-  - Regression: `fetch <youtube-url>` without `--save-source` → no save happens; config unchanged; hint printed (Unit 4 behavior).
-  - Integration: end-to-end with mocked fetch success — run `fetch --save-source --source-name foo`, assert feed persisted in `ConfigManager(config_dir=tmp_path).list_feeds()`.
+  - Regression: `fetch <youtube-url>` without `--save-feed` → no save happens; config unchanged; hint printed (Unit 4 behavior).
+  - Integration: end-to-end with mocked fetch success — run `fetch --save-feed --feed-name foo`, assert feed persisted in `ConfigManager(config_dir=tmp_path).list_feeds()`.
 
   **Verification:**
   - `uv run pytest tests/integration/test_cli.py::TestCLIFetchSaveSource` passes.
-  - Manual: `uv run inkwell fetch "https://www.youtube.com/watch?v=pKeZ5XK2vp4" --dry-run --save-source --source-name oren-meets-world` saves the feed; re-running errors-become-warning via existing duplicate-name handling.
+  - Manual: `uv run inkwell fetch "https://www.youtube.com/watch?v=pKeZ5XK2vp4" --dry-run --save-feed --feed-name oren-meets-world` saves the feed; re-running errors-become-warning via existing duplicate-name handling.
 
 - [ ] **Unit 6: ADR, devlog, and docs updates**
 
@@ -364,14 +364,14 @@ Test-first execution posture throughout. Each unit starts with a failing test th
   **Files:**
   - Create: `docs/building-in-public/adr/036-youtube-url-resolution.md`
   - Create: `docs/building-in-public/devlog/2026-04-22-youtube-url-ingestion.md` (start this as soon as the branch opens; close out when merged)
-  - Modify: `docs/reference/cli-commands.md` — document `--save-source`, `--source-name`, and that `add`/`fetch` accept YouTube URLs
+  - Modify: `docs/reference/cli-commands.md` — document `--save-feed`, `--feed-name`, and that `add`/`fetch` accept YouTube URLs
   - Modify: `docs/user-guide/feeds.md` — add a "YouTube channels" subsection showing the paste-a-URL workflow
 
   **Approach:**
-  - ADR 036 follows the template at `docs/building-in-public/adr/000-template.md` — brief, per CLAUDE.md guidance. Captures: *why YouTube URL resolution belongs in the CLI layer and not a new `ContentSource` abstraction*; *why yt-dlp Python API over subprocess*; *why parse channel_id from URL rather than add a `FeedConfig` field*; *what the `--save-source` default-false UX trades off*.
+  - ADR 036 follows the template at `docs/building-in-public/adr/000-template.md` — brief, per CLAUDE.md guidance. Captures: *why YouTube URL resolution belongs in the CLI layer and not a new `ContentSource` abstraction*; *why yt-dlp Python API over subprocess*; *why parse channel_id from URL rather than add a `FeedConfig` field*; *what the `--save-feed` default-false UX trades off*.
   - Devlog: one entry per `docs/building-in-public/devlog/` template — record the user-session trace, empirical feedparser check, and decisions.
   - CLI reference: add flag rows matching existing table styles.
-  - User guide: 3-paragraph section after existing `add` docs — show `inkwell add <channel-url>`, `inkwell fetch <video-url>`, and `--save-source`.
+  - User guide: 3-paragraph section after existing `add` docs — show `inkwell add <channel-url>`, `inkwell fetch <video-url>`, and `--save-feed`.
 
   **Patterns to follow:**
   - `docs/building-in-public/adr/005-rss-parser-library.md` is a good length reference for brief ADRs.
@@ -387,8 +387,8 @@ Test-first execution posture throughout. Each unit starts with a failing test th
 ## System-Wide Impact
 
 - **Interaction graph:** `cli.py::add_feed` gains a pre-processing call to `resolvers.youtube`; `cli.py::fetch_command` gains a post-fetch save block and hint block; `feeds/parser.py::_extract_enclosure_url` gains a YouTube branch. No other module changes.
-- **Error propagation:** Resolver errors surface as `ValidationError` with suggestions, rendered by the existing CLI error path. `--save-source` save failures become warnings (yellow), do not affect exit code.
-- **State lifecycle risks:** `--save-source` could leave config in a state where fetch succeeded but save failed — intentional per design decision. User sees an obvious warning; re-running with `--save-source` is safe (idempotent via collision detection).
+- **Error propagation:** Resolver errors surface as `ValidationError` with suggestions, rendered by the existing CLI error path. `--save-feed` save failures become warnings (yellow), do not affect exit code.
+- **State lifecycle risks:** `--save-feed` could leave config in a state where fetch succeeded but save failed — intentional per design decision. User sees an obvious warning; re-running with `--save-feed` is safe (idempotent via collision detection).
 - **API surface parity:** `inkwell add` and `inkwell fetch` both gain YouTube URL support. Other commands (`remove`, `list`, `config`, `transcribe`, `cache`, `costs`) unchanged — they operate on saved feeds by name, not on URLs.
 - **Integration coverage:** Unit tests mock yt-dlp; at least one end-to-end manual smoke test (fetch a real YouTube channel feed via saved feed name) is required before merging to verify the parser + downloader + transcription path actually chains end-to-end. Note in PR checklist.
 - **Unchanged invariants:** RSS-native `add` flow, `FeedConfig` schema, `ConfigManager.add_feed` duplicate-name semantics, `FeedValidator` behavior, existing `fetch` exit codes for non-YouTube URLs — all preserved.
@@ -411,7 +411,7 @@ Test-first execution posture throughout. Each unit starts with a failing test th
 - No migration required — zero schema changes.
 - No new config keys.
 - No new required dependencies (yt-dlp already present).
-- Release notes should call out: "Paste any YouTube URL into `inkwell add`" and "New `--save-source` flag on `inkwell fetch`".
+- Release notes should call out: "Paste any YouTube URL into `inkwell add`" and "New `--save-feed` flag on `inkwell fetch`".
 - User docs updates (Unit 6) ship in the same PR.
 
 ## Sources & References

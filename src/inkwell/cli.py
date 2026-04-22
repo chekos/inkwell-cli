@@ -80,10 +80,10 @@ def show_version() -> None:
     console.print(f"[bold cyan]Inkwell CLI[/bold cyan] v{__version__}")
 
 
-def _should_show_save_source_hint(*, url: str, input_was_url: bool) -> bool:
-    """Decide whether to print the --save-source hint after a YouTube fetch.
+def _should_show_save_feed_hint(*, url: str, input_was_url: bool) -> bool:
+    """Decide whether to print the --save-feed hint after a YouTube fetch.
 
-    The sole callsite already guards on `not save_source`; this helper just
+    The sole callsite already guards on `not save_feed`; this helper just
     covers the remaining two conditions (URL-shaped input + YouTube host).
     Suppressed for saved-feed-name lookups and non-YouTube URLs.
     """
@@ -98,12 +98,12 @@ def _slugify(s: str) -> str:
     return _NAME_SLUG_RE.sub("-", s.lower()).strip("-")
 
 
-def _derive_source_name(resolved: ResolvedFeed, existing: set[str]) -> str:
-    """Auto-derive a feed name from channel metadata when --source-name is omitted.
+def _derive_feed_name(resolved: ResolvedFeed, existing: set[str]) -> str:
+    """Auto-derive a feed name from channel metadata when --feed-name is omitted.
 
     Preference: slugified channel name → channel_id from the feed URL →
     generic "youtube-feed". Collisions are disambiguated with a numeric
-    suffix so `--save-source` can always succeed when the URL is valid.
+    suffix so `--save-feed` can always succeed when the URL is valid.
     """
     candidate = ""
     if resolved.channel_name:
@@ -707,18 +707,18 @@ def fetch_command(
         help="Force specific transcription plugin (e.g., youtube, gemini)",
         envvar="INKWELL_TRANSCRIBER",
     ),
-    save_source: bool = typer.Option(
+    save_feed: bool = typer.Option(
         False,
-        "--save-source",
+        "--save-feed",
         help=(
             "Also save this video's channel as a feed (YouTube URLs only). "
-            "Auto-names from channel metadata unless --source-name is set."
+            "Auto-names from channel metadata unless --feed-name is set."
         ),
     ),
-    source_name: str | None = typer.Option(
+    feed_name: str | None = typer.Option(
         None,
-        "--source-name",
-        help="Feed name for --save-source (optional; derived from channel metadata if omitted).",
+        "--feed-name",
+        help="Feed name for --save-feed (optional; derived from channel metadata if omitted).",
     ),
 ) -> None:
     """Fetch and process a podcast episode.
@@ -753,23 +753,23 @@ def fetch_command(
             manager = ConfigManager()
             config = manager.load_config()
 
-            # --source-name is metadata for --save-source; it has no meaning
+            # --feed-name is metadata for --save-feed; it has no meaning
             # on its own and silently ignoring it would mislead scripts into
             # thinking the channel was persisted.
-            if source_name is not None and not save_source:
+            if feed_name is not None and not save_feed:
                 raise ValidationError(
-                    "--source-name has no effect without --save-source",
+                    "--feed-name has no effect without --save-feed",
                     suggestion=(
-                        "Add --save-source to persist the channel, or drop "
-                        "--source-name if you meant a one-time fetch."
+                        "Add --save-feed to persist the channel, or drop "
+                        "--feed-name if you meant a one-time fetch."
                     ),
                 )
 
             # Normalize scheme-less URL-shaped inputs up-front so the
-            # --save-source guard and the feed-name lookup both see the same
+            # --save-feed guard and the feed-name lookup both see the same
             # URL. Feed names never contain both `.` and `/`, so this is
             # unambiguous. Without this, `www.youtube.com/watch?v=X
-            # --save-source` would be rejected as "not YouTube" even though
+            # --save-feed` would be rejected as "not YouTube" even though
             # the same input works in plain fetch mode.
             if (
                 not url_or_feed.startswith(("http://", "https://"))
@@ -792,12 +792,12 @@ def fetch_command(
 
             is_url = url_or_feed.startswith(("http://", "https://"))
 
-            # Pre-fetch validation for --save-source (fail fast, before the
+            # Pre-fetch validation for --save-feed (fail fast, before the
             # long-running pipeline starts).
-            if save_source:
+            if save_feed:
                 if not is_url or not is_youtube_url(url_or_feed):
                     raise ValidationError(
-                        "--save-source only supports YouTube URLs currently",
+                        "--save-feed only supports YouTube URLs currently",
                         suggestion=(
                             "For non-YouTube sources, use "
                             "'inkwell add <feed-url> --name <name>' instead."
@@ -1072,21 +1072,21 @@ def fetch_command(
 
                 console.print(table)
 
-                # Post-fetch: save channel as a feed (--save-source) or show
-                # a hint about --save-source on raw YouTube URL fetches.
-                if save_source:
+                # Post-fetch: save channel as a feed (--save-feed) or show
+                # a hint about --save-feed on raw YouTube URL fetches.
+                if save_feed:
                     try:
                         resolved = await resolve_youtube_url(url_or_feed)
                         if resolved is None:
-                            raise ValidationError("Couldn't save source: URL isn't a YouTube URL")
-                        # Auto-derive the feed name when --source-name is omitted.
+                            raise ValidationError("Couldn't save feed: URL isn't a YouTube URL")
+                        # Auto-derive the feed name when --feed-name is omitted.
                         # The user pasted a YouTube URL; they shouldn't have to
                         # know a good feed name up front.
-                        if source_name is None:
+                        if feed_name is None:
                             existing = set(manager.list_feeds().keys())
-                            effective_name = _derive_source_name(resolved, existing)
+                            effective_name = _derive_feed_name(resolved, existing)
                         else:
-                            effective_name = source_name
+                            effective_name = feed_name
                         manager.add_feed(
                             effective_name,
                             FeedConfig(
@@ -1098,20 +1098,20 @@ def fetch_command(
                             f"[green]✓[/green] Saved channel as feed "
                             f"'[bold]{effective_name}[/bold]'"
                         )
-                        if source_name is None:
+                        if feed_name is None:
                             err_console.print(
                                 f"[dim]  Auto-named from channel metadata. "
                                 f"To rename: [cyan]inkwell remove {effective_name}[/cyan] "
                                 f"then [cyan]inkwell add <url> --name <new-name>[/cyan]. "
-                                f"Pass [cyan]--source-name[/cyan] next time to skip "
+                                f"Pass [cyan]--feed-name[/cyan] next time to skip "
                                 f"this.[/dim]"
                             )
                     except (ValidationError, ConfigError) as e:
-                        err_console.print(f"[yellow]⚠[/yellow] Couldn't save source: {e}")
-                elif _should_show_save_source_hint(url=url_or_feed, input_was_url=is_url):
+                        err_console.print(f"[yellow]⚠[/yellow] Couldn't save feed: {e}")
+                elif _should_show_save_feed_hint(url=url_or_feed, input_was_url=is_url):
                     err_console.print(
                         "\n[dim]Want to track this channel? Re-run with "
-                        "[cyan]--save-source[/cyan] to save it as a feed.[/dim]"
+                        "[cyan]--save-feed[/cyan] to save it as a feed.[/dim]"
                     )
 
         except KeyboardInterrupt:

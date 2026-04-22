@@ -18,10 +18,10 @@ Close two gaps so users can paste any YouTube URL into `inkwell add` /
   Uses its own yt-dlp opts (`extract_flat: "in_playlist",
   playlist_items: "0"`) to avoid enumerating whole channel video lists.
 - `inkwell add` calls the resolver; non-YouTube URLs pass through.
-- `inkwell fetch` gained `--save-source` / `--source-name`; pre-fetch
+- `inkwell fetch` gained `--save-feed` / `--feed-name`; pre-fetch
   validation rejects missing name, non-YouTube URLs, and playlist URLs
   before any API spend.
-- Dimmed post-fetch hint guides users toward `--save-source` when they
+- Dimmed post-fetch hint guides users toward `--save-feed` when they
   paste a raw YouTube URL without it.
 - ADR 036 records the key decisions.
 
@@ -41,7 +41,7 @@ Close two gaps so users can paste any YouTube URL into `inkwell add` /
 
 - End-to-end smoke test against a real `@handle` URL.
 - Follow-ups tracked separately: #37 (general feed-name slugification),
-  #38 (`--save-source` auto-name + channel-collision detection).
+  #38 (`--save-feed` auto-name + channel-collision detection).
 
 ## Links
 

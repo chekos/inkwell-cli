@@ -191,36 +191,36 @@ class TestCLIAddYouTube:
         assert "will-not-save" not in feeds
 
 
-class TestShouldShowSaveSourceHint:
+class TestShouldShowSaveFeedHint:
     """Unit tests for the hint-visibility decision helper."""
 
     def test_shows_on_youtube_url(self) -> None:
-        from inkwell.cli import _should_show_save_source_hint
+        from inkwell.cli import _should_show_save_feed_hint
 
-        assert _should_show_save_source_hint(
+        assert _should_show_save_feed_hint(
             url="https://www.youtube.com/watch?v=abc",
             input_was_url=True,
         )
 
     def test_suppressed_for_non_youtube_url(self) -> None:
-        from inkwell.cli import _should_show_save_source_hint
+        from inkwell.cli import _should_show_save_feed_hint
 
-        assert not _should_show_save_source_hint(
+        assert not _should_show_save_feed_hint(
             url="https://example.com/feed.rss",
             input_was_url=True,
         )
 
     def test_suppressed_when_input_was_saved_feed_name(self) -> None:
-        from inkwell.cli import _should_show_save_source_hint
+        from inkwell.cli import _should_show_save_feed_hint
 
-        assert not _should_show_save_source_hint(
+        assert not _should_show_save_feed_hint(
             url="https://www.youtube.com/feeds/videos.xml?channel_id=UC",
             input_was_url=False,
         )
 
 
-class TestCLIFetchSaveSource:
-    """Pre-fetch validation for `inkwell fetch --save-source`.
+class TestCLIFetchSaveFeed:
+    """Pre-fetch validation for `inkwell fetch --save-feed`.
 
     Post-fetch save behavior (successful resolve + add_feed + error-as-warning)
     is exercised by the end-to-end smoke test in the execution plan; mocking
@@ -228,10 +228,10 @@ class TestCLIFetchSaveSource:
     to the simple resolve+add_feed block being tested.
     """
 
-    def test_save_source_auto_derives_name_from_channel_metadata(
+    def test_save_feed_auto_derives_name_from_channel_metadata(
         self, tmp_path: Path, monkeypatch
     ) -> None:
-        """When --source-name is omitted, derive a name from the channel name.
+        """When --feed-name is omitted, derive a name from the channel name.
 
         The user pasted a YouTube URL; they shouldn't have to invent a feed
         name too. The hint that follows tells them how to change it.
@@ -267,7 +267,7 @@ class TestCLIFetchSaveSource:
             [
                 "fetch",
                 "https://www.youtube.com/watch?v=abc",
-                "--save-source",
+                "--save-feed",
                 "--dry-run",
                 "--output-dir",
                 str(tmp_path),
@@ -281,9 +281,9 @@ class TestCLIFetchSaveSource:
         # User needs to know the derived name and how to change it.
         assert "oren-meets-world" in result.output
         assert "Auto-named" in result.output or "auto-named" in result.output
-        assert "--source-name" in result.output
+        assert "--feed-name" in result.output
 
-    def test_save_source_auto_derive_falls_back_to_channel_id(
+    def test_save_feed_auto_derive_falls_back_to_channel_id(
         self, tmp_path: Path, monkeypatch
     ) -> None:
         """When yt-dlp returned no channel_name (pure URL-shape path), fall
@@ -319,7 +319,7 @@ class TestCLIFetchSaveSource:
             [
                 "fetch",
                 "https://www.youtube.com/channel/UCfallback",
-                "--save-source",
+                "--save-feed",
                 "--dry-run",
                 "--output-dir",
                 str(tmp_path),
@@ -331,7 +331,7 @@ class TestCLIFetchSaveSource:
         # Lowercased channel_id is used as the fallback name.
         assert "ucfallback" in feeds
 
-    def test_save_source_auto_derive_disambiguates_collisions(
+    def test_save_feed_auto_derive_disambiguates_collisions(
         self, tmp_path: Path, monkeypatch
     ) -> None:
         """If the derived name collides with an existing feed, append -2."""
@@ -379,7 +379,7 @@ class TestCLIFetchSaveSource:
             [
                 "fetch",
                 "https://www.youtube.com/watch?v=abc",
-                "--save-source",
+                "--save-feed",
                 "--dry-run",
                 "--output-dir",
                 str(tmp_path),
@@ -391,8 +391,8 @@ class TestCLIFetchSaveSource:
         assert "oren-meets-world-2" in feeds
         assert "channel_id=UCdup" in str(feeds["oren-meets-world-2"].url)
 
-    def test_save_source_with_non_youtube_url_errors(self, tmp_path: Path, monkeypatch) -> None:
-        """--save-source only supports YouTube URLs in v1."""
+    def test_save_feed_with_non_youtube_url_errors(self, tmp_path: Path, monkeypatch) -> None:
+        """--save-feed only supports YouTube URLs in v1."""
         monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
 
         result = runner.invoke(
@@ -400,8 +400,8 @@ class TestCLIFetchSaveSource:
             [
                 "fetch",
                 "https://example.com/feed.rss",
-                "--save-source",
-                "--source-name",
+                "--save-feed",
+                "--feed-name",
                 "foo",
                 "--dry-run",
             ],
@@ -410,14 +410,14 @@ class TestCLIFetchSaveSource:
         assert result.exit_code != 0
         assert "YouTube" in result.stdout
 
-    def test_save_source_with_saved_feed_name_errors(self, tmp_path: Path, monkeypatch) -> None:
-        """--save-source against a saved feed name (not a URL) exits non-zero.
+    def test_save_feed_with_saved_feed_name_errors(self, tmp_path: Path, monkeypatch) -> None:
+        """--save-feed against a saved feed name (not a URL) exits non-zero.
 
         Users should pass a URL, not a feed-name lookup, when saving sources.
         """
         monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
 
-        # Pre-seed a feed so the lookup succeeds far enough to reach save-source validation.
+        # Pre-seed a feed so the lookup succeeds far enough to reach save-feed validation.
         manager = ConfigManager(config_dir=tmp_path)
         from inkwell.config.schema import AuthConfig, FeedConfig
 
@@ -435,8 +435,8 @@ class TestCLIFetchSaveSource:
                 "fetch",
                 "my-feed",
                 "--latest",
-                "--save-source",
-                "--source-name",
+                "--save-feed",
+                "--feed-name",
                 "another-name",
                 "--dry-run",
             ],
@@ -445,10 +445,10 @@ class TestCLIFetchSaveSource:
         assert result.exit_code != 0
         assert "YouTube" in result.stdout or "URL" in result.stdout
 
-    def test_save_source_happy_path_persists_feed_after_fetch(
+    def test_save_feed_happy_path_persists_feed_after_fetch(
         self, tmp_path: Path, monkeypatch
     ) -> None:
-        """R4: successful fetch + --save-source writes a feed and exits 0."""
+        """R4: successful fetch + --save-feed writes a feed and exits 0."""
         from types import SimpleNamespace
 
         monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
@@ -480,8 +480,8 @@ class TestCLIFetchSaveSource:
             [
                 "fetch",
                 "https://www.youtube.com/watch?v=abc",
-                "--save-source",
-                "--source-name",
+                "--save-feed",
+                "--feed-name",
                 "new-channel",
                 "--dry-run",
                 "--output-dir",
@@ -494,7 +494,7 @@ class TestCLIFetchSaveSource:
         assert "new-channel" in feeds
         assert "channel_id=UCsaved" in str(feeds["new-channel"].url)
 
-    def test_save_source_failure_warns_but_does_not_fail_fetch(
+    def test_save_feed_failure_warns_but_does_not_fail_fetch(
         self, tmp_path: Path, monkeypatch
     ) -> None:
         """R4 invariant: if add_feed raises post-fetch, print a warning and
@@ -544,8 +544,8 @@ class TestCLIFetchSaveSource:
             [
                 "fetch",
                 "https://www.youtube.com/watch?v=abc",
-                "--save-source",
-                "--source-name",
+                "--save-feed",
+                "--feed-name",
                 "already-taken",
                 "--dry-run",
                 "--output-dir",
@@ -555,15 +555,15 @@ class TestCLIFetchSaveSource:
 
         # Fetch succeeded; the save warning must not flip the exit code.
         assert result.exit_code == 0, result.output
-        assert "Couldn't save source" in result.output
+        assert "Couldn't save feed" in result.output
 
-    def test_save_source_accepts_scheme_less_www_youtube_url(
+    def test_save_feed_accepts_scheme_less_www_youtube_url(
         self, tmp_path: Path, monkeypatch
     ) -> None:
-        """`www.youtube.com/...` (no scheme) must work with --save-source.
+        """`www.youtube.com/...` (no scheme) must work with --save-feed.
 
         Codex review #1: the scheme-less normalization used to run only
-        inside the feed-name fallback, so --save-source rejected this shape
+        inside the feed-name fallback, so --save-feed rejected this shape
         as "not YouTube" even though plain fetch accepted it.
         """
         from types import SimpleNamespace
@@ -597,8 +597,8 @@ class TestCLIFetchSaveSource:
             [
                 "fetch",
                 "www.youtube.com/watch?v=abc",
-                "--save-source",
-                "--source-name",
+                "--save-feed",
+                "--feed-name",
                 "scheme-less",
                 "--dry-run",
                 "--output-dir",
@@ -610,8 +610,8 @@ class TestCLIFetchSaveSource:
         feeds = ConfigManager(config_dir=tmp_path).list_feeds()
         assert "scheme-less" in feeds
 
-    def test_source_name_without_save_source_errors(self, tmp_path: Path, monkeypatch) -> None:
-        """--source-name alone is a no-op that silently mislead users and
+    def test_feed_name_without_save_feed_errors(self, tmp_path: Path, monkeypatch) -> None:
+        """--feed-name alone is a no-op that silently mislead users and
         scripts into thinking the channel was persisted. Reject up-front.
 
         Codex review #2.
@@ -623,18 +623,18 @@ class TestCLIFetchSaveSource:
             [
                 "fetch",
                 "https://www.youtube.com/watch?v=abc",
-                "--source-name",
+                "--feed-name",
                 "orphan-name",
                 "--dry-run",
             ],
         )
 
         assert result.exit_code != 0
-        assert "--save-source" in result.output
+        assert "--save-feed" in result.output
         # Suggestion surfaces both remediation paths.
         assert "persist" in result.output.lower() or "drop" in result.output.lower()
 
-    def test_save_source_with_playlist_url_errors_before_pipeline(
+    def test_save_feed_with_playlist_url_errors_before_pipeline(
         self, tmp_path: Path, monkeypatch
     ) -> None:
         """Playlist URLs must be rejected *before* the pipeline runs.
@@ -659,8 +659,8 @@ class TestCLIFetchSaveSource:
             [
                 "fetch",
                 "https://www.youtube.com/playlist?list=PL12345",
-                "--save-source",
-                "--source-name",
+                "--save-feed",
+                "--feed-name",
                 "some-playlist",
                 "--dry-run",
             ],
@@ -671,7 +671,7 @@ class TestCLIFetchSaveSource:
 
 
 class TestCLIFetchHintSuppression:
-    """The --save-source hint must not fire when the fetch itself failed."""
+    """The --save-feed hint must not fire when the fetch itself failed."""
 
     def test_hint_suppressed_on_fetch_failure(self, tmp_path: Path, monkeypatch) -> None:
         """If the orchestrator raises, no hint — the fetch didn't succeed."""
@@ -697,7 +697,7 @@ class TestCLIFetchHintSuppression:
         )
 
         assert result.exit_code != 0
-        assert "--save-source" not in result.stdout
+        assert "--save-feed" not in result.stdout
 
 
 class TestCLIList:

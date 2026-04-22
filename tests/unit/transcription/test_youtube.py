@@ -3,6 +3,7 @@
 from unittest.mock import Mock, patch
 
 import pytest
+from youtube_transcript_api import FetchedTranscriptSnippet
 from youtube_transcript_api._errors import (
     CouldNotRetrieveTranscript,
     NoTranscriptFound,
@@ -157,11 +158,17 @@ class TestTranscriptFetching:
 
     @pytest.fixture
     def mock_transcript_data(self):
-        """Create mock transcript data."""
+        """Create mock transcript data.
+
+        youtube-transcript-api 1.0+ returns FetchedTranscriptSnippet dataclasses
+        (attribute access), not dicts — mirror the real library's shape so this
+        mock catches subscript-access regressions like the one that forced every
+        YouTube fetch to fall back to paid Gemini transcription.
+        """
         return [
-            {"text": "Hello world", "start": 0.0, "duration": 2.0},
-            {"text": "This is a test", "start": 2.0, "duration": 3.0},
-            {"text": "Goodbye", "start": 5.0, "duration": 1.5},
+            FetchedTranscriptSnippet(text="Hello world", start=0.0, duration=2.0),
+            FetchedTranscriptSnippet(text="This is a test", start=2.0, duration=3.0),
+            FetchedTranscriptSnippet(text="Goodbye", start=5.0, duration=1.5),
         ]
 
     @pytest.mark.asyncio

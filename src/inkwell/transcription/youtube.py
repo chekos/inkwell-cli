@@ -301,15 +301,18 @@ class YouTubeTranscriber(TranscriptionPlugin):
                         f"{', '.join(t.language_code for t in transcript_list)}"
                     ) from e
 
-            # Fetch transcript data
+            # Fetch transcript data. youtube-transcript-api >= 1.0 returns a
+            # FetchedTranscript whose entries are FetchedTranscriptSnippet
+            # dataclasses (attribute access, not dict subscript). Prior code
+            # used entry["text"] + # type: ignore[index]; that silently broke
+            # every YouTube-caption fetch and forced fallback to paid Gemini.
             transcript_data = transcript_obj.fetch()
 
-            # youtube_transcript_api FetchedTranscript supports indexing but lacks proper type stubs
             segments = [
                 TranscriptSegment(
-                    text=entry["text"],  # type: ignore[index]
-                    start=entry["start"],  # type: ignore[index]
-                    duration=entry["duration"],  # type: ignore[index]
+                    text=entry.text,
+                    start=entry.start,
+                    duration=entry.duration,
                 )
                 for entry in transcript_data
             ]

@@ -173,6 +173,7 @@ inkwell fetch <SOURCE> [OPTIONS]
 | `--output-dir` | `-o` | path | `~/inkwell-notes` | Base directory for output |
 | `--podcast-name` | `-n` | string | Auto | Podcast name for output directory (overrides auto-detection) |
 | `--latest` | `-l` | flag | false | Process only latest episode |
+| `--count` | | int | | Process the N latest episodes from a feed |
 | `--episode` | `-e` | string | | Position (3), range (1-5), list (1,3,7), or title keyword |
 | `--templates` | `-t` | string | Auto | Comma-separated template list |
 | `--category` | `-c` | string | Auto | Episode category |
@@ -202,6 +203,9 @@ inkwell fetch https://youtube.com/watch?v=xyz --podcast-name "Python Tutorials"
 
 # Latest from feed
 inkwell fetch my-podcast --latest
+
+# Latest 5 episodes from feed
+inkwell fetch my-podcast --count 5
 
 # Specific episode by position
 inkwell fetch my-podcast --episode 3

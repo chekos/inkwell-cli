@@ -37,6 +37,7 @@ inkwell add <URL> --feed-name <NAME> [OPTIONS]
 | `--feed-name` | `-n` | string | Required | Feed display name or identifier. Human-readable names are slugified for the config key. |
 | `--name` | | string | Required | Backward-compatible alias for `--feed-name` |
 | `--category` | `-c` | string | None | Feed category |
+| `--extra-templates` | `-t` | string | None | Additional templates to run for this feed, added to category defaults. Comma-separated. |
 | `--auth` | | flag | false | Prompt for authentication |
 
 ### Examples
@@ -50,6 +51,9 @@ inkwell add https://example.com/feed.rss --feed-name "Oren Meets World"
 
 # With category
 inkwell add https://example.com/feed.rss --feed-name tech-show --category tech
+
+# With feed-level extra templates
+inkwell add https://example.com/feed.rss --feed-name interview-show --category interview --extra-templates books-mentioned,step-by-step-plan
 
 # With authentication
 inkwell add https://private.com/feed.rss --feed-name premium --auth
@@ -80,9 +84,9 @@ inkwell list
 ╭─────────────────────────────────────────────────────────╮
 │           Configured Podcast Feeds                      │
 ├────────────────┬───────────────────┬──────┬─────────────┤
-│ Name           │ URL               │ Auth │ Category    │
+│ Name           │ URL               │ Auth │ Category │ Extra Templates │
 ├────────────────┼───────────────────┼──────┼─────────────┤
-│ my-podcast     │ example.com/...   │ —    │ tech        │
+│ my-podcast     │ example.com/...   │ —    │ tech     │ books-mentioned │
 ╰────────────────┴───────────────────┴──────┴─────────────╯
 
 Total: 1 feed(s)
@@ -389,6 +393,27 @@ inkwell config set <KEY> <VALUE>
 inkwell config set log_level DEBUG
 inkwell config set default_output_dir ~/Documents/podcasts
 inkwell config set transcription.api_key "your-key"
+```
+
+### inkwell config feed
+
+Update per-feed settings.
+
+```bash
+inkwell config feed <NAME> --extra-templates <TEMPLATE_LIST>
+```
+
+Options:
+
+| Option | Short | Type | Description |
+|--------|-------|------|-------------|
+| `--extra-templates` | `-t` | string | Additional templates to run for this feed, added to category defaults. Pass an empty string to clear. |
+
+Examples:
+
+```bash
+inkwell config feed my-podcast --extra-templates books-mentioned,step-by-step-plan
+inkwell config feed my-podcast --extra-templates ""
 ```
 
 ---

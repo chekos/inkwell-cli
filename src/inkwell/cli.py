@@ -17,6 +17,7 @@ from rich.table import Table
 from inkwell.config.logging import setup_logging
 from inkwell.config.manager import ConfigManager, normalize_feed_name, slugify_feed_name
 from inkwell.config.schema import AuthConfig, FeedConfig
+from inkwell.extraction.templates import TemplateLoader
 from inkwell.feeds.models import Episode
 from inkwell.feeds.parser import MAX_EPISODES_PER_SELECTION, RSSParser
 from inkwell.feeds.youtube_resolver import (
@@ -100,6 +101,45 @@ def _normalize_feed_name(name: str) -> str:
     return normalize_feed_name(name)
 
 
+def _parse_extra_templates(value: str | None) -> list[str]:
+    """Parse a comma-separated --extra-templates value."""
+    if value is None:
+        return []
+    return [template.strip() for template in value.split(",") if template.strip()]
+
+
+def _dedupe_template_names(names: list[str]) -> list[str]:
+    """Deduplicate template names while preserving user-provided order."""
+    seen: set[str] = set()
+    deduped = []
+    for name in names:
+        if name not in seen:
+            seen.add(name)
+            deduped.append(name)
+    return deduped
+
+
+def _validate_template_names(names: list[str]) -> None:
+    """Validate template names against built-in and user templates."""
+    if not names:
+        return
+
+    available = set(TemplateLoader().list_templates())
+    missing = [name for name in names if name not in available]
+    if missing:
+        raise ValidationError(
+            f"Unknown template(s): {', '.join(missing)}",
+            suggestion="Run 'inkwell list templates' to see available templates.",
+        )
+
+
+def _parse_and_validate_extra_templates(value: str | None) -> list[str]:
+    """Parse, dedupe, and validate --extra-templates."""
+    templates = _dedupe_template_names(_parse_extra_templates(value))
+    _validate_template_names(templates)
+    return templates
+
+
 def _derive_feed_name(resolved: ResolvedFeed, existing: set[str]) -> str:
     """Auto-derive a feed name from channel metadata when --feed-name is omitted.
 
@@ -162,6 +202,15 @@ def add_feed(
     category: str | None = typer.Option(
         None, "--category", "-c", help="Feed category (e.g., tech, interview)"
     ),
+    extra_templates: str | None = typer.Option(
+        None,
+        "--extra-templates",
+        "-t",
+        help=(
+            "Additional templates to run for this feed, added to category defaults. "
+            "Comma-separated."
+        ),
+    ),
 ) -> None:
     """Add a new podcast feed.
 
@@ -200,11 +249,13 @@ def add_feed(
         # Non-YouTube URLs pass through as-is (resolver returns None).
         resolved = await resolve_youtube_url(url)
         feed_url = resolved.feed_url if resolved else url
+        custom_templates = _parse_and_validate_extra_templates(extra_templates)
 
         feed_config = FeedConfig(
             url=HttpUrl(feed_url),
             auth=auth_config,
             category=category,
+            custom_templates=custom_templates,
         )
 
         stored_name = manager.add_feed(feed_name, feed_config)
@@ -216,6 +267,8 @@ def add_feed(
         # they can spot a mis-resolved channel without running `inkwell list`.
         if feed_url != url:
             console.print(f"[dim]  Resolved to {feed_url}[/dim]")
+        if custom_templates:
+            console.print(f"[dim]  Extra templates: {', '.join(custom_templates)}[/dim]")
         if auth:
             console.print("[dim]  Credentials encrypted and stored securely[/dim]")
 
@@ -302,9 +355,18 @@ def remove_feed(
 
 @app.command("config")
 def config_command(
-    action: str = typer.Argument(..., help="Action: show, edit, or set <key> <value>"),
+    action: str = typer.Argument(..., help="Action: show, edit, set, or feed"),
     key: str | None = typer.Argument(None, help="Config key (for 'set' action)"),
     value: str | None = typer.Argument(None, help="Config value (for 'set' action)"),
+    extra_templates: str | None = typer.Option(
+        None,
+        "--extra-templates",
+        "-t",
+        help=(
+            "For 'feed': additional templates to run for this feed, added to "
+            "category defaults. Pass an empty string to clear."
+        ),
+    ),
 ) -> None:
     """Manage Inkwell configuration.
 
@@ -312,6 +374,7 @@ def config_command(
         show: Display current configuration
         edit: Open config file in $EDITOR
         set:  Set a configuration value
+        feed: Update per-feed settings
 
     Examples:
         inkwell config show
@@ -319,6 +382,10 @@ def config_command(
         inkwell config edit
 
         inkwell config set log_level DEBUG
+
+        inkwell config feed my-podcast --extra-templates books-mentioned,step-by-step-plan
+
+        inkwell config feed my-podcast --extra-templates ""
     """
     try:
         manager = ConfigManager()
@@ -514,9 +581,32 @@ def config_command(
                 )
                 sys.exit(1)
 
+        elif action == "feed":
+            if not key or extra_templates is None:
+                console.print(
+                    "[red]✗[/red] Usage: inkwell config feed <name> --extra-templates <list>"
+                )
+                console.print('[dim]  Pass --extra-templates "" to clear extra templates.[/dim]')
+                sys.exit(1)
+
+            feed_config = manager.get_feed(key)
+            custom_templates = _parse_and_validate_extra_templates(extra_templates)
+            manager.update_feed(
+                key,
+                feed_config.model_copy(update={"custom_templates": custom_templates}),
+            )
+
+            if custom_templates:
+                console.print(
+                    f"[green]✓[/green] Set extra templates for [cyan]{key}[/cyan]: "
+                    f"[yellow]{', '.join(custom_templates)}[/yellow]"
+                )
+            else:
+                console.print(f"[green]✓[/green] Cleared extra templates for [cyan]{key}[/cyan]")
+
         else:
             console.print(f"[red]✗[/red] Unknown action: {action}")
-            console.print("Valid actions: show, edit, set")
+            console.print("Valid actions: show, edit, set, feed")
             sys.exit(1)
 
     except InkwellError as e:
@@ -839,6 +929,7 @@ def fetch_command(
             # Auth credentials for private feeds (passed to audio downloader)
             auth_username: str | None = None
             auth_password: str | None = None
+            feed_extra_templates: list[str] = []
             # Episode from RSS feed (if applicable)
             ep: Episode | None = None
             # Set when the argument resolves to a configured feed (and we fan
@@ -962,6 +1053,7 @@ def fetch_command(
 
                     if not resolved_category and feed_config.category:
                         resolved_category = feed_config.category
+                    feed_extra_templates = feed_config.custom_templates
 
                     # Extract auth credentials for audio download (basic auth only)
                     if feed_config.auth and feed_config.auth.type == "basic":
@@ -1013,11 +1105,18 @@ def fetch_command(
                 # Show output directory upfront
                 console.print("[bold cyan]Inkwell Extraction Pipeline[/bold cyan]")
                 console.print(f"[dim]Output: {effective_output_dir}[/dim]\n")
+                template_names = (
+                    [t.strip() for t in templates.split(",") if t.strip()] if templates else []
+                )
+                if feed_extra_templates:
+                    template_names = _dedupe_template_names(
+                        [*template_names, *feed_extra_templates]
+                    )
 
                 options = PipelineOptions(
                     url=url,
                     category=resolved_category,
-                    templates=[t.strip() for t in templates.split(",")] if templates else None,
+                    templates=template_names or None,
                     provider=provider,
                     interview=interview,
                     no_resume=no_resume,

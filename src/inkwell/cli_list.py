@@ -234,6 +234,7 @@ def _list_feeds_impl(json_output: bool = False) -> None:
                         "url": str(feed.url),
                         "auth": auth_type,
                         "category": feed.category or "",
+                        "extra_templates": feed.custom_templates,
                     }
                 )
             result = {"feeds": feeds_data, "total": len(feeds)}
@@ -251,17 +252,27 @@ def _list_feeds_impl(json_output: bool = False) -> None:
         table.add_column("URL", style="blue")
         table.add_column("Auth", justify="center", style="yellow")
         table.add_column("Category", style="green")
+        table.add_column("Extra Templates", style="magenta")
 
         # Add rows
         for name, feed in feeds.items():
             auth_status = "Yes" if feed.auth.type != "none" else "-"
             category_display = feed.category or "-"
+            extra_templates_display = (
+                ", ".join(feed.custom_templates) if feed.custom_templates else "-"
+            )
             url_display = truncate_url(str(feed.url), max_length=50)
             name_display = feed.display_name or name
             if feed.display_name and feed.display_name != name:
                 name_display = f"{feed.display_name}\n[dim]{name}[/dim]"
 
-            table.add_row(name_display, url_display, auth_status, category_display)
+            table.add_row(
+                name_display,
+                url_display,
+                auth_status,
+                category_display,
+                extra_templates_display,
+            )
 
         console.print(table)
         console.print(f"\n[dim]Total: {len(feeds)} feed(s)[/dim]")

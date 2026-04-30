@@ -205,6 +205,52 @@ class TestCLIAddYouTube:
         feeds = ConfigManager(config_dir=tmp_path).list_feeds()
         assert "will-not-save" not in feeds
 
+    def test_add_feed_with_extra_templates(self, tmp_path: Path, monkeypatch) -> None:
+        """`inkwell add --extra-templates` persists to FeedConfig.custom_templates."""
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+        monkeypatch.setattr("inkwell.config.manager.get_config_dir", lambda: tmp_path)
+
+        result = runner.invoke(
+            app,
+            [
+                "add",
+                "https://example.com/feed.rss",
+                "--feed-name",
+                "templated-feed",
+                "--extra-templates",
+                "books-mentioned,step-by-step-plan",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        feeds = ConfigManager(config_dir=tmp_path).list_feeds()
+        assert feeds["templated-feed"].custom_templates == [
+            "books-mentioned",
+            "step-by-step-plan",
+        ]
+        assert "Extra templates" in result.output
+
+    def test_add_feed_rejects_unknown_extra_template(self, tmp_path: Path, monkeypatch) -> None:
+        """Template names are validated before a feed is saved."""
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+        monkeypatch.setattr("inkwell.config.manager.get_config_dir", lambda: tmp_path)
+
+        result = runner.invoke(
+            app,
+            [
+                "add",
+                "https://example.com/feed.rss",
+                "--feed-name",
+                "bad-template-feed",
+                "--extra-templates",
+                "not-a-template",
+            ],
+        )
+
+        assert result.exit_code != 0
+        assert "Unknown template" in result.output
+        assert "bad-template-feed" not in ConfigManager(config_dir=tmp_path).list_feeds()
+
 
 class TestShouldShowSaveFeedHint:
     """Unit tests for the hint-visibility decision helper."""
@@ -872,6 +918,73 @@ class TestCLIFetchSaveFeed:
         assert result.exit_code != 0
         assert "maximum of 100" in result.output
 
+    def test_fetch_saved_feed_merges_extra_templates(self, tmp_path: Path, monkeypatch) -> None:
+        """Feed custom templates are added to PipelineOptions.templates."""
+        from types import SimpleNamespace
+
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+        monkeypatch.setattr("inkwell.config.manager.get_config_dir", lambda: tmp_path)
+
+        manager = ConfigManager(config_dir=tmp_path)
+        from inkwell.config.schema import FeedConfig as _FeedConfig
+
+        manager.add_feed(
+            "templated-feed",
+            _FeedConfig(
+                url="https://example.com/feed.rss",  # type: ignore[arg-type]
+                custom_templates=["books-mentioned", "step-by-step-plan"],
+            ),
+        )
+
+        async def fake_fetch_feed(*_args, **_kwargs):
+            return SimpleNamespace(entries=[object()])
+
+        def fake_get_latest_episode(*_args, **_kwargs):
+            return SimpleNamespace(
+                title="Latest",
+                url="https://example.com/latest.mp3",
+                podcast_name="Templated Feed",
+            )
+
+        output_dir = tmp_path / "episode-dir"
+        output_dir.mkdir()
+        seen_templates: list[list[str] | None] = []
+
+        async def fake_process(_orchestrator, options, *_args, **_kwargs):
+            seen_templates.append(options.templates)
+            return SimpleNamespace(
+                episode_output=SimpleNamespace(directory=output_dir),
+                extraction_results=[],
+                interview_result=None,
+                extraction_cost_usd=0.0,
+                interview_cost_usd=0.0,
+                total_cost_usd=0.0,
+            )
+
+        monkeypatch.setattr("inkwell.feeds.parser.RSSParser.fetch_feed", fake_fetch_feed)
+        monkeypatch.setattr(
+            "inkwell.feeds.parser.RSSParser.get_latest_episode",
+            fake_get_latest_episode,
+        )
+        monkeypatch.setattr("inkwell.pipeline.PipelineOrchestrator.process_episode", fake_process)
+
+        result = runner.invoke(
+            app,
+            [
+                "fetch",
+                "templated-feed",
+                "--latest",
+                "--templates",
+                "summary,books-mentioned",
+                "--dry-run",
+                "--output-dir",
+                str(tmp_path),
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert seen_templates == [["summary", "books-mentioned", "step-by-step-plan"]]
+
     def test_feed_name_without_save_feed_errors(self, tmp_path: Path, monkeypatch) -> None:
         """--feed-name alone is a no-op that silently mislead users and
         scripts into thinking the channel was persisted. Reject up-front.
@@ -1158,6 +1271,44 @@ class TestCLIConfig:
         # Verify
         assert reloaded.log_level == "DEBUG"
         assert reloaded.youtube_check is False
+
+    def test_config_feed_sets_and_clears_extra_templates(self, tmp_path: Path, monkeypatch) -> None:
+        """`inkwell config feed` updates feed-level extra templates."""
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+        monkeypatch.setattr("inkwell.config.manager.get_config_dir", lambda: tmp_path)
+
+        from inkwell.config.schema import FeedConfig
+
+        manager = ConfigManager(config_dir=tmp_path)
+        manager.add_feed(
+            "templated-feed",
+            FeedConfig(url="https://example.com/feed.rss"),  # type: ignore[arg-type]
+        )
+
+        result = runner.invoke(
+            app,
+            [
+                "config",
+                "feed",
+                "templated-feed",
+                "--extra-templates",
+                "books-mentioned,step-by-step-plan",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert ConfigManager(config_dir=tmp_path).get_feed("templated-feed").custom_templates == [
+            "books-mentioned",
+            "step-by-step-plan",
+        ]
+
+        clear_result = runner.invoke(
+            app,
+            ["config", "feed", "templated-feed", "--extra-templates", ""],
+        )
+
+        assert clear_result.exit_code == 0, clear_result.output
+        assert ConfigManager(config_dir=tmp_path).get_feed("templated-feed").custom_templates == []
 
 
 class TestCLIHelp:

@@ -230,6 +230,7 @@ def _list_feeds_impl(json_output: bool = False) -> None:
                 feeds_data.append(
                     {
                         "name": name,
+                        "display_name": feed.display_name or name,
                         "url": str(feed.url),
                         "auth": auth_type,
                         "category": feed.category or "",
@@ -241,7 +242,7 @@ def _list_feeds_impl(json_output: bool = False) -> None:
 
         if not feeds:
             console.print("[yellow]No feeds configured yet.[/yellow]")
-            console.print("\nAdd a feed: [cyan]inkwell add <url> --name <name>[/cyan]")
+            console.print("\nAdd a feed: [cyan]inkwell add <url> --feed-name <name>[/cyan]")
             return
 
         # Create table
@@ -256,8 +257,11 @@ def _list_feeds_impl(json_output: bool = False) -> None:
             auth_status = "Yes" if feed.auth.type != "none" else "-"
             category_display = feed.category or "-"
             url_display = truncate_url(str(feed.url), max_length=50)
+            name_display = feed.display_name or name
+            if feed.display_name and feed.display_name != name:
+                name_display = f"{feed.display_name}\n[dim]{name}[/dim]"
 
-            table.add_row(name, url_display, auth_status, category_display)
+            table.add_row(name_display, url_display, auth_status, category_display)
 
         console.print(table)
         console.print(f"\n[dim]Total: {len(feeds)} feed(s)[/dim]")

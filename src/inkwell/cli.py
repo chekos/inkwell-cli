@@ -3,7 +3,6 @@
 import asyncio
 import logging
 import os
-import re
 import sys
 from datetime import timedelta
 from pathlib import Path
@@ -16,7 +15,7 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
 
 from inkwell.config.logging import setup_logging
-from inkwell.config.manager import ConfigManager
+from inkwell.config.manager import ConfigManager, normalize_feed_name, slugify_feed_name
 from inkwell.config.schema import AuthConfig, FeedConfig
 from inkwell.feeds.models import Episode
 from inkwell.feeds.parser import RSSParser
@@ -91,23 +90,14 @@ def _should_show_save_feed_hint(*, url: str, input_was_url: bool) -> bool:
     return input_was_url and is_youtube_url(url)
 
 
-_NAME_SLUG_RE = re.compile(r"[^a-z0-9]+")
-
-
 def _slugify(s: str) -> str:
     """Collapse any string into a [a-z0-9-] feed-name slug."""
-    return _NAME_SLUG_RE.sub("-", s.lower()).strip("-")
+    return slugify_feed_name(s)
 
 
 def _normalize_feed_name(name: str) -> str:
     """Normalize user-supplied feed names to stable CLI identifiers."""
-    normalized = _slugify(name)
-    if not normalized:
-        raise ValidationError(
-            "Feed name must include at least one letter or number",
-            suggestion="Use a short name like 'syntax' or 'oren-meets-world'",
-        )
-    return normalized
+    return normalize_feed_name(name)
 
 
 def _derive_feed_name(resolved: ResolvedFeed, existing: set[str]) -> str:
@@ -183,7 +173,6 @@ def add_feed(
 
     async def run_add_feed() -> None:
         manager = ConfigManager()
-        normalized_name = _normalize_feed_name(feed_name)
 
         # Collect auth credentials if needed
         auth_config = AuthConfig(type="none")
@@ -218,12 +207,10 @@ def add_feed(
             category=category,
         )
 
-        manager.add_feed(normalized_name, feed_config)
+        stored_name = manager.add_feed(feed_name, feed_config)
 
-        console.print(
-            f"\n[green]✓[/green] Feed '[bold]{normalized_name}[/bold]' added successfully"
-        )
-        if normalized_name != feed_name:
+        console.print(f"\n[green]✓[/green] Feed '[bold]{stored_name}[/bold]' added successfully")
+        if stored_name != feed_name:
             console.print(f"[dim]  Normalized feed name from '{feed_name}'[/dim]")
         # Surface the stored URL when it differs from what the user typed so
         # they can spot a mis-resolved channel without running `inkwell list`.
@@ -257,7 +244,7 @@ def rename_feed(
     try:
         manager = ConfigManager()
         normalized_new_name = _normalize_feed_name(new_name)
-        manager.rename_feed(old_name, normalized_new_name, overwrite=force)
+        manager.rename_feed(old_name, new_name, overwrite=force)
         console.print(
             f"[green]✓[/green] Feed '[bold]{old_name}[/bold]' renamed to "
             f"'[bold]{normalized_new_name}[/bold]'"
@@ -1184,23 +1171,25 @@ def fetch_command(
                         if feed_name is None:
                             existing = set(existing_feeds.keys())
                             effective_name = _derive_feed_name(resolved, existing)
+                            display_name = resolved.channel_name
                         else:
                             effective_name = _normalize_feed_name(feed_name)
-                        manager.add_feed(
+                            display_name = feed_name if effective_name != feed_name else None
+                        stored_name = manager.add_feed(
                             effective_name,
                             FeedConfig(
                                 url=HttpUrl(resolved.feed_url),
+                                display_name=display_name,
                                 auth=AuthConfig(type="none"),
                             ),
                         )
                         err_console.print(
-                            f"[green]✓[/green] Saved channel as feed "
-                            f"'[bold]{effective_name}[/bold]'"
+                            f"[green]✓[/green] Saved channel as feed '[bold]{stored_name}[/bold]'"
                         )
                         if feed_name is None:
                             err_console.print(
                                 f"[dim]  Auto-named from channel metadata. "
-                                f"To rename: [cyan]inkwell rename {effective_name} "
+                                f"To rename: [cyan]inkwell rename {stored_name} "
                                 f"<new-name>[/cyan]. "
                                 f"Pass [cyan]--feed-name[/cyan] next time to skip "
                                 f"this.[/dim]"

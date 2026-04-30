@@ -18,6 +18,14 @@ inkwell add <RSS_URL> --feed-name <FEED_NAME>
 inkwell add https://feeds.example.com/tech-podcast.rss --feed-name tech-show
 ```
 
+Feed names can be human-readable. Inkwell stores a slug as the config key and keeps the original as the display name:
+
+```bash
+inkwell add https://feeds.example.com/show.rss --feed-name "Oren Meets World"
+```
+
+That feed is stored as `oren-meets-world`, but you can fetch or remove it with either the slug or the display name.
+
 **Output:**
 
 ```
@@ -164,6 +172,7 @@ inkwell rename old-name new-name
 ```
 
 Feed names are normalized to lowercase slugs, so `inkwell rename old-name "New Name!"` becomes `new-name`.
+The human-readable name is kept as the feed's display name in `inkwell list`.
 
 Use `--force` only when you intentionally want to replace an existing destination feed:
 

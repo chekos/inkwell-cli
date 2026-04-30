@@ -44,7 +44,7 @@ _YTDLP_SOCKET_TIMEOUT_SECONDS = 30
 
 _MANUAL_ESCAPE_HATCH = (
     "If resolution keeps failing, you can still add the channel manually: "
-    "inkwell add 'https://www.youtube.com/feeds/videos.xml?channel_id=UCxxx' --name X"
+    "inkwell add 'https://www.youtube.com/feeds/videos.xml?channel_id=UCxxx' --feed-name X"
 )
 
 

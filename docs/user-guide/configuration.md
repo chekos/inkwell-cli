@@ -35,15 +35,11 @@ inkwell config show
 Output:
 
 ```
-╭─────────────────────────────────────────────╮
-│            Configuration                     │
-├─────────────────────────────────────────────┤
-│ version: "1"                                 │
-│ log_level: INFO                              │
-│ default_output_dir: ~/podcasts               │
-│ youtube_check: true                          │
-│ max_episodes_per_run: 10                     │
-╰─────────────────────────────────────────────╯
+Config file: ~/.config/inkwell/config.yaml
+Output directory: ~/podcasts
+Log level: INFO
+YouTube check: ✓
+Transcription model: gemini-2.5-flash
 ```
 
 ---
@@ -90,7 +86,7 @@ Opens `config.yaml` in your `$EDITOR` (defaults to `vi`).
 |--------|------|---------|-------------|
 | `transcription.api_key` | string | `""` | Google AI API key |
 | `transcription.model_name` | string | `gemini-2.5-flash` | Gemini model for audio transcription |
-| `youtube_check` | boolean | `true` | Check YouTube for transcripts first |
+| `transcription.youtube_check` | boolean | `true` | Check YouTube for transcripts first |
 
 ### Extraction
 
@@ -98,6 +94,8 @@ Opens `config.yaml` in your `$EDITOR` (defaults to `vi`).
 |--------|------|---------|-------------|
 | `max_episodes_per_run` | integer | `10` | Max episodes per batch |
 | `extraction.default_provider` | string | `gemini` | Default LLM provider |
+| `extraction.gemini_api_key` | string | `""` | Optional Google AI key for extraction |
+| `extraction.claude_api_key` | string | `""` | Optional Anthropic key for extraction |
 | `extraction.cache_days` | integer | `30` | Extraction cache duration |
 
 ### Interview
@@ -135,12 +133,14 @@ default_output_dir: ~/ObsidianVault/podcasts
 # Transcription
 transcription:
   api_key: your-google-ai-key-here
-  model_name: gemini-2.5-flash   # omit to use the default
-youtube_check: true
+  model_name: gemini-2.5-flash   # omit to use the generated config default
+  youtube_check: true
 
 # Extraction
 extraction:
   default_provider: gemini
+  gemini_api_key: ""  # optional; falls back to transcription.api_key
+  claude_api_key: ""  # optional; can also use ANTHROPIC_API_KEY
   cache_days: 30
 max_episodes_per_run: 10
 
@@ -173,7 +173,7 @@ Environment variables provide fallback values when the corresponding config key 
 
 | Variable | Fallback for |
 |----------|-------------|
-| `GOOGLE_API_KEY` | `transcription.api_key` |
+| `GOOGLE_API_KEY` | `transcription.api_key` and Gemini extraction |
 | `ANTHROPIC_API_KEY` | Anthropic API key for interview |
 | `INKWELL_CONFIG_DIR` | Config directory location |
 | `INKWELL_OUTPUT_DIR` | `default_output_dir` |

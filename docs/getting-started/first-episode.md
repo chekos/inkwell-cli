@@ -64,6 +64,8 @@ inkwell config set transcription.api_key "your-google-ai-api-key-here"
 ```
 
 This stores the key in Inkwell's config file, scoped to this tool only.
+Gemini extraction uses this key too unless you set `extraction.gemini_api_key`
+separately.
 
 **Alternative: Environment Variables**
 
@@ -351,7 +353,7 @@ inkwell fetch syntax --latest
 
 ```bash
 # Edit config
-inkwell config --edit
+inkwell config edit
 
 # Try different settings:
 # - Change output directory

@@ -142,6 +142,52 @@ class TestConfigManager:
         with pytest.raises(NotFoundError, match="not found"):
             manager.remove_feed("nonexistent")
 
+    def test_rename_feed_preserves_config(self, tmp_path: Path) -> None:
+        """Test renaming a feed without losing its configuration."""
+        manager = ConfigManager(config_dir=tmp_path)
+        feed_config = FeedConfig(
+            url="https://example.com/feed.rss",  # type: ignore
+            auth=AuthConfig(type="basic", username="user", password="secret"),
+            category="tech",
+        )
+        manager.add_feed("old-name", feed_config)
+
+        manager.rename_feed("old-name", "new-name")
+
+        feeds = manager.list_feeds()
+        assert "old-name" not in feeds
+        assert "new-name" in feeds
+        renamed = feeds["new-name"]
+        assert str(renamed.url) == "https://example.com/feed.rss"
+        assert renamed.category == "tech"
+        assert renamed.auth.username == "user"
+        assert renamed.auth.password == "secret"
+
+    def test_rename_feed_destination_collision_raises(self, tmp_path: Path) -> None:
+        """Test renaming refuses to overwrite an existing feed by default."""
+        manager = ConfigManager(config_dir=tmp_path)
+        manager.add_feed("old-name", FeedConfig(url="https://example.com/old.rss"))  # type: ignore
+        manager.add_feed("new-name", FeedConfig(url="https://example.com/new.rss"))  # type: ignore
+
+        with pytest.raises(ValidationError, match="already exists"):
+            manager.rename_feed("old-name", "new-name")
+
+        feeds = manager.list_feeds()
+        assert str(feeds["old-name"].url) == "https://example.com/old.rss"
+        assert str(feeds["new-name"].url) == "https://example.com/new.rss"
+
+    def test_rename_feed_force_overwrites_destination(self, tmp_path: Path) -> None:
+        """Test force rename replaces an existing destination feed."""
+        manager = ConfigManager(config_dir=tmp_path)
+        manager.add_feed("old-name", FeedConfig(url="https://example.com/old.rss"))  # type: ignore
+        manager.add_feed("new-name", FeedConfig(url="https://example.com/new.rss"))  # type: ignore
+
+        manager.rename_feed("old-name", "new-name", overwrite=True)
+
+        feeds = manager.list_feeds()
+        assert "old-name" not in feeds
+        assert str(feeds["new-name"].url) == "https://example.com/old.rss"
+
     def test_get_feed(self, tmp_path: Path) -> None:
         """Test getting a single feed."""
         manager = ConfigManager(config_dir=tmp_path)

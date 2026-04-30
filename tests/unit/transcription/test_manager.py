@@ -380,3 +380,29 @@ class TestTranscriptionManager:
 
         # Gemini should have been used
         mock_gemini.transcribe.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_download_403_is_not_reported_as_api_auth_failure(
+        self,
+        manager: TranscriptionManager,
+        mock_cache: Mock,
+        mock_youtube: Mock,
+        mock_downloader: Mock,
+        mock_gemini: Mock,
+    ) -> None:
+        """yt-dlp 403s should point at audio download, not Gemini auth."""
+        mock_cache.get.return_value = None
+        mock_youtube.can_transcribe.return_value = False
+        mock_downloader.download.side_effect = APIError(
+            "Failed to download audio from https://youtube.com/watch?v=x. "
+            "Error: HTTP Error 403: Forbidden"
+        )
+
+        result = await manager.transcribe("https://youtube.com/watch?v=x")
+
+        assert result.success is False
+        assert result.error is not None
+        assert "Failed to download the audio file" in result.error
+        assert "yt-dlp" in result.error
+        assert "API authentication failed" not in result.error
+        mock_gemini.transcribe.assert_not_called()

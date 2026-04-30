@@ -18,5 +18,5 @@ How this changes future behavior or decisions.
 
 ## Related
 
-- ADR: [ADR-NNN](../adr/NNN-title.md)
-- Devlog: [YYYY-MM-DD](../devlog/YYYY-MM-DD-description.md)
+- ADR: `../adr/NNN-title.md`
+- Devlog: `../devlog/YYYY-MM-DD-description.md`

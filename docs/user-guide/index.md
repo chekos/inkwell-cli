@@ -39,7 +39,7 @@ Extend Inkwell with custom plugins for extraction, transcription, and output for
 
 ```bash
 # Add a feed
-inkwell add <url> --name <name>
+inkwell add <url> --feed-name <name>
 
 # List feeds
 inkwell list

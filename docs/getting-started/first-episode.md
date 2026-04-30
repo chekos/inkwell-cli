@@ -21,12 +21,10 @@ By the end of this tutorial, you'll have:
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-### 1.2 Clone and Setup
+### 1.2 Install Inkwell
 
 ```bash
-git clone https://github.com/yourusername/inkwell-cli
-cd inkwell-cli
-uv sync --dev
+uv tool install inkwell-cli
 ```
 
 ### 1.3 Install ffmpeg
@@ -44,8 +42,8 @@ sudo apt-get install ffmpeg
 ### 1.4 Verify Installation
 
 ```bash
-uv run inkwell version
-# Output: Inkwell CLI v1.0.0
+inkwell version
+# Output: Inkwell CLI v0.20.0
 ```
 
 ## Step 2: API Keys (2 minutes)
@@ -62,7 +60,7 @@ uv run inkwell version
 Use the Inkwell CLI to store your API key in the config file:
 
 ```bash
-uv run inkwell config set transcription.api_key "your-google-ai-api-key-here"
+inkwell config set transcription.api_key "your-google-ai-api-key-here"
 ```
 
 This stores the key in Inkwell's config file, scoped to this tool only.
@@ -85,7 +83,7 @@ source ~/.zshrc
 By default, Inkwell saves processed episodes to `~/podcasts`. To change this:
 
 ```bash
-uv run inkwell config set default_output_dir ~/my-notes/podcasts
+inkwell config set default_output_dir ~/my-notes/podcasts
 ```
 
 You can also specify a different directory per-command using the `--output` flag.
@@ -93,7 +91,7 @@ You can also specify a different directory per-command using the `--output` flag
 ### 2.4 Verify Configuration
 
 ```bash
-uv run inkwell config show
+inkwell config show
 ```
 
 ## Step 3: Add Your First Podcast (1 minute)
@@ -101,9 +99,9 @@ uv run inkwell config show
 Let's add Lenny's Podcast (a popular product and growth podcast):
 
 ```bash
-uv run inkwell add \
+inkwell add \
   "https://api.substack.com/feed/podcast/10845.rss" \
-  --name lennys \
+  --feed-name lennys \
   --category tech
 ```
 
@@ -117,7 +115,7 @@ uv run inkwell add \
 ### 3.1 List Available Episodes
 
 ```bash
-uv run inkwell list
+inkwell list
 ```
 
 **Output**:
@@ -129,7 +127,7 @@ uv run inkwell list
 ### 4.1 Fetch Latest Episode
 
 ```bash
-uv run inkwell fetch lennys --latest
+inkwell fetch lennys --latest
 ```
 
 **What Happens**
@@ -268,7 +266,7 @@ SORT episode_date DESC
 ## Step 6: Check Costs (30 seconds)
 
 ```bash
-uv run inkwell costs
+inkwell costs
 ```
 
 **Output**:
@@ -295,7 +293,7 @@ uv run inkwell costs
 Try interactive interview mode to capture your insights:
 
 ```bash
-uv run inkwell fetch lennys --latest --interview
+inkwell fetch lennys --latest --interview
 ```
 
 **Interactive Session**:
@@ -333,27 +331,27 @@ A: Read Lenny's newsletter on growth loops, check out Reforge courses.
 
 ```bash
 # Process last 5 episodes
-uv run inkwell fetch lennys --count 5
+inkwell fetch lennys --count 5
 
 # Process specific episode
-uv run inkwell fetch lennys --episode 789
+inkwell fetch lennys --episode 789
 ```
 
 ### Try Different Podcasts
 
 ```bash
 # Add more podcasts
-uv run inkwell add "https://feeds.simplecast.com/54nAGcIl" --name syntax
+inkwell add "https://feeds.simplecast.com/54nAGcIl" --feed-name syntax
 
 # Process
-uv run inkwell fetch syntax --latest
+inkwell fetch syntax --latest
 ```
 
 ### Customize Configuration
 
 ```bash
 # Edit config
-uv run inkwell config --edit
+inkwell config --edit
 
 # Try different settings:
 # - Change output directory
@@ -394,14 +392,14 @@ sudo apt-get install ffmpeg
 
 Use `--overwrite` to replace:
 ```bash
-uv run inkwell fetch syntax --latest --overwrite
+inkwell fetch syntax --latest --overwrite
 ```
 
 ### High Costs
 
 Check if YouTube transcript is available (free):
 ```bash
-uv run inkwell costs --recent 5
+inkwell costs --recent 5
 ```
 
 If using Gemini transcription frequently, consider:
@@ -422,23 +420,22 @@ If using Gemini transcription frequently, consider:
 **Typical Workflow**:
 ```bash
 # Daily routine (2 minutes)
-uv run inkwell fetch lennys --latest
-uv run inkwell fetch syntax --latest
-uv run inkwell costs
+inkwell fetch lennys --latest
+inkwell fetch syntax --latest
+inkwell costs
 
 # Weekly review (5 minutes)
 # Open Obsidian, review notes, update ratings
 ```
 
-**Next Tutorial**:
-- [Advanced Features](./advanced-tutorial.md)
-- [Custom Templates](./custom-templates.md)
-- [Batch Processing](./batch-processing.md)
+**Next Steps**:
+- [Processing Guide](../user-guide/processing.md)
+- [Templates Reference](../reference/templates.md)
 
 ## Feedback
 
 Questions or issues?
-- GitHub Issues: https://github.com/yourusername/inkwell-cli/issues
-- Discussions: https://github.com/yourusername/inkwell-cli/discussions
+- GitHub Issues: https://github.com/chekos/inkwell-cli/issues
+- Documentation: https://chekos.github.io/inkwell-cli/
 
 Happy note-taking! 🎧📝

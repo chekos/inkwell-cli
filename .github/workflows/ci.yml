@@ -24,6 +24,9 @@ jobs:
       - name: Install dependencies
         run: uv sync --dev --frozen
 
+      - name: Lint GitHub Actions
+        uses: raven-actions/actionlint@v2
+
       - name: Lint with Ruff
         run: uv run ruff check .
 
@@ -34,4 +37,18 @@ jobs:
         run: uv run mypy src/
 
       - name: Run tests
-        run: uv run pytest
+        run: >
+          uv run pytest
+          --cov=src/inkwell
+          --cov-report=term-missing
+          --cov-report=xml
+          --cov-fail-under=75
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml
+          path: coverage.xml
+
+      - name: Build documentation strictly
+        run: uv run mkdocs build --strict

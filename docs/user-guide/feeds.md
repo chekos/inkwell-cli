@@ -9,13 +9,13 @@ Add, list, and remove podcast feeds in Inkwell.
 ### Basic Feed
 
 ```bash
-inkwell add <RSS_URL> --name <FEED_NAME>
+inkwell add <RSS_URL> --feed-name <FEED_NAME>
 ```
 
 **Example:**
 
 ```bash
-inkwell add https://feeds.example.com/tech-podcast.rss --name tech-show
+inkwell add https://feeds.example.com/tech-podcast.rss --feed-name tech-show
 ```
 
 **Output:**
@@ -29,7 +29,7 @@ inkwell add https://feeds.example.com/tech-podcast.rss --name tech-show
 Organize feeds with categories for automatic template selection:
 
 ```bash
-inkwell add https://example.com/feed.rss --name startup-podcast --category business
+inkwell add https://example.com/feed.rss --feed-name startup-podcast --category business
 ```
 
 **Common categories:**
@@ -46,7 +46,7 @@ inkwell add https://example.com/feed.rss --name startup-podcast --category busin
 For premium podcasts requiring authentication:
 
 ```bash
-inkwell add https://private.com/feed.rss --name premium-show --auth
+inkwell add https://private.com/feed.rss --feed-name premium-show --auth
 ```
 
 Inkwell prompts for credentials:
@@ -75,9 +75,9 @@ Inkwell accepts any standard YouTube URL in `inkwell add` — paste a video URL,
 
 ```bash
 # Any of these work — inkwell figures out the channel's RSS feed
-inkwell add https://www.youtube.com/@orenmeetsworld --name oren-meets-world
-inkwell add https://www.youtube.com/watch?v=pKeZ5XK2vp4 --name oren-meets-world
-inkwell add https://www.youtube.com/channel/UC_tSQ6UQy2pROm-I0J7UBoA --name oren-meets-world
+inkwell add https://www.youtube.com/@orenmeetsworld --feed-name oren-meets-world
+inkwell add https://www.youtube.com/watch?v=pKeZ5XK2vp4 --feed-name oren-meets-world
+inkwell add https://www.youtube.com/channel/UC_tSQ6UQy2pROm-I0J7UBoA --feed-name oren-meets-world
 ```
 
 If you just want to process one video without tracking the channel, use `inkwell fetch <video-url>`. You'll see a hint at the end inviting you to save the channel:
@@ -91,7 +91,7 @@ To take it up on the offer, re-run with `--save-feed` — the feed name is auto-
 ```bash
 inkwell fetch https://www.youtube.com/watch?v=pKeZ5XK2vp4 --save-feed
 # → ✓ Saved channel as feed 'oren-meets-world'
-#     Auto-named from channel metadata. Pass --feed-name next time to skip this.
+#     Auto-named from channel metadata. To rename: inkwell rename oren-meets-world <new-name>.
 ```
 
 Pass `--feed-name` if you want a specific name:
@@ -155,22 +155,40 @@ inkwell remove my-podcast --force
 
 ---
 
+## Renaming Feeds
+
+Rename a saved feed without losing its URL, category, or encrypted authentication settings:
+
+```bash
+inkwell rename old-name new-name
+```
+
+Feed names are normalized to lowercase slugs, so `inkwell rename old-name "New Name!"` becomes `new-name`.
+
+Use `--force` only when you intentionally want to replace an existing destination feed:
+
+```bash
+inkwell rename old-name new-name --force
+```
+
+---
+
 ## Feed Organization Strategies
 
 ### By Category
 
 ```bash
-inkwell add https://tech1.com/feed.rss --name tech-podcast-1 --category tech
-inkwell add https://tech2.com/feed.rss --name tech-podcast-2 --category tech
-inkwell add https://biz.com/feed.rss --name business-show --category business
+inkwell add https://tech1.com/feed.rss --feed-name tech-podcast-1 --category tech
+inkwell add https://tech2.com/feed.rss --feed-name tech-podcast-2 --category tech
+inkwell add https://biz.com/feed.rss --feed-name business-show --category business
 ```
 
 ### By Priority (Naming Convention)
 
 ```bash
-inkwell add https://example.com/feed.rss --name 1-daily-podcast
-inkwell add https://example.com/feed.rss --name 2-weekly-podcast
-inkwell add https://example.com/feed.rss --name 3-archive-podcast
+inkwell add https://example.com/feed.rss --feed-name 1-daily-podcast
+inkwell add https://example.com/feed.rss --feed-name 2-weekly-podcast
+inkwell add https://example.com/feed.rss --feed-name 3-archive-podcast
 ```
 
 ---
@@ -182,9 +200,9 @@ Add multiple feeds from a script:
 ```bash
 #!/bin/bash
 
-inkwell add https://feed1.com/rss --name podcast-1 --category tech
-inkwell add https://feed2.com/rss --name podcast-2 --category business
-inkwell add https://feed3.com/rss --name podcast-3 --category interview
+inkwell add https://feed1.com/rss --feed-name podcast-1 --category tech
+inkwell add https://feed2.com/rss --feed-name podcast-2 --category business
+inkwell add https://feed3.com/rss --feed-name podcast-3 --category interview
 
 echo "All feeds added!"
 ```
@@ -195,7 +213,7 @@ echo "All feeds added!"
 
 - Use **lowercase and hyphens**: `tech-podcast`, `startup-stories`
 - Keep names **short but descriptive**
-- Avoid special characters: `my_podcast!` → `my-podcast`
+- Special characters are normalized automatically: `my_podcast!` → `my-podcast`
 
 ---
 

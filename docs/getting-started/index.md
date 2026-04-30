@@ -48,7 +48,7 @@ uv tool install inkwell-cli
 export GOOGLE_API_KEY="your-key"
 
 # 3. Add a podcast feed
-inkwell add "https://example.com/feed.rss" --name my-podcast
+inkwell add "https://example.com/feed.rss" --feed-name my-podcast
 
 # 4. Process the latest episode
 inkwell fetch my-podcast --latest

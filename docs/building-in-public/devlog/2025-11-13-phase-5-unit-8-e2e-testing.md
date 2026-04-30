@@ -351,8 +351,8 @@ See: [docs/lessons/2025-11-13-phase-5-unit-8-e2e-testing.md](../lessons/2025-11-
 
 ## References
 
-- [E2E Framework Code](../../tests/e2e/framework.py)
-- [E2E Tests](../../tests/e2e/test_full_pipeline.py)
+- [E2E Framework Code](https://github.com/chekos/inkwell-cli/blob/main/tests/e2e/framework.py)
+- [E2E Tests](https://github.com/chekos/inkwell-cli/blob/main/tests/e2e/test_full_pipeline.py)
 - [Experiment Log](../experiments/2025-11-13-e2e-benchmark-results.md)
 
 ## Time Log

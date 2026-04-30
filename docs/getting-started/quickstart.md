@@ -71,7 +71,7 @@ For recurring podcasts, add the feed once:
 
 ```bash
 # Add a feed
-inkwell add "https://example.com/podcast/feed.rss" --name my-podcast
+inkwell add "https://example.com/podcast/feed.rss" --feed-name my-podcast
 
 # List your feeds
 inkwell list

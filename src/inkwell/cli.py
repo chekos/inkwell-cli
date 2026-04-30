@@ -22,6 +22,7 @@ from inkwell.feeds.models import Episode
 from inkwell.feeds.parser import RSSParser
 from inkwell.feeds.youtube_resolver import (
     ResolvedFeed,
+    channel_id_from_feed_url,
     is_youtube_playlist_url,
     is_youtube_url,
     resolve_youtube_url,
@@ -98,6 +99,17 @@ def _slugify(s: str) -> str:
     return _NAME_SLUG_RE.sub("-", s.lower()).strip("-")
 
 
+def _normalize_feed_name(name: str) -> str:
+    """Normalize user-supplied feed names to stable CLI identifiers."""
+    normalized = _slugify(name)
+    if not normalized:
+        raise ValidationError(
+            "Feed name must include at least one letter or number",
+            suggestion="Use a short name like 'syntax' or 'oren-meets-world'",
+        )
+    return normalized
+
+
 def _derive_feed_name(resolved: ResolvedFeed, existing: set[str]) -> str:
     """Auto-derive a feed name from channel metadata when --feed-name is omitted.
 
@@ -125,6 +137,21 @@ def _derive_feed_name(resolved: ResolvedFeed, existing: set[str]) -> str:
     return f"{candidate}-{i}"
 
 
+def _find_existing_youtube_feed(
+    feeds: dict[str, FeedConfig],
+    resolved: ResolvedFeed,
+) -> str | None:
+    """Return an existing feed name for the resolved channel, if one exists."""
+    target_channel_id = channel_id_from_feed_url(resolved.feed_url)
+    if target_channel_id is None:
+        return None
+
+    for existing_name, feed_config in feeds.items():
+        if channel_id_from_feed_url(str(feed_config.url)) == target_channel_id:
+            return existing_name
+    return None
+
+
 @app.command("add")
 def add_feed(
     url: str = typer.Argument(
@@ -134,7 +161,13 @@ def add_feed(
             "YouTube URLs are auto-resolved to the channel's RSS feed. Playlist URLs are rejected."
         ),
     ),
-    name: str = typer.Option(..., "--name", "-n", help="Feed identifier name"),
+    feed_name: str = typer.Option(
+        ...,
+        "--feed-name",
+        "--name",
+        "-n",
+        help="Feed identifier name. --name is kept as a backward-compatible alias.",
+    ),
     auth: bool = typer.Option(False, "--auth", help="Prompt for authentication"),
     category: str | None = typer.Option(
         None, "--category", "-c", help="Feed category (e.g., tech, interview)"
@@ -143,13 +176,14 @@ def add_feed(
     """Add a new podcast feed.
 
     Examples:
-        inkwell add https://example.com/feed.rss --name my-podcast
+        inkwell add https://example.com/feed.rss --feed-name my-podcast
 
-        inkwell add https://private.com/feed.rss --name private --auth
+        inkwell add https://private.com/feed.rss --feed-name private --auth
     """
 
     async def run_add_feed() -> None:
         manager = ConfigManager()
+        normalized_name = _normalize_feed_name(feed_name)
 
         # Collect auth credentials if needed
         auth_config = AuthConfig(type="none")
@@ -184,9 +218,13 @@ def add_feed(
             category=category,
         )
 
-        manager.add_feed(name, feed_config)
+        manager.add_feed(normalized_name, feed_config)
 
-        console.print(f"\n[green]✓[/green] Feed '[bold]{name}[/bold]' added successfully")
+        console.print(
+            f"\n[green]✓[/green] Feed '[bold]{normalized_name}[/bold]' added successfully"
+        )
+        if normalized_name != feed_name:
+            console.print(f"[dim]  Normalized feed name from '{feed_name}'[/dim]")
         # Surface the stored URL when it differs from what the user typed so
         # they can spot a mis-resolved channel without running `inkwell list`.
         if feed_url != url:
@@ -206,6 +244,30 @@ def add_feed(
         sys.exit(1)
     except InkwellError as e:
         console.print(f"[red]✗[/red] Error: {e}")
+        sys.exit(1)
+
+
+@app.command("rename")
+def rename_feed(
+    old_name: str = typer.Argument(..., help="Current feed name"),
+    new_name: str = typer.Argument(..., help="New feed name"),
+    force: bool = typer.Option(False, "--force", "-f", help="Overwrite an existing feed name"),
+) -> None:
+    """Rename a podcast feed without losing URL, auth, or category settings."""
+    try:
+        manager = ConfigManager()
+        normalized_new_name = _normalize_feed_name(new_name)
+        manager.rename_feed(old_name, normalized_new_name, overwrite=force)
+        console.print(
+            f"[green]✓[/green] Feed '[bold]{old_name}[/bold]' renamed to "
+            f"'[bold]{normalized_new_name}[/bold]'"
+        )
+        if normalized_new_name != new_name:
+            console.print(f"[dim]  Normalized feed name from '{new_name}'[/dim]")
+    except InkwellError as e:
+        console.print(f"[red]✗[/red] Error: {e}")
+        if e.suggestion:
+            console.print(f"[dim]  {e.suggestion}[/dim]")
         sys.exit(1)
 
 
@@ -1107,14 +1169,23 @@ def fetch_command(
                         resolved = pre_resolved or await resolve_youtube_url(url_or_feed)
                         if resolved is None:
                             raise ValidationError("Couldn't save feed: URL isn't a YouTube URL")
+                        existing_feeds = manager.list_feeds()
+                        existing_match = _find_existing_youtube_feed(existing_feeds, resolved)
+                        if existing_match is not None:
+                            err_console.print(
+                                f"[yellow]Channel already saved as "
+                                f"'[bold]{existing_match}[/bold]'[/yellow]"
+                            )
+                            return
+
                         # Auto-derive the feed name when --feed-name is omitted.
                         # The user pasted a YouTube URL; they shouldn't have to
                         # know a good feed name up front.
                         if feed_name is None:
-                            existing = set(manager.list_feeds().keys())
+                            existing = set(existing_feeds.keys())
                             effective_name = _derive_feed_name(resolved, existing)
                         else:
-                            effective_name = feed_name
+                            effective_name = _normalize_feed_name(feed_name)
                         manager.add_feed(
                             effective_name,
                             FeedConfig(
@@ -1129,8 +1200,8 @@ def fetch_command(
                         if feed_name is None:
                             err_console.print(
                                 f"[dim]  Auto-named from channel metadata. "
-                                f"To rename: [cyan]inkwell remove {effective_name}[/cyan] "
-                                f"then [cyan]inkwell add <url> --name <new-name>[/cyan]. "
+                                f"To rename: [cyan]inkwell rename {effective_name} "
+                                f"<new-name>[/cyan]. "
                                 f"Pass [cyan]--feed-name[/cyan] next time to skip "
                                 f"this.[/dim]"
                             )

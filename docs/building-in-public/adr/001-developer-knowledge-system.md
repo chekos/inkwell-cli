@@ -56,5 +56,5 @@ Each pillar uses simple markdown templates with minimal structure. Files are nam
 
 ## References
 
-- [docs/README.md](../README.md) - DKS overview and guidance
+- [Building in Public overview](../index.md) - DKS overview and guidance
 - Similar systems: ADR pattern (Michael Nygard), Engineering Daybook pattern

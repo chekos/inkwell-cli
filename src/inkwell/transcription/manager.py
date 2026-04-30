@@ -410,21 +410,22 @@ class TranscriptionManager:
                     "Wait a few minutes and try again, or check your API key quota at:\n"
                     "  https://console.cloud.google.com/apis/api/generativelanguage.googleapis.com/quotas"
                 )
-            elif "401" in error_str or "403" in error_str or "invalid" in error_str.lower():
-                error_msg += (
-                    "API authentication failed. Your API key may be invalid or expired.\n\n"
-                    "Verify your API key:\n"
-                    "  inkwell config show\n\n"
-                    "Get a new key at: https://aistudio.google.com/apikey"
-                )
             elif "download" in error_str.lower() or "audio" in error_str.lower():
                 error_msg += (
                     "Failed to download the audio file.\n\n"
                     "Possible causes:\n"
                     "  • Episode URL is no longer valid\n"
                     "  • Private feed requires authentication\n"
-                    "  • Network connectivity issues\n\n"
+                    "  • Network connectivity issues\n"
+                    "  • yt-dlp is outdated or blocked by the source site\n\n"
                     f"Error details: {e}"
+                )
+            elif "401" in error_str or "403" in error_str or "invalid" in error_str.lower():
+                error_msg += (
+                    "API authentication failed. Your API key may be invalid or expired.\n\n"
+                    "Verify your API key:\n"
+                    "  inkwell config show\n\n"
+                    "Get a new key at: https://aistudio.google.com/apikey"
                 )
             else:
                 error_msg += f"Error details: {e}"

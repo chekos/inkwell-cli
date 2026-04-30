@@ -91,6 +91,18 @@ def is_youtube_playlist_url(url: str) -> bool:
     return _is_youtube_host(host) and _is_playlist_url(path, query)
 
 
+def channel_id_from_feed_url(url: str) -> str | None:
+    """Return channel_id from a normalized YouTube media-RSS URL, if present."""
+    parts = _parse(url)
+    if parts is None:
+        return None
+    host, path, query = parts
+    if not _is_youtube_host(host) or path != _FEED_PATH:
+        return None
+    channel_ids = query.get("channel_id", [])
+    return next((channel_id for channel_id in channel_ids if channel_id), None)
+
+
 def _is_already_resolved_feed_url(host: str, path: str, query: dict[str, list[str]]) -> bool:
     # Require a non-empty channel_id value; `?channel_id=` alone would slip
     # through otherwise and reach yt-dlp with an RSS XML URL.

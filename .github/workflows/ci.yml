@@ -24,6 +24,9 @@ jobs:
       - name: Install dependencies
         run: uv sync --dev --frozen
 
+      - name: Lint GitHub Actions
+        uses: raven-actions/actionlint@v2
+
       - name: Lint with Ruff
         run: uv run ruff check .
 

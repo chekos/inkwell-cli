@@ -507,6 +507,7 @@ uv run pytest tests/unit/test_costs.py -v
 This project maintains high code quality:
 - **Type hints**: Full coverage with mypy validation
 - **Linting**: Ruff for code style
+- **Workflow linting**: actionlint for GitHub Actions changes
 - **Testing**: 1,200+ tests with coverage reporting
 - **Documentation**: Comprehensive DKS documentation
 - **Error handling**: Robust retry logic

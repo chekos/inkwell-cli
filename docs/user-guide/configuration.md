@@ -89,6 +89,7 @@ Opens `config.yaml` in your `$EDITOR` (defaults to `vi`).
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `transcription.api_key` | string | `""` | Google AI API key |
+| `transcription.model_name` | string | `gemini-2.5-flash` | Gemini model for audio transcription |
 | `youtube_check` | boolean | `true` | Check YouTube for transcripts first |
 
 ### Extraction
@@ -134,6 +135,7 @@ default_output_dir: ~/ObsidianVault/podcasts
 # Transcription
 transcription:
   api_key: your-google-ai-key-here
+  model_name: gemini-2.5-flash   # omit to use the default
 youtube_check: true
 
 # Extraction
@@ -167,17 +169,17 @@ obsidian:
 
 ## Environment Variables
 
-Environment variables override config file values:
+Environment variables provide fallback values when the corresponding config key is not set in `config.yaml`.
 
-| Variable | Overrides |
-|----------|-----------|
+| Variable | Fallback for |
+|----------|-------------|
 | `GOOGLE_API_KEY` | `transcription.api_key` |
 | `ANTHROPIC_API_KEY` | Anthropic API key for interview |
 | `INKWELL_CONFIG_DIR` | Config directory location |
 | `INKWELL_OUTPUT_DIR` | `default_output_dir` |
 | `INKWELL_LOG_LEVEL` | `log_level` |
 
-**Priority:** Environment variable > Config file > Default
+**Priority for `transcription.api_key`:** Config file value > `GOOGLE_API_KEY` env var > (error if neither is set)
 
 ---
 

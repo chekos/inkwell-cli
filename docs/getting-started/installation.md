@@ -159,6 +159,21 @@ inkwell config show
 
 ---
 
+---
+
+## Distribution
+
+| Method | Status |
+|--------|--------|
+| `uv tool install inkwell-cli` | **Supported** (recommended) |
+| `pip install inkwell-cli` | **Supported** |
+| Docker image | Not currently provided |
+| Homebrew formula | Not currently provided |
+
+Docker and Homebrew are not on the current roadmap. If you'd like to see them, open a [GitHub issue](https://github.com/chekos/inkwell-cli/issues) to gauge interest.
+
+---
+
 ## Next Steps
 
 - [Quick Start](quickstart.md) - Process your first episode

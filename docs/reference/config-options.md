@@ -42,6 +42,7 @@ default_output_dir: $HOME/notes/podcasts
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `transcription.api_key` | string | `""` | Google AI API key |
+| `transcription.model_name` | string | `gemini-2.5-flash` | Gemini model for transcription |
 | `youtube_check` | boolean | `true` | Check YouTube for transcripts first |
 
 ### transcription.api_key
@@ -55,6 +56,27 @@ transcription:
 
 !!! tip
     Use `inkwell config set transcription.api_key "your-key"` to set this securely.
+    When `transcription.api_key` is not set in config, Inkwell falls back to the `GOOGLE_API_KEY` environment variable. The config value takes precedence when both are present.
+
+### transcription.model_name
+
+The Gemini model used when audio transcription is required (i.e. no free YouTube transcript is available).
+
+Default (matches the generated config template):
+
+```yaml
+transcription:
+  model_name: gemini-2.5-flash
+```
+
+To pin a different model:
+
+```yaml
+transcription:
+  model_name: gemini-3-flash-preview
+```
+
+The model name must start with `gemini-`. When in doubt, omit this key and let the default apply.
 
 ### youtube_check
 
@@ -225,20 +247,20 @@ obsidian:
 
 ## Environment Variables
 
-Override config with environment variables:
+Environment variables provide fallback values when the corresponding config key is not set.
 
-| Variable | Overrides | Example |
-|----------|-----------|---------|
+| Variable | Fallback for | Example |
+|----------|-------------|---------|
 | `GOOGLE_API_KEY` | `transcription.api_key` | `export GOOGLE_API_KEY="AIza..."` |
 | `ANTHROPIC_API_KEY` | Anthropic key for interview | `export ANTHROPIC_API_KEY="sk-..."` |
 | `INKWELL_CONFIG_DIR` | Config directory | `export INKWELL_CONFIG_DIR="/custom/path"` |
 | `INKWELL_OUTPUT_DIR` | `default_output_dir` | `export INKWELL_OUTPUT_DIR="~/notes"` |
 | `INKWELL_LOG_LEVEL` | `log_level` | `export INKWELL_LOG_LEVEL="DEBUG"` |
 
-**Priority order:**
-1. Environment variable (highest)
-2. Config file
-3. Default value (lowest)
+**Priority order for `transcription.api_key` / `GOOGLE_API_KEY`:**
+1. Config file value (highest — wins when set)
+2. `GOOGLE_API_KEY` environment variable
+3. Default (empty — Inkwell will error if no key is available)
 
 ---
 

@@ -30,7 +30,8 @@ class ResolvedFeed(NamedTuple):
     """
 
     feed_url: str
-    channel_name: str | None
+    channel_name: str | None = None
+    episode_title: str | None = None
 
 
 YOUTUBE_HOSTS = frozenset({"youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be"})
@@ -154,9 +155,11 @@ def _resolve_with_ytdlp(url: str) -> ResolvedFeed:
             suggestion=_MANUAL_ESCAPE_HATCH,
         )
     channel_name = info.get("channel") or info.get("uploader")
+    episode_title = info.get("title") if isinstance(info.get("title"), str) else None
     return ResolvedFeed(
         feed_url=_FEED_URL_TEMPLATE.format(channel_id=channel_id),
         channel_name=channel_name,
+        episode_title=episode_title,
     )
 
 

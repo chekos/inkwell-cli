@@ -970,10 +970,9 @@ def fetch_command(
                         ),
                     )
 
-            # Pre-resolve YouTube URLs so the channel name becomes the podcast
-            # display name (output dirs otherwise fall back to "unknown-podcast"
-            # on direct-URL fetches). Also lets the post-fetch --save-feed
-            # block reuse the tuple instead of calling yt-dlp twice.
+            # Pre-resolve YouTube URLs so we can reuse yt-dlp metadata
+            # (channel + video title) and avoid a second yt-dlp call in the
+            # post-fetch --save-feed block.
             pre_resolved: ResolvedFeed | None = None
             if is_url and is_youtube_url(url_or_feed) and not is_youtube_playlist_url(url_or_feed):
                 try:
@@ -1082,17 +1081,10 @@ def fetch_command(
                 if ep is not None:
                     episode_title = ep.title
                     detected_podcast_name = ep.podcast_name or url_or_feed
-                elif save_feed and feed_name is not None:
-                    # Explicit --feed-name means the user told us what to call
-                    # this feed — reuse as the display name so we don't force
-                    # them to pass --podcast-name redundantly. They can still
-                    # override for display via --podcast-name explicitly.
-                    detected_podcast_name = feed_name
-                elif pre_resolved is not None and pre_resolved.channel_name:
-                    # Direct YouTube URL with no --feed-name: use the channel
-                    # name yt-dlp resolved. Without this (or --feed-name, or
-                    # --podcast-name), output dirs fall back to "unknown-podcast/".
-                    detected_podcast_name = pre_resolved.channel_name
+                elif pre_resolved is not None and pre_resolved.episode_title:
+                    # Direct YouTube URL: when yt-dlp provides a video title,
+                    # use it so direct-URL capture folders are readable.
+                    episode_title = pre_resolved.episode_title
 
                 # Compute effective output directory
                 effective_output_dir = output_dir or config.default_output_dir

@@ -10,10 +10,12 @@ from inkwell.utils.errors import ValidationError
 
 
 def _mock_ytdlp(
-    channel_id: str | None = "UCtestChannelIdExample", channel: str | None = "Test Channel"
+    channel_id: str | None = "UCtestChannelIdExample",
+    channel: str | None = "Test Channel",
+    title: str | None = "Test Episode Title",
 ):
     """Build a patch context for yt_dlp.YoutubeDL returning the given info dict."""
-    info: dict[str, str | None] = {"channel_id": channel_id, "channel": channel}
+    info: dict[str, str | None] = {"channel_id": channel_id, "channel": channel, "title": title}
     mock_instance = MagicMock()
     mock_instance.extract_info.return_value = info
     mock_class = MagicMock()
@@ -80,11 +82,16 @@ class TestResolveYouTubeUrlWithYtDlp:
 
     @pytest.mark.asyncio
     async def test_watch_url_resolves_via_ytdlp(self) -> None:
-        patcher, mock_class = _mock_ytdlp(channel_id="UCabc", channel="Some Channel")
+        patcher, mock_class = _mock_ytdlp(
+            channel_id="UCabc",
+            channel="Some Channel",
+            title="How to Build Durable Systems",
+        )
         with patcher:
             result = await resolve_youtube_url("https://www.youtube.com/watch?v=someVideoId")
         assert result is not None
         assert "channel_id=UCabc" in result.feed_url
+        assert result.episode_title == "How to Build Durable Systems"
         mock_class.assert_called_once()
 
     @pytest.mark.asyncio

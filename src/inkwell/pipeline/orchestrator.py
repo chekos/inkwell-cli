@@ -23,6 +23,7 @@ from inkwell.utils.api_keys import APIKeyError, get_validated_api_key
 from inkwell.utils.costs import CostTracker
 from inkwell.utils.datetime import now_utc
 from inkwell.utils.errors import InkwellError
+from inkwell.utils.url_metadata import derive_readable_title_from_url
 
 from .models import PipelineOptions, PipelineResult
 
@@ -36,6 +37,9 @@ if TYPE_CHECKING:
     from inkwell.transcription.models import TranscriptionResult
 
 logger = logging.getLogger(__name__)
+
+_DIRECT_URL_PODCAST = "_inbox"
+_FALLBACK_DIRECT_URL_TITLE = "Untitled capture"
 
 
 class PipelineOrchestrator:
@@ -132,6 +136,16 @@ class PipelineOrchestrator:
         output_manager = OutputManager(output_dir=output_path)
         return output_manager._get_episode_directory_path(episode_metadata)
 
+    def _resolve_episode_metadata_defaults(self, options: PipelineOptions) -> tuple[str, str]:
+        """Resolve podcast/title defaults for output naming."""
+        podcast_name = (options.podcast_name or "").strip() or _DIRECT_URL_PODCAST
+        episode_title = (
+            (options.episode_title or "").strip()
+            or derive_readable_title_from_url(options.url)
+            or _FALLBACK_DIRECT_URL_TITLE
+        )
+        return podcast_name, episode_title
+
     async def process_episode(
         self,
         options: PipelineOptions,
@@ -194,15 +208,21 @@ class PipelineOrchestrator:
         if progress_callback:
             progress_callback("template_selection_start", {})
 
+        effective_podcast_name, effective_episode_title = self._resolve_episode_metadata_defaults(
+            options
+        )
+
         selected_templates = self._select_templates(
             options=options,
             transcript=transcript.full_text,
             episode_url=options.url,
+            episode_title=effective_episode_title,
+            podcast_name=effective_podcast_name,
         )
 
         episode_metadata = EpisodeMetadata(
-            podcast_name=options.podcast_name or "Unknown Podcast",
-            episode_title=options.episode_title or f"Episode from {options.url}",
+            podcast_name=effective_podcast_name,
+            episode_title=effective_episode_title,
             episode_url=options.url,
             transcription_source=transcript.source,
         )
@@ -434,6 +454,8 @@ class PipelineOrchestrator:
         options: PipelineOptions,
         transcript: str,
         episode_url: str,
+        episode_title: str,
+        podcast_name: str,
     ) -> list["ExtractionTemplate"]:
         """Select templates based on options and content.
 
@@ -454,11 +476,11 @@ class PipelineOrchestrator:
 
         # url is HttpUrl but Pydantic validates str at runtime
         episode = Episode(
-            title=f"Episode from {episode_url}",
+            title=episode_title,
             url=episode_url,  # type: ignore[arg-type]
             published=now_utc(),
             description="",
-            podcast_name="Unknown Podcast",
+            podcast_name=podcast_name,
         )
 
         selected_templates = selector.select_templates(

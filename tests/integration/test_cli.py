@@ -730,6 +730,57 @@ class TestCLIFetchSaveFeed:
         feeds = ConfigManager(config_dir=tmp_path).list_feeds()
         assert "scheme-less" in feeds
 
+    def test_direct_youtube_url_passes_resolved_episode_title_to_pipeline(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """Direct YouTube fetch should reuse yt-dlp title metadata for naming."""
+        from types import SimpleNamespace
+
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+
+        output_dir = tmp_path / "episode-dir"
+        output_dir.mkdir()
+
+        seen_titles: list[tuple[str | None, str | None]] = []
+
+        async def fake_process(_orchestrator, options, *_args, **_kwargs):
+            seen_titles.append((options.podcast_name, options.episode_title))
+            return SimpleNamespace(
+                episode_output=SimpleNamespace(directory=output_dir),
+                extraction_results=[],
+                interview_result=None,
+                extraction_cost_usd=0.0,
+                interview_cost_usd=0.0,
+                total_cost_usd=0.0,
+            )
+
+        async def fake_resolve(_url: str) -> ResolvedFeed:
+            return ResolvedFeed(
+                feed_url="https://www.youtube.com/feeds/videos.xml?channel_id=UCtitle",
+                channel_name="Channel Name",
+                episode_title="Readable Video Title",
+            )
+
+        monkeypatch.setattr("inkwell.pipeline.PipelineOrchestrator.process_episode", fake_process)
+        monkeypatch.setattr("inkwell.cli.resolve_youtube_url", fake_resolve)
+
+        result = runner.invoke(
+            app,
+            [
+                "fetch",
+                "https://www.youtube.com/watch?v=abc",
+                "--dry-run",
+                "--output-dir",
+                str(tmp_path),
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        # Direct URL fetches stay in the orchestrator's _inbox default unless
+        # users explicitly pass --podcast-name, but they should still get a
+        # readable title from yt-dlp metadata when available.
+        assert seen_titles == [(None, "Readable Video Title")]
+
     def test_fetch_saved_feed_accepts_display_name(self, tmp_path: Path, monkeypatch) -> None:
         """Saved feeds can be fetched by their display name."""
         from types import SimpleNamespace

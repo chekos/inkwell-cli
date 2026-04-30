@@ -3,9 +3,11 @@
 import fcntl
 import json
 import os
+import re
 import sys
 from collections.abc import Iterator
 from contextlib import contextmanager
+from difflib import get_close_matches
 from pathlib import Path
 
 import yaml
@@ -32,6 +34,24 @@ from inkwell.utils.paths import (
     get_feeds_file,
     get_key_file,
 )
+
+_FEED_NAME_SLUG_RE = re.compile(r"[^a-z0-9]+")
+
+
+def slugify_feed_name(name: str) -> str:
+    """Collapse a human-readable feed name into a stable config key."""
+    return _FEED_NAME_SLUG_RE.sub("-", name.lower()).strip("-")
+
+
+def normalize_feed_name(name: str) -> str:
+    """Normalize and validate a feed name for use as a config key."""
+    normalized = slugify_feed_name(name)
+    if not normalized:
+        raise InkwellValidationError(
+            "Feed name must include at least one letter or number",
+            suggestion="Use a short name like 'syntax' or 'oren-meets-world'",
+        )
+    return normalized
 
 
 class ConfigManager:
@@ -337,7 +357,58 @@ class ConfigManager:
             encoding="utf-8",
         )
 
-    def add_feed(self, name: str, feed_config: FeedConfig) -> None:
+    def _resolve_feed_key(
+        self,
+        feeds: dict[str, FeedConfig],
+        name: str,
+    ) -> str | None:
+        """Resolve a user-supplied name to a canonical feed key."""
+        if name in feeds:
+            return name
+
+        normalized = slugify_feed_name(name)
+        if normalized in feeds:
+            return normalized
+
+        exact_display_names: dict[str, str] = {}
+        normalized_display_names: dict[str, str] = {}
+        for key, feed in feeds.items():
+            if feed.display_name:
+                exact_display_names[feed.display_name.casefold()] = key
+                display_slug = slugify_feed_name(feed.display_name)
+                if display_slug:
+                    normalized_display_names[display_slug] = key
+
+        display_match = exact_display_names.get(name.casefold())
+        if display_match:
+            return display_match
+
+        display_match = normalized_display_names.get(normalized)
+        if display_match:
+            return display_match
+
+        close_matches = get_close_matches(
+            normalized,
+            list(normalized_display_names),
+            n=1,
+            cutoff=0.82,
+        )
+        if close_matches:
+            return normalized_display_names[close_matches[0]]
+
+        return None
+
+    def resolve_feed_name(self, name: str) -> str:
+        """Return the canonical feed key for a user-supplied feed name."""
+        feeds = self.load_feeds().feeds
+        resolved = self._resolve_feed_key(feeds, name)
+        if resolved is None:
+            raise NotFoundError(
+                "Feed", name, suggestion="Run 'inkwell list' to see available feeds"
+            )
+        return resolved
+
+    def add_feed(self, name: str, feed_config: FeedConfig) -> str:
         """Add or update a feed.
 
         Uses file locking to prevent race conditions in concurrent operations.
@@ -349,27 +420,36 @@ class ConfigManager:
         Raises:
             DuplicateFeedError: If feed already exists (use update instead)
         """
+        normalized_name = normalize_feed_name(name)
         with self._feeds_lock():
             feeds = self.load_feeds()
 
-            if name in feeds.feeds:
+            if normalized_name in feeds.feeds:
                 raise InkwellValidationError(
-                    f"Feed '{name}' already exists. Use update to modify it.",
-                    suggestion="Use 'inkwell remove' first, or choose a different name",
+                    f"Feed '{normalized_name}' already exists. Use update to modify it.",
+                    suggestion=(
+                        "Choose a different name to disambiguate it, or use "
+                        "'inkwell rename' for existing feeds"
+                    ),
                 )
 
-            feeds.feeds[name] = feed_config
+            if feed_config.display_name is None and normalized_name != name:
+                feed_config = feed_config.model_copy(update={"display_name": name})
+
+            feeds.feeds[normalized_name] = feed_config
             self.save_feeds(feeds)
 
             self._log_change(
                 "add_feed",
                 {
-                    "feed_name": name,
+                    "feed_name": normalized_name,
+                    "display_name": feed_config.display_name,
                     "url": str(feed_config.url),
                     "auth_type": feed_config.auth.type if feed_config.auth else "none",
                     "category": feed_config.category,
                 },
             )
+            return normalized_name
 
     def update_feed(self, name: str, feed_config: FeedConfig) -> None:
         """Update an existing feed.
@@ -385,16 +465,21 @@ class ConfigManager:
         """
         with self._feeds_lock():
             feeds = self.load_feeds()
+            resolved_name = self._resolve_feed_key(feeds.feeds, name)
 
-            if name not in feeds.feeds:
+            if resolved_name is None:
                 raise NotFoundError(
                     "Feed", name, suggestion="Run 'inkwell list' to see available feeds"
                 )
 
             # Capture old config for diff
-            old_config = feeds.feeds[name]
+            old_config = feeds.feeds[resolved_name]
+            if feed_config.display_name is None:
+                feed_config = feed_config.model_copy(
+                    update={"display_name": old_config.display_name}
+                )
 
-            feeds.feeds[name] = feed_config
+            feeds.feeds[resolved_name] = feed_config
             self.save_feeds(feeds)
 
             changes = {}
@@ -410,11 +495,16 @@ class ConfigManager:
                     "old": old_config.category or "",
                     "new": feed_config.category or "",
                 }
+            if old_config.display_name != feed_config.display_name:
+                changes["display_name"] = {
+                    "old": old_config.display_name or "",
+                    "new": feed_config.display_name or "",
+                }
 
             self._log_change(
                 "update_feed",
                 {
-                    "feed_name": name,
+                    "feed_name": resolved_name,
                     "changes": changes,
                 },
             )
@@ -432,22 +522,23 @@ class ConfigManager:
         """
         with self._feeds_lock():
             feeds = self.load_feeds()
+            resolved_name = self._resolve_feed_key(feeds.feeds, name)
 
-            if name not in feeds.feeds:
+            if resolved_name is None:
                 raise NotFoundError(
                     "Feed", name, suggestion="Run 'inkwell list' to see available feeds"
                 )
 
             # Capture feed details before deletion
-            removed_feed = feeds.feeds[name]
+            removed_feed = feeds.feeds[resolved_name]
 
-            del feeds.feeds[name]
+            del feeds.feeds[resolved_name]
             self.save_feeds(feeds)
 
             self._log_change(
                 "remove_feed",
                 {
-                    "feed_name": name,
+                    "feed_name": resolved_name,
                     "url": str(removed_feed.url),
                     "auth_type": removed_feed.auth.type if removed_feed.auth else "none",
                     "category": removed_feed.category,
@@ -456,32 +547,38 @@ class ConfigManager:
 
     def rename_feed(self, old_name: str, new_name: str, overwrite: bool = False) -> None:
         """Rename a feed key while preserving the feed configuration."""
+        normalized_new_name = normalize_feed_name(new_name)
         with self._feeds_lock():
             feeds = self.load_feeds()
+            resolved_old_name = self._resolve_feed_key(feeds.feeds, old_name)
 
-            if old_name not in feeds.feeds:
+            if resolved_old_name is None:
                 raise NotFoundError(
                     "Feed", old_name, suggestion="Run 'inkwell list' to see available feeds"
                 )
 
-            if old_name == new_name:
+            if resolved_old_name == normalized_new_name:
                 return
 
-            if new_name in feeds.feeds and not overwrite:
+            if normalized_new_name in feeds.feeds and not overwrite:
                 raise InkwellValidationError(
-                    f"Feed '{new_name}' already exists.",
+                    f"Feed '{normalized_new_name}' already exists.",
                     suggestion="Choose a different name, or pass --force to overwrite it",
                 )
 
-            feed_config = feeds.feeds[old_name]
-            overwritten_feed = feeds.feeds.get(new_name)
-            feeds.feeds[new_name] = feed_config
-            del feeds.feeds[old_name]
+            feed_config = feeds.feeds[resolved_old_name]
+            if normalized_new_name != new_name:
+                feed_config = feed_config.model_copy(update={"display_name": new_name})
+
+            overwritten_feed = feeds.feeds.get(normalized_new_name)
+            feeds.feeds[normalized_new_name] = feed_config
+            del feeds.feeds[resolved_old_name]
             self.save_feeds(feeds)
 
             details = {
-                "old_feed_name": old_name,
-                "new_feed_name": new_name,
+                "old_feed_name": resolved_old_name,
+                "new_feed_name": normalized_new_name,
+                "display_name": feed_config.display_name,
                 "url": str(feed_config.url),
             }
             if overwritten_feed is not None:
@@ -501,13 +598,14 @@ class ConfigManager:
             FeedNotFoundError: If feed doesn't exist
         """
         feeds = self.load_feeds()
+        resolved_name = self._resolve_feed_key(feeds.feeds, name)
 
-        if name not in feeds.feeds:
+        if resolved_name is None:
             raise NotFoundError(
                 "Feed", name, suggestion="Run 'inkwell list' to see available feeds"
             )
 
-        return feeds.feeds[name]
+        return feeds.feeds[resolved_name]
 
     def list_feeds(self) -> dict[str, FeedConfig]:
         """List all feeds.

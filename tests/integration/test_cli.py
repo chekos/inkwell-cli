@@ -156,6 +156,7 @@ class TestCLIAddYouTube:
         assert result.exit_code == 0, result.stdout
         feeds = ConfigManager(config_dir=tmp_path).list_feeds()
         assert "plain-rss" in feeds
+        assert feeds["plain-rss"].display_name == "Plain RSS!"
         assert "Plain RSS!" in result.output
 
     def test_add_playlist_url_rejected(self, tmp_path: Path, monkeypatch) -> None:
@@ -683,6 +684,68 @@ class TestCLIFetchSaveFeed:
         feeds = ConfigManager(config_dir=tmp_path).list_feeds()
         assert "scheme-less" in feeds
 
+    def test_fetch_saved_feed_accepts_display_name(self, tmp_path: Path, monkeypatch) -> None:
+        """Saved feeds can be fetched by their display name."""
+        from types import SimpleNamespace
+
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+
+        manager = ConfigManager(config_dir=tmp_path)
+        from inkwell.config.schema import FeedConfig as _FeedConfig
+
+        manager.add_feed(
+            "omw",
+            _FeedConfig(
+                url="https://example.com/feed.rss",  # type: ignore[arg-type]
+                display_name="Oren Meets World",
+            ),
+        )
+
+        async def fake_fetch_feed(*_args, **_kwargs):
+            return SimpleNamespace(entries=[object()])
+
+        def fake_get_latest_episode(*_args, **_kwargs):
+            return SimpleNamespace(
+                title="Latest",
+                url="https://example.com/episode.mp3",
+                podcast_name="Oren Meets World",
+            )
+
+        output_dir = tmp_path / "episode-dir"
+        output_dir.mkdir()
+
+        async def fake_process(*_args, **_kwargs):
+            return SimpleNamespace(
+                episode_output=SimpleNamespace(directory=output_dir),
+                extraction_results=[],
+                interview_result=None,
+                extraction_cost_usd=0.0,
+                interview_cost_usd=0.0,
+                total_cost_usd=0.0,
+            )
+
+        monkeypatch.setattr("inkwell.feeds.parser.RSSParser.fetch_feed", fake_fetch_feed)
+        monkeypatch.setattr(
+            "inkwell.feeds.parser.RSSParser.get_latest_episode",
+            fake_get_latest_episode,
+        )
+        monkeypatch.setattr("inkwell.pipeline.PipelineOrchestrator.process_episode", fake_process)
+
+        result = runner.invoke(
+            app,
+            [
+                "fetch",
+                "Oren Meets World",
+                "--latest",
+                "--dry-run",
+                "--output-dir",
+                str(tmp_path),
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "Latest" in result.output
+
     def test_feed_name_without_save_feed_errors(self, tmp_path: Path, monkeypatch) -> None:
         """--feed-name alone is a no-op that silently mislead users and
         scripts into thinking the channel was persisted. Reject up-front.
@@ -781,7 +844,7 @@ class TestCLIList:
         # Mock get_config_dir - other path functions derive from it
         monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
 
-        result = runner.invoke(app, ["list"])
+        result = runner.invoke(app, ["list", "feeds"])
 
         assert result.exit_code == 0
         assert "No feeds configured" in result.stdout
@@ -819,6 +882,28 @@ class TestCLIList:
         assert feeds["podcast2"].auth.type == "basic"
         assert feeds["podcast2"].auth.username == "user"  # Decrypted
 
+    def test_list_feeds_renders_display_name(self, tmp_path: Path, monkeypatch) -> None:
+        """Test list output shows display names while keeping the key visible."""
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+        monkeypatch.setattr("inkwell.config.manager.get_config_dir", lambda: tmp_path)
+        manager = ConfigManager(config_dir=tmp_path)
+
+        from inkwell.config.schema import FeedConfig
+
+        manager.add_feed(
+            "omw",
+            FeedConfig(
+                url="https://example.com/feed.rss",  # type: ignore
+                display_name="Oren Meets World",
+            ),
+        )
+
+        result = runner.invoke(app, ["list", "feeds"])
+
+        assert result.exit_code == 0, result.output
+        assert "Oren Meets World" in result.output
+        assert "omw" in result.output
+
 
 class TestCLIRemove:
     """Tests for remove command."""
@@ -852,6 +937,26 @@ class TestCLIRemove:
         with pytest.raises(NotFoundError):
             manager.remove_feed("nonexistent")
 
+    def test_remove_feed_accepts_display_name(self, tmp_path: Path, monkeypatch) -> None:
+        """Test removing a feed through the CLI by display name."""
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+        manager = ConfigManager(config_dir=tmp_path)
+
+        from inkwell.config.schema import FeedConfig
+
+        manager.add_feed(
+            "omw",
+            FeedConfig(
+                url="https://example.com/feed.rss",  # type: ignore
+                display_name="Oren Meets World",
+            ),
+        )
+
+        result = runner.invoke(app, ["remove", "Oren Meets World", "--force"])
+
+        assert result.exit_code == 0, result.output
+        assert "omw" not in ConfigManager(config_dir=tmp_path).list_feeds()
+
 
 class TestCLIRename:
     """Tests for rename command."""
@@ -878,6 +983,7 @@ class TestCLIRename:
         feeds = ConfigManager(config_dir=tmp_path).list_feeds()
         assert "old-name" not in feeds
         assert "new-name" in feeds
+        assert feeds["new-name"].display_name == "New Name!"
         assert feeds["new-name"].category == "tech"
         assert "Normalized" in result.output
 

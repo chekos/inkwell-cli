@@ -34,7 +34,7 @@ inkwell add <URL> --feed-name <NAME> [OPTIONS]
 
 | Option | Short | Type | Default | Description |
 |--------|-------|------|---------|-------------|
-| `--feed-name` | `-n` | string | Required | Feed identifier |
+| `--feed-name` | `-n` | string | Required | Feed display name or identifier. Human-readable names are slugified for the config key. |
 | `--name` | | string | Required | Backward-compatible alias for `--feed-name` |
 | `--category` | `-c` | string | None | Feed category |
 | `--auth` | | flag | false | Prompt for authentication |
@@ -44,6 +44,9 @@ inkwell add <URL> --feed-name <NAME> [OPTIONS]
 ```bash
 # Basic feed
 inkwell add https://example.com/feed.rss --feed-name my-podcast
+
+# Human-readable names are stored as display names and keyed by slug
+inkwell add https://example.com/feed.rss --feed-name "Oren Meets World"
 
 # With category
 inkwell add https://example.com/feed.rss --feed-name tech-show --category tech
@@ -59,6 +62,7 @@ inkwell add https://www.youtube.com/channel/UCxxxxxxxxxxxxxxxxxxxx --feed-name s
 
 > **Note:** Playlist URLs (`?list=…`) are rejected with a clear error — playlist ingestion is not yet supported. If you pass a video URL that includes a playlist query param (e.g. `watch?v=X&list=Y`), `inkwell` will tell you to use the channel URL instead.
 > `--name` is still accepted for existing scripts, but new examples use `--feed-name`.
+> Feed lookups accept the stored slug and the display name, so `inkwell fetch oren-meets-world --latest` and `inkwell fetch "Oren Meets World" --latest` both work after adding that feed.
 
 ---
 

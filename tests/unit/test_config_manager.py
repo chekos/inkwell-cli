@@ -90,6 +90,26 @@ class TestConfigManager:
         feeds = manager.list_feeds()
         assert "my-podcast" in feeds
 
+    def test_add_feed_slugifies_human_name_and_preserves_display_name(self, tmp_path: Path) -> None:
+        """Test adding a human-readable feed name stores a canonical key."""
+        manager = ConfigManager(config_dir=tmp_path)
+        feed_config = FeedConfig(url="https://example.com/feed.rss")  # type: ignore
+
+        stored_name = manager.add_feed("Oren Meets World!", feed_config)
+
+        feeds = manager.list_feeds()
+        assert stored_name == "oren-meets-world"
+        assert "oren-meets-world" in feeds
+        assert feeds["oren-meets-world"].display_name == "Oren Meets World!"
+
+    def test_add_feed_empty_after_slugify_raises(self, tmp_path: Path) -> None:
+        """Test feed names must contain at least one ASCII letter or number."""
+        manager = ConfigManager(config_dir=tmp_path)
+        feed_config = FeedConfig(url="https://example.com/feed.rss")  # type: ignore
+
+        with pytest.raises(ValidationError, match="at least one letter or number"):
+            manager.add_feed("!!!", feed_config)
+
     def test_add_duplicate_feed_raises(self, tmp_path: Path) -> None:
         """Test that adding duplicate feed raises DuplicateFeedError."""
         manager = ConfigManager(config_dir=tmp_path)
@@ -99,6 +119,16 @@ class TestConfigManager:
 
         with pytest.raises(ValidationError, match="already exists"):
             manager.add_feed("my-podcast", feed_config)
+
+    def test_add_duplicate_after_slugify_raises(self, tmp_path: Path) -> None:
+        """Test duplicate detection uses the canonical slug."""
+        manager = ConfigManager(config_dir=tmp_path)
+        feed_config = FeedConfig(url="https://example.com/feed.rss")  # type: ignore
+
+        manager.add_feed("Oren Meets World", feed_config)
+
+        with pytest.raises(ValidationError, match="oren-meets-world"):
+            manager.add_feed("oren-meets-world", feed_config)
 
     def test_update_feed(self, tmp_path: Path) -> None:
         """Test updating an existing feed."""
@@ -113,6 +143,24 @@ class TestConfigManager:
         # Verify update
         feed = manager.get_feed("my-podcast")
         assert feed.category == "interview"
+
+    def test_update_feed_preserves_display_name(self, tmp_path: Path) -> None:
+        """Test updating a feed does not erase existing display metadata."""
+        manager = ConfigManager(config_dir=tmp_path)
+
+        manager.add_feed(
+            "Oren Meets World",
+            FeedConfig(url="https://example.com/feed.rss", category="tech"),  # type: ignore
+        )
+
+        manager.update_feed(
+            "oren-meets-world",
+            FeedConfig(url="https://example.com/feed.rss", category="interview"),  # type: ignore
+        )
+
+        feed = manager.get_feed("oren-meets-world")
+        assert feed.category == "interview"
+        assert feed.display_name == "Oren Meets World"
 
     def test_update_nonexistent_feed_raises(self, tmp_path: Path) -> None:
         """Test that updating nonexistent feed raises FeedNotFoundError."""
@@ -134,6 +182,17 @@ class TestConfigManager:
         # Verify removal
         feeds = manager.list_feeds()
         assert "my-podcast" not in feeds
+
+    def test_remove_feed_by_display_name(self, tmp_path: Path) -> None:
+        """Test removing a feed by its display name resolves to the key."""
+        manager = ConfigManager(config_dir=tmp_path)
+        manager.add_feed(
+            "omw", FeedConfig(url="https://example.com/feed.rss", display_name="Oren Meets World")
+        )  # type: ignore
+
+        manager.remove_feed("Oren Meets World")
+
+        assert "omw" not in manager.list_feeds()
 
     def test_remove_nonexistent_feed_raises(self, tmp_path: Path) -> None:
         """Test that removing nonexistent feed raises FeedNotFoundError."""
@@ -188,6 +247,17 @@ class TestConfigManager:
         assert "old-name" not in feeds
         assert str(feeds["new-name"].url) == "https://example.com/old.rss"
 
+    def test_rename_feed_slugifies_and_updates_display_name(self, tmp_path: Path) -> None:
+        """Test renaming with a human-readable name stores display metadata."""
+        manager = ConfigManager(config_dir=tmp_path)
+        manager.add_feed("old-name", FeedConfig(url="https://example.com/old.rss"))  # type: ignore
+
+        manager.rename_feed("old-name", "Better Name!")
+
+        feeds = manager.list_feeds()
+        assert "better-name" in feeds
+        assert feeds["better-name"].display_name == "Better Name!"
+
     def test_get_feed(self, tmp_path: Path) -> None:
         """Test getting a single feed."""
         manager = ConfigManager(config_dir=tmp_path)
@@ -196,6 +266,28 @@ class TestConfigManager:
         manager.add_feed("my-podcast", feed_config)
 
         feed = manager.get_feed("my-podcast")
+
+        assert str(feed.url) == "https://example.com/feed.rss"
+
+    def test_get_feed_by_display_name(self, tmp_path: Path) -> None:
+        """Test display names can be used as feed lookup aliases."""
+        manager = ConfigManager(config_dir=tmp_path)
+        manager.add_feed(
+            "omw", FeedConfig(url="https://example.com/feed.rss", display_name="Oren Meets World")
+        )  # type: ignore
+
+        feed = manager.get_feed("Oren Meets World")
+
+        assert str(feed.url) == "https://example.com/feed.rss"
+
+    def test_get_feed_by_close_display_name_match(self, tmp_path: Path) -> None:
+        """Test close display-name matches can resolve saved feeds."""
+        manager = ConfigManager(config_dir=tmp_path)
+        manager.add_feed(
+            "omw", FeedConfig(url="https://example.com/feed.rss", display_name="Oren Meets World")
+        )  # type: ignore
+
+        feed = manager.get_feed("oren meet world")
 
         assert str(feed.url) == "https://example.com/feed.rss"
 

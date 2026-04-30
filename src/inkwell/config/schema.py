@@ -22,6 +22,7 @@ class FeedConfig(BaseModel):
     """Configuration for a single podcast feed."""
 
     url: HttpUrl
+    display_name: str | None = None
     auth: AuthConfig = Field(default_factory=AuthConfig)
     category: str | None = None
     custom_templates: list[str] = Field(default_factory=list)

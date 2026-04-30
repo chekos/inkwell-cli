@@ -333,8 +333,8 @@ async def extract_insights(transcript: str) -> list[str]:
 ## References
 
 - [Unit 7 Devlog](../devlog/2025-11-08-phase-4-unit-7-transcript-formatting.md) - Implementation details
-- [formatter.py](../../src/inkwell/interview/formatter.py) - Implementation
-- [test_formatter.py](../../tests/unit/interview/test_formatter.py) - Tests demonstrating behavior
+- Historical implementation path: `src/inkwell/interview/formatter.py`
+- Historical test path: `tests/unit/interview/test_formatter.py`
 
 ## Future Considerations
 

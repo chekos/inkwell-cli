@@ -315,10 +315,10 @@ See: [docs/lessons/2025-11-13-phase-5-unit-9-user-documentation.md](../lessons/2
 
 ## References
 
-- [User Guide](../user-guide.md)
-- [Tutorial](../tutorial.md)
-- [Examples](../examples.md)
-- [Dataview Queries](../dataview-queries.md)
+- [User Guide](../../user-guide/index.md)
+- [Tutorial](../../getting-started/first-episode.md)
+- [Processing Guide](../../user-guide/processing.md)
+- [Obsidian Integration](../../user-guide/obsidian.md)
 
 ## Time Log
 

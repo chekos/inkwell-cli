@@ -1,5 +1,11 @@
 # Inkwell CLI
 
+[![CI](https://github.com/chekos/inkwell-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/chekos/inkwell-cli/actions/workflows/ci.yml)
+[![Docs](https://github.com/chekos/inkwell-cli/actions/workflows/docs.yml/badge.svg)](https://github.com/chekos/inkwell-cli/actions/workflows/docs.yml)
+[![PyPI](https://img.shields.io/pypi/v/inkwell-cli.svg)](https://pypi.org/project/inkwell-cli/)
+[![Python](https://img.shields.io/pypi/pyversions/inkwell-cli.svg)](https://pypi.org/project/inkwell-cli/)
+[![License](https://img.shields.io/badge/license-BSD--3--Clause-blue.svg)](LICENSE)
+
 Transform podcast episodes into structured, searchable markdown notes for Obsidian.
 
 **Inkwell** downloads audio from RSS feeds (including private/paid feeds), transcribes content, extracts key information through LLM processing, and optionally conducts an interactive interview to capture personal insights.
@@ -8,30 +14,27 @@ Transform podcast episodes into structured, searchable markdown notes for Obsidi
 
 ## Status
 
-🎉 **v1.0.0 - Production Ready!**
+**Current release: v0.20.0**
 
-All core features implemented and thoroughly tested:
-- ✅ Podcast feed management (add, list, remove)
-- ✅ Multi-tier transcription (YouTube → Gemini)
-- ✅ LLM-based content extraction with templates
-- ✅ Interactive interview mode with Claude
-- ✅ Obsidian integration (wikilinks, tags, Dataview)
-- ✅ Cost tracking and optimization
-- ✅ Error handling with retry logic
-- ✅ Comprehensive E2E testing
-- ✅ Complete user documentation
+Inkwell is beta software with the core podcast-to-markdown pipeline implemented and released on PyPI. The project has automated CI, branch protection, PyPI Trusted Publishing, MkDocs documentation, and a large regression suite.
+
+Current health baseline:
+- Podcast feed management with RSS and YouTube channel URL support
+- Multi-tier transcription: cache → YouTube transcripts → Gemini
+- Template-based LLM extraction with Claude/Gemini providers
+- Interactive interview mode
+- Obsidian-friendly markdown with frontmatter, wikilinks, and tags
+- Plugin architecture for extraction, transcription, and output providers
+- Cost tracking, retry logic, and structured errors
+- 1,200+ tests with a measured 75%+ coverage gate
 
 ## Quick Start
 
 ### Installation
 
 ```bash
-# Clone repository
-git clone https://github.com/your-username/inkwell-cli.git
-cd inkwell-cli
-
-# Install dependencies using uv
-uv sync --dev
+# Install as a CLI tool
+uv tool install inkwell-cli
 ```
 
 ### API Keys
@@ -46,10 +49,10 @@ export ANTHROPIC_API_KEY="your-claude-api-key"  # Optional, for interview mode
 
 ```bash
 # Add a podcast feed
-uv run inkwell add "https://feed.syntax.fm/rss" --name syntax
+inkwell add "https://feed.syntax.fm/rss" --feed-name syntax
 
 # Process the latest episode
-uv run inkwell fetch syntax --latest
+inkwell fetch syntax --latest
 
 # Output:
 # Processing: Modern CSS Features (Episode 789)
@@ -57,7 +60,7 @@ uv run inkwell fetch syntax --latest
 # Extraction:    Gemini Flash      ✓
 # Templates:     4
 # Cost:          $0.0055
-# Output:        ./output/syntax-2025-11-13-modern-css-features/
+# Output:        ~/inkwell-notes/syntax/modern-css-features/
 # ✓ Complete!
 ```
 
@@ -92,7 +95,7 @@ That's it! You now have a structured markdown directory ready for Obsidian.
 **Capture your thoughts** while the episode is fresh:
 
 ```bash
-uv run inkwell fetch syntax --latest --interview
+inkwell fetch syntax --latest --interview
 ```
 
 Claude will ask you questions like:
@@ -108,16 +111,16 @@ Your responses are saved in `my-notes.md` within the episode directory.
 
 ```bash
 # View overall spending
-uv run inkwell costs
+inkwell costs
 
 # View recent operations
-uv run inkwell costs --recent 10
+inkwell costs --recent 10
 
 # Filter by provider
-uv run inkwell costs --provider gemini --days 30
+inkwell costs --provider gemini --days 30
 
 # See today's costs
-uv run inkwell costs --days 1
+inkwell costs --days 1
 ```
 
 **Typical Costs**:
@@ -149,7 +152,7 @@ tags: [podcast, technical, web-development]
 
 **Tags**: Smart contextual tags (`#css`, `#web-development`, etc.)
 
-**Dataview Queries**: See [docs/dataview-queries.md](./docs/dataview-queries.md) for 27 example queries
+**Dataview Support**: See the [Obsidian guide](./docs/user-guide/obsidian.md) for frontmatter, wikilinks, and Dataview usage.
 
 ### 🔄 Robust Error Handling
 
@@ -163,10 +166,10 @@ tags: [podcast, technical, web-development]
 
 ### 🧪 Comprehensive Testing
 
-- **Unit Tests**: 180+ tests covering all components
-- **Integration Tests**: 30+ tests for end-to-end workflows
+- **Unit Tests**: broad coverage across core modules
+- **Integration Tests**: CLI and workflow behavior
 - **E2E Tests**: 7 tests validating complete pipeline
-- **Total**: 200+ tests with extensive coverage
+- **Total**: 1,200+ tests with coverage reporting
 
 **E2E Test Coverage**:
 - 5 diverse content types (technical, interview, discussion, educational, storytelling)
@@ -178,18 +181,19 @@ tags: [podcast, technical, web-development]
 
 ### For Users
 
-- **[Tutorial](./docs/tutorial.md)**: 10-minute walkthrough for beginners
-- **[User Guide](./docs/user-guide.md)**: Complete reference documentation
-- **[Examples & Workflows](./docs/examples.md)**: Common use cases and automation
-- **[Dataview Queries](./docs/dataview-queries.md)**: 27 example Obsidian queries
+- **[Documentation Site](https://chekos.github.io/inkwell-cli/)**: Full user documentation
+- **[Installation](./docs/getting-started/installation.md)**: Platform setup and dependencies
+- **[Quick Start](./docs/getting-started/quickstart.md)**: Process your first episode
+- **[CLI Reference](./docs/reference/cli-commands.md)**: Complete command reference
+- **[Troubleshooting](./docs/reference/troubleshooting.md)**: Common issues and fixes
 
 ### For Developers
 
-- **[Developer Knowledge System](./docs/README.md)**: Complete DKS overview
-- **[Architecture Decision Records](./docs/adr/)**: Design decisions and rationale
-- **[Development Logs](./docs/devlog/)**: Implementation journals
-- **[Lessons Learned](./docs/lessons/)**: Retrospectives and insights
-- **[Research Docs](./docs/research/)**: Technology research notes
+- **[Developer Knowledge System](./docs/building-in-public/index.md)**: Engineering notes
+- **[Architecture Decision Records](./docs/building-in-public/adr/)**: Design decisions and rationale
+- **[Development Logs](./docs/building-in-public/devlog/)**: Implementation journals
+- **[Lessons Learned](./docs/building-in-public/lessons/)**: Retrospectives and insights
+- **[Research Docs](./docs/building-in-public/research/)**: Technology research notes
 
 ## Basic Usage
 
@@ -197,73 +201,73 @@ tags: [podcast, technical, web-development]
 
 ```bash
 # Add a podcast
-uv run inkwell add "https://feed.syntax.fm/rss" --name syntax
+inkwell add "https://feed.syntax.fm/rss" --feed-name syntax
 
 # Add with authentication
-uv run inkwell add "https://private.com/feed.rss" --name premium --auth
+inkwell add "https://private.com/feed.rss" --feed-name premium --auth
 
 # List your podcasts
-uv run inkwell list
+inkwell list
 
 # Remove a podcast
-uv run inkwell remove syntax
+inkwell remove syntax
 ```
 
 ### Processing Episodes
 
 ```bash
 # Process latest episode
-uv run inkwell fetch syntax --latest
+inkwell fetch syntax --latest
 
 # Process specific episode number
-uv run inkwell fetch syntax --episode 789
+inkwell fetch syntax --episode 789
 
 # Process multiple episodes
-uv run inkwell fetch syntax --count 5
+inkwell fetch syntax --episode 1-5
 
 # Process with interview mode
-uv run inkwell fetch syntax --latest --interview
+inkwell fetch syntax --latest --interview
 
 # Overwrite existing output
-uv run inkwell fetch syntax --latest --overwrite
+inkwell fetch syntax --latest --overwrite
 
 # Use specific provider
-uv run inkwell fetch syntax --latest --provider claude
+inkwell fetch syntax --latest --provider claude
 ```
 
 ### Cost Management
 
 ```bash
 # View all costs
-uv run inkwell costs
+inkwell costs
 
 # View last 10 operations
-uv run inkwell costs --recent 10
+inkwell costs --recent 10
 
 # View by date range
-uv run inkwell costs --days 7
+inkwell costs --days 7
 
 # Filter by provider
-uv run inkwell costs --provider gemini
+inkwell costs --provider gemini
 
 # Filter by operation
-uv run inkwell costs --operation transcription
+inkwell costs --operation transcription
 
 # Clear cost history
-uv run inkwell costs --clear
+inkwell costs --clear
 ```
 
 ### Cache Management
 
 ```bash
 # View cache stats
-uv run inkwell cache stats
+inkwell cache stats
 
 # Clear all cache
-uv run inkwell cache clear
+inkwell cache clear
 
 # Clear expired only
-uv run inkwell cache clear-expired
+inkwell cache clear-expired
 ```
 
 ## Output Structure
@@ -356,7 +360,7 @@ You can edit the configuration file directly using `inkwell config edit`:
 
 ```bash
 # Edit config file in your default editor
-uv run inkwell config edit
+inkwell config edit
 ```
 
 **Supported Editors**: atom, code, ed, emacs, gedit, helix, kate, micro, nano, notepad, notepad++, nvim, subl, vi, vim
@@ -364,13 +368,13 @@ uv run inkwell config edit
 Set your preferred editor with the `EDITOR` environment variable:
 ```bash
 export EDITOR=vim
-uv run inkwell config edit
+inkwell config edit
 ```
 
 For security reasons, only whitelisted editors are supported. If you need to use a different editor, you can edit the config file manually:
 ```bash
 # View config location
-uv run inkwell config show
+inkwell config show
 
 # Edit manually
 nano ~/.config/inkwell/config.yaml
@@ -406,9 +410,9 @@ RSS Feed → Parse Episodes → Check YouTube → Download Audio
    - Multi-provider support (Gemini, Claude)
    - Context-aware extraction
 
-4. **Obsidian Integration** (`src/inkwell/obsidian/`)
-   - Wikilink generation from entities
-   - Smart tag generation with LLM
+4. **Output Generation** (`src/inkwell/output/`)
+   - Markdown rendering
+   - Wikilinks and tags
    - Dataview-compatible frontmatter
 
 5. **Interview Mode** (`src/inkwell/interview/`)
@@ -437,28 +441,20 @@ inkwell-cli/
 │   ├── transcription/       # Transcription system
 │   ├── audio/               # Audio download
 │   ├── extraction/          # LLM extraction (Phase 3)
-│   ├── obsidian/            # Obsidian integration (Phase 5)
 │   ├── interview/           # Interview mode (Phase 4)
+│   ├── plugins/             # Plugin APIs and discovery
+│   ├── templates/           # Bundled extraction templates
 │   └── utils/               # Utilities (costs, retry, etc.)
-├── tests/                   # Test suite (200+ tests)
+├── tests/                   # Test suite (1,200+ tests)
 │   ├── unit/               # Unit tests
 │   ├── integration/        # Integration tests
 │   └── e2e/                # End-to-end tests
 ├── docs/                    # Documentation (DKS)
-│   ├── adr/                # Architecture decisions
-│   ├── devlog/             # Development logs
-│   ├── lessons/            # Lessons learned
-│   ├── research/           # Research notes
-│   ├── experiments/        # Benchmarks
-│   ├── user-guide.md       # Complete user reference
-│   ├── tutorial.md         # 10-minute tutorial
-│   ├── examples.md         # Workflows and examples
-│   └── dataview-queries.md # Obsidian Dataview examples
-└── templates/               # LLM extraction templates
-    ├── summary.md
-    ├── quotes.md
-    ├── key-concepts.md
-    └── ...
+│   ├── getting-started/    # Installation and first-run docs
+│   ├── user-guide/         # Feature documentation
+│   ├── reference/          # CLI/config/template reference
+│   └── building-in-public/ # ADRs, devlogs, lessons, research
+└── 2026-roadmap/            # Strategic roadmap notes
 ```
 
 ## Development
@@ -476,7 +472,7 @@ uv run pre-commit install
 uv run pytest
 
 # Run with coverage
-uv run pytest --cov=inkwell --cov-report=html
+uv run pytest --cov=src/inkwell --cov-report=term-missing --cov-report=html
 
 # Run linting
 uv run ruff check .
@@ -511,10 +507,22 @@ uv run pytest tests/unit/test_costs.py -v
 This project maintains high code quality:
 - **Type hints**: Full coverage with mypy validation
 - **Linting**: Ruff for code style
-- **Testing**: 200+ tests with extensive coverage
+- **Testing**: 1,200+ tests with coverage reporting
 - **Documentation**: Comprehensive DKS documentation
 - **Error handling**: Robust retry logic
 - **Performance**: Benchmarked and optimized
+
+## Release Automation
+
+Inkwell uses a branch-and-release flow that fits solo development:
+
+1. Build features on a branch and open a pull request.
+2. Let CI run linting, formatting, mypy, tests with the coverage gate, and strict docs.
+3. Merge to `main` when the feature set feels release-ready.
+4. Create a GitHub release tag such as `v0.20.1`.
+5. GitHub generates categorized release notes, builds the package with `uv`, and publishes to PyPI through Trusted Publishing.
+
+Manual workflow runs publish to TestPyPI only, which keeps release rehearsals safe.
 
 ## Roadmap
 
@@ -584,7 +592,7 @@ See [CLAUDE.md](./CLAUDE.md) for development guidelines.
 
 ## License
 
-[MIT License](LICENSE) - See LICENSE file for details.
+[BSD 3-Clause License](LICENSE) - See LICENSE file for details.
 
 ## Acknowledgments
 
@@ -594,9 +602,8 @@ See [CLAUDE.md](./CLAUDE.md) for development guidelines.
 - **pydantic**: Data validation
 - **feedparser**: RSS/Atom parsing
 - **yt-dlp**: Audio download
-- **google-generativeai**: Gemini API
+- **google-genai**: Gemini API
 - **anthropic**: Claude API
-- **claude-agent-sdk**: Interactive interview mode
 
 **Special Thanks**:
 - The Obsidian community for inspiration
@@ -605,11 +612,11 @@ See [CLAUDE.md](./CLAUDE.md) for development guidelines.
 
 ## Support
 
-- **Issues**: [GitHub Issues](https://github.com/your-username/inkwell-cli/issues)
-- **Documentation**: See `docs/` directory
-- **Tutorial**: [docs/tutorial.md](./docs/tutorial.md)
-- **User Guide**: [docs/user-guide.md](./docs/user-guide.md)
-- **Examples**: [docs/examples.md](./docs/examples.md)
+- **Issues**: [GitHub Issues](https://github.com/chekos/inkwell-cli/issues)
+- **Documentation**: [chekos.github.io/inkwell-cli](https://chekos.github.io/inkwell-cli/)
+- **Quick Start**: [docs/getting-started/quickstart.md](./docs/getting-started/quickstart.md)
+- **User Guide**: [docs/user-guide/index.md](./docs/user-guide/index.md)
+- **Reference**: [docs/reference/index.md](./docs/reference/index.md)
 
 ---
 

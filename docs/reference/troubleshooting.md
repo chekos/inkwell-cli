@@ -126,13 +126,13 @@ Get a key: [Anthropic Console](https://console.anthropic.com/)
 
 1. Use a different name:
    ```bash
-   inkwell add URL --name different-name
+   inkwell add URL --feed-name different-name
    ```
 
 2. Remove existing feed first:
    ```bash
    inkwell remove existing-name
-   inkwell add URL --name existing-name
+   inkwell add URL --feed-name existing-name
    ```
 
 ### "Feed not found"
@@ -279,7 +279,7 @@ Fix the invalid values shown in the error message.
 ```bash
 # Re-add feeds with auth
 inkwell remove my-feed
-inkwell add URL --name my-feed --auth
+inkwell add URL --feed-name my-feed --auth
 ```
 
 The keyfile is auto-generated. Don't delete it if you have encrypted credentials.

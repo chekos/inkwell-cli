@@ -144,6 +144,20 @@ class TestCLIAddYouTube:
         feeds = ConfigManager(config_dir=tmp_path).list_feeds()
         assert str(feeds["plain-rss"].url).startswith("https://example.com/feed.rss")
 
+    def test_add_accepts_feed_name_alias_and_slugifies(self, tmp_path: Path, monkeypatch) -> None:
+        """`--feed-name` is canonical and user names are normalized to slugs."""
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+
+        result = runner.invoke(
+            app,
+            ["add", "https://example.com/feed.rss", "--feed-name", "Plain RSS!"],
+        )
+
+        assert result.exit_code == 0, result.stdout
+        feeds = ConfigManager(config_dir=tmp_path).list_feeds()
+        assert "plain-rss" in feeds
+        assert "Plain RSS!" in result.output
+
     def test_add_playlist_url_rejected(self, tmp_path: Path, monkeypatch) -> None:
         """Playlist URLs produce an actionable error and no feed is saved."""
         monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
@@ -390,6 +404,65 @@ class TestCLIFetchSaveFeed:
         feeds = ConfigManager(config_dir=tmp_path).list_feeds()
         assert "oren-meets-world-2" in feeds
         assert "channel_id=UCdup" in str(feeds["oren-meets-world-2"].url)
+
+    def test_save_feed_skips_existing_channel_under_different_name(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """Do not create duplicate feeds for a channel already saved by channel_id."""
+        from types import SimpleNamespace
+
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+
+        manager = ConfigManager(config_dir=tmp_path)
+        from inkwell.config.schema import AuthConfig as _AuthConfig
+        from inkwell.config.schema import FeedConfig as _FeedConfig
+
+        manager.add_feed(
+            "existing-channel",
+            _FeedConfig(
+                url="https://www.youtube.com/feeds/videos.xml?channel_id=UCsame",  # type: ignore[arg-type]
+                auth=_AuthConfig(type="none"),
+            ),
+        )
+
+        output_dir = tmp_path / "episode-dir"
+        output_dir.mkdir()
+
+        async def fake_process(*_args, **_kwargs):
+            return SimpleNamespace(
+                episode_output=SimpleNamespace(directory=output_dir),
+                extraction_results=[],
+                interview_result=None,
+                extraction_cost_usd=0.0,
+                interview_cost_usd=0.0,
+                total_cost_usd=0.0,
+            )
+
+        async def fake_resolve(_url: str) -> ResolvedFeed:
+            return ResolvedFeed(
+                feed_url="https://www.youtube.com/feeds/videos.xml?channel_id=UCsame",
+                channel_name="Same Channel",
+            )
+
+        monkeypatch.setattr("inkwell.pipeline.PipelineOrchestrator.process_episode", fake_process)
+        monkeypatch.setattr("inkwell.cli.resolve_youtube_url", fake_resolve)
+
+        result = runner.invoke(
+            app,
+            [
+                "fetch",
+                "https://www.youtube.com/watch?v=abc",
+                "--save-feed",
+                "--dry-run",
+                "--output-dir",
+                str(tmp_path),
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        feeds = ConfigManager(config_dir=tmp_path).list_feeds()
+        assert list(feeds) == ["existing-channel"]
+        assert "already saved" in result.output
 
     def test_save_feed_with_non_youtube_url_errors(self, tmp_path: Path, monkeypatch) -> None:
         """--save-feed only supports YouTube URLs in v1."""
@@ -778,6 +851,35 @@ class TestCLIRemove:
 
         with pytest.raises(NotFoundError):
             manager.remove_feed("nonexistent")
+
+
+class TestCLIRename:
+    """Tests for rename command."""
+
+    def test_rename_feed(self, tmp_path: Path, monkeypatch) -> None:
+        """Test renaming a feed through the CLI."""
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+        manager = ConfigManager(config_dir=tmp_path)
+
+        from inkwell.config.schema import AuthConfig, FeedConfig
+
+        manager.add_feed(
+            "old-name",
+            FeedConfig(
+                url="https://example.com/feed.rss",  # type: ignore
+                auth=AuthConfig(type="none"),
+                category="tech",
+            ),
+        )
+
+        result = runner.invoke(app, ["rename", "old-name", "New Name!"])
+
+        assert result.exit_code == 0, result.output
+        feeds = ConfigManager(config_dir=tmp_path).list_feeds()
+        assert "old-name" not in feeds
+        assert "new-name" in feeds
+        assert feeds["new-name"].category == "tech"
+        assert "Normalized" in result.output
 
 
 class TestCLIConfig:

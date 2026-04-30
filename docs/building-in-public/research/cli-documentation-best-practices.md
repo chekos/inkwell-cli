@@ -416,9 +416,9 @@ inkwell process https://example.com/feed.rss --latest
 ```
 
 ### Next Steps
-- [Tutorial: Complete Workflow](docs/tutorial.md)
-- [Configuration Guide](docs/configuration.md)
-- [Command Reference](docs/reference.md)
+- [Tutorial: Complete Workflow](../../getting-started/first-episode.md)
+- [Configuration Guide](../../user-guide/configuration.md)
+- [Command Reference](../../reference/index.md)
 ```
 
 ### 4.2 Tutorial Progression

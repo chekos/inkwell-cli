@@ -1,19 +1,25 @@
 .PHONY: install test lint format clean check
 
 install:
-	pip install -e ".[dev]"
+	uv sync --dev
 
 test:
-	python3 -m pytest
+	uv run pytest
 
 lint:
-	ruff check src/ tests/
-	mypy src/
+	uv run ruff check .
+	uv run mypy src/
 
 format:
-	ruff format src/ tests/
+	uv run ruff format .
 
-check: format lint test
+docs:
+	uv run mkdocs build --strict
+
+coverage:
+	uv run pytest --cov=src/inkwell --cov-report=term-missing --cov-report=html --cov-fail-under=75
+
+check: format lint test docs
 
 clean:
 	rm -rf build/ dist/ *.egg-info .coverage htmlcov/ .pytest_cache/ .ruff_cache/ .mypy_cache/
@@ -21,7 +27,8 @@ clean:
 	find . -type f -name "*.pyc" -delete
 
 pre-commit-install:
-	pre-commit install
+	uv run pre-commit install
+	uv run pre-commit install --hook-type pre-push
 
 pre-commit-run:
-	pre-commit run --all-files
+	uv run pre-commit run --all-files

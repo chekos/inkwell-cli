@@ -1,0 +1,163 @@
+# AGENTS.md
+
+This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
+
+## Project Overview
+
+**Inkwell** is a CLI tool that transforms podcast episodes into structured, searchable markdown notes. It downloads audio from RSS feeds (including private/paid feeds), transcribes content, extracts key information through LLM processing, and optionally conducts an interactive interview to capture personal insights.
+
+**Vision:** Transform passive podcast listening into active knowledge building by capturing both *what was said* and *what you thought about it*.
+
+See [docs/_internal/prd.md](./docs/_internal/prd.md) for complete product requirements.
+
+## Tech Stack
+
+**Language & Core:**
+- Python 3.10+
+- CLI Framework: `typer`
+- Terminal Output: `rich`
+- Config: `pyyaml`
+
+**Podcast Processing:**
+- RSS Parsing: `feedparser`
+- Audio Download: `yt-dlp`
+- Transcription: `youtube-transcript-api` (primary), `google-generativeai` (fallback)
+
+**LLM & AI:**
+- Interview Mode: `Codex-agent-sdk`
+- Content Extraction: Codex/Gemini APIs
+
+**System Requirements:**
+- ffmpeg (required for audio processing)
+- Google AI (Gemini) API key
+- Anthropic (Codex) API key for interview mode
+
+## Development Setup
+
+Install dependencies and hooks:
+```bash
+# Install project dependencies
+uv sync --dev
+
+# REQUIRED: Install git hooks (prevents CI failures)
+uvx pre-commit install
+uvx pre-commit install --hook-type pre-push
+```
+
+**The pre-push hook runs the full test suite before pushing.** This prevents CI failures.
+
+Run tests:
+```bash
+uv run pytest
+```
+
+Run linter:
+```bash
+uv run ruff check .
+```
+
+Run formatter:
+```bash
+uv run ruff format .
+```
+
+## Python Tooling
+
+**IMPORTANT:** Always use `uv` for package management. Never use `pip install` or manual venv activation.
+
+- `uv add <package>` - Add production dependency
+- `uv add --dev <package>` - Add dev dependency
+- `uv run <command>` - Run commands in project venv
+- `uv sync --dev` - Install all dependencies
+
+See [ADR-008](./docs/building-in-public/adr/008-use-uv-for-python-tooling.md) for rationale.
+
+## Architecture
+
+### Core Pipeline Flow
+```
+RSS Feed → Parse → Check YouTube → Download Audio
+         → Transcribe (YouTube API or Gemini)
+         → LLM Extraction Pipeline
+         → [Optional] Interactive Interview
+         → Generate Markdown Files
+         → Save to Output Directory
+```
+
+### Key Components (To Be Implemented)
+
+1. **Feed Management** - Add/list/remove podcast feeds with auth support
+2. **Transcription Layer** - YouTube transcript extraction → Gemini fallback
+3. **LLM Extraction** - Template-based content extraction (quotes, concepts, etc.)
+4. **Interview Mode** - Interactive Q&A using Codex Agent SDK
+5. **Output Generation** - Structured markdown with Obsidian compatibility
+
+### Output Structure
+Each processed episode creates a directory:
+```
+podcast-name-YYYY-MM-DD-episode-title/
+├── .metadata.yaml
+├── summary.md
+├── quotes.md
+├── key-concepts.md
+├── [context-specific].md  # tools-mentioned, books-mentioned, etc.
+└── my-notes.md            # if --interview used
+```
+
+## Documentation
+
+### User Documentation
+User-facing documentation is built with MkDocs and deployed to Read the Docs. The main sections are:
+- `docs/getting-started/` - Installation, quickstart, tutorials
+- `docs/user-guide/` - Feature documentation
+- `docs/reference/` - CLI commands, templates, configuration
+
+### Developer Knowledge System (DKS)
+This project uses a structured documentation system for internal engineering knowledge, located in `docs/building-in-public/`.
+
+**When Working on Tasks:**
+
+- Create a devlog entry in `docs/building-in-public/devlog/YYYY-MM-DD-description.md` when starting new features
+- Create an ADR in `docs/building-in-public/adr/NNN-decision-title.md` for significant decisions
+- Create research docs in `docs/building-in-public/research/topic-name.md` before major decisions
+- Add lessons learned to `docs/building-in-public/lessons/YYYY-MM-DD-topic.md`
+
+**Templates** are in their respective directories under `docs/building-in-public/`.
+
+**IMPORTANT:** Follow templates exactly. Keep ADRs brief to avoid hallucination.
+
+See [docs/building-in-public/](./docs/building-in-public/) for full DKS documentation.
+
+## Development Workflow
+
+When implementing features:
+1. **Start:** Create devlog entry for the feature
+2. **Research:** Document any technology research in `docs/building-in-public/research/`
+3. **Decide:** Create ADR for significant architectural decisions
+4. **Experiment:** Record experiments/benchmarks in `docs/building-in-public/experiments/`
+5. **Reflect:** Add lessons learned to `docs/building-in-public/lessons/` when complete
+6. **Update:** Keep this AGENTS.md updated as the architecture evolves
+
+**Before committing:** Install git hooks once after cloning:
+```bash
+./.Codex/hooks/install-git-hooks.sh
+```
+This installs both pre-commit and pre-push hooks that mirror CI checks. See [ADR-007](./docs/building-in-public/adr/007-enforce-pre-commit-hooks.md).
+
+**CI Prevention:** Codex hooks in `.Codex/settings.json` automatically run lint, format, and type checks after code changes, and full test suite before stopping.
+
+## Releasing
+
+Versions are managed via git tags (see `dynamic = ["version"]` in pyproject.toml).
+
+**To release a new version:**
+
+```bash
+# Minor version (new features): v0.9.1 → v0.10.0
+gh release create v0.10.0 --generate-notes --title "v0.10.0 - Feature Name"
+
+# Patch version (bug fixes): v0.10.0 → v0.10.1
+gh release create v0.10.1 --generate-notes --title "v0.10.1 - Bug Fixes"
+```
+
+The `--generate-notes` flag auto-generates release notes from merged PRs and commits since the last release.

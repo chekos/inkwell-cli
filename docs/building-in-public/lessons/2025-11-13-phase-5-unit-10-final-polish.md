@@ -551,8 +551,8 @@ Release Prep:
 ## References
 
 - [Devlog](../devlog/2025-11-13-phase-5-unit-10-final-polish.md)
-- [README.md](../../README.md)
-- [CHANGELOG.md](../../CHANGELOG.md)
+- [README.md](https://github.com/chekos/inkwell-cli/blob/main/README.md)
+- [CHANGELOG.md](https://github.com/chekos/inkwell-cli/blob/main/CHANGELOG.md)
 - [PHASE_5_COMPLETE.md](../../_internal/phases/PHASE_5_COMPLETE.md)
 - [Keep a Changelog](https://keepachangelog.com/)
 - [Semantic Versioning](https://semver.org/)

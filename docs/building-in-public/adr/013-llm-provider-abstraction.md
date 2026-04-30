@@ -3,7 +3,7 @@
 **Date**: 2025-11-07
 **Status**: Accepted
 **Deciders**: Phase 3 Team
-**Related**: [ADR-016](016-default-llm-provider.md), [LLM Comparison Research](../research/llm-extraction-comparison.md)
+**Related**: [ADR-016](016-api-provider-abstraction.md), [LLM Comparison Research](../research/llm-extraction-comparison.md)
 
 ## Context
 
@@ -317,7 +317,7 @@ def test_real_claude_extraction():
 
 ## Related Decisions
 
-- [ADR-016: Default LLM Provider](016-default-llm-provider.md) - Which provider to default to
+- [ADR-016: API Provider Abstraction](016-api-provider-abstraction.md) - Provider abstraction for API access
 - [LLM Extraction Comparison](../research/llm-extraction-comparison.md) - Provider comparison research
 - [Structured Extraction Patterns](../research/structured-extraction-patterns.md) - How to prompt each provider
 

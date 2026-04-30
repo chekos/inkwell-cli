@@ -295,8 +295,8 @@ Key lessons from Unit 10:
 - **Previous**: [Unit 9 - User Documentation](./2025-11-13-phase-5-unit-9-user-documentation.md)
 - **Lessons Learned**: [Unit 10 Lessons](../lessons/2025-11-13-phase-5-unit-10-final-polish.md)
 - **Phase Summary**: [PHASE_5_COMPLETE.md](../../_internal/phases/PHASE_5_COMPLETE.md)
-- **CHANGELOG**: [CHANGELOG.md](../../CHANGELOG.md)
-- **README**: [README.md](../../README.md)
+- **CHANGELOG**: [CHANGELOG.md](https://github.com/chekos/inkwell-cli/blob/main/CHANGELOG.md)
+- **README**: [README.md](https://github.com/chekos/inkwell-cli/blob/main/README.md)
 
 ## Status
 

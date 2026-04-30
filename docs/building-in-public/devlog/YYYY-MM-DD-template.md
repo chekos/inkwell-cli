@@ -21,6 +21,6 @@ What's the next step? Any blockers?
 
 ## Links
 
-- Related ADR: [ADR-NNN](../adr/NNN-title.md)
+- Related ADR: `../adr/NNN-title.md`
 - PR: #NNN
 - Issue: #NNN

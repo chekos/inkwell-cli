@@ -454,6 +454,40 @@ class ConfigManager:
                 },
             )
 
+    def rename_feed(self, old_name: str, new_name: str, overwrite: bool = False) -> None:
+        """Rename a feed key while preserving the feed configuration."""
+        with self._feeds_lock():
+            feeds = self.load_feeds()
+
+            if old_name not in feeds.feeds:
+                raise NotFoundError(
+                    "Feed", old_name, suggestion="Run 'inkwell list' to see available feeds"
+                )
+
+            if old_name == new_name:
+                return
+
+            if new_name in feeds.feeds and not overwrite:
+                raise InkwellValidationError(
+                    f"Feed '{new_name}' already exists.",
+                    suggestion="Choose a different name, or pass --force to overwrite it",
+                )
+
+            feed_config = feeds.feeds[old_name]
+            overwritten_feed = feeds.feeds.get(new_name)
+            feeds.feeds[new_name] = feed_config
+            del feeds.feeds[old_name]
+            self.save_feeds(feeds)
+
+            details = {
+                "old_feed_name": old_name,
+                "new_feed_name": new_name,
+                "url": str(feed_config.url),
+            }
+            if overwritten_feed is not None:
+                details["overwritten_url"] = str(overwritten_feed.url)
+            self._log_change("rename_feed", details)
+
     def get_feed(self, name: str) -> FeedConfig:
         """Get a single feed configuration.
 

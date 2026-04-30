@@ -4,7 +4,7 @@
 **Unit**: 5 of 9
 **Status**: ✅ Complete
 **Duration**: ~4 hours
-**Related**: [Phase 4 Detailed Plan](./2025-11-08-phase-4-detailed-plan.md), [Unit 4 Agent Integration](./2025-11-08-phase-4-unit-4-agent-integration.md), [ADR-021 Session State Management](../adr/021-session-state-management.md)
+**Related**: [Phase 4 Detailed Plan](./2025-11-08-phase-4-detailed-plan.md), [Unit 4 Agent Integration](./2025-11-08-phase-4-unit-4-agent-integration.md), [ADR-021 Interview State Persistence](../adr/021-interview-state-persistence.md)
 
 ## Overview
 

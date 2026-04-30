@@ -35,7 +35,7 @@ version = "1.0.0"
 description = "Local Whisper transcription plugin for Inkwell"
 readme = "README.md"
 requires-python = ">=3.10"
-license = {text = "MIT"}
+license = "BSD-3-Clause"
 authors = [
     {name = "Your Name", email = "your@email.com"}
 ]
@@ -50,7 +50,7 @@ classifiers = [
     "Development Status :: 4 - Beta",
     "Environment :: Plugins",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: BSD License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
@@ -218,7 +218,7 @@ plugins:
 
 ## License
 
-MIT
+BSD-3-Clause
 ```
 
 ---

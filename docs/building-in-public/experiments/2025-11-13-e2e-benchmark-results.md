@@ -228,6 +228,6 @@ The system is ready for real-world use with clear understanding of performance c
 
 ## References
 
-- [E2E Framework](../../tests/e2e/framework.py)
-- [Test Results](../../tests/e2e/test_full_pipeline.py)
+- [E2E Framework](https://github.com/chekos/inkwell-cli/blob/main/tests/e2e/framework.py)
+- [Test Results](https://github.com/chekos/inkwell-cli/blob/main/tests/e2e/test_full_pipeline.py)
 - [Devlog](../devlog/2025-11-13-phase-5-unit-8-e2e-testing.md)

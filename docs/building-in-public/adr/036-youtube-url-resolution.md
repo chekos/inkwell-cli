@@ -63,7 +63,7 @@ URL.
 - **Negative:** yt-dlp extractor breakage (periodic against YouTube)
   can block URL resolution. Mitigated by preserving the manual
   escape-hatch in `ValidationError.suggestion`
-  (`inkwell add '…?channel_id=UCxxx' --name X` still works). Explicit
+  (`inkwell add '…?channel_id=UCxxx' --feed-name X` still works). Explicit
   `--feed-name` is less ergonomic than auto-derive (resolved by #38).
 - **Risks:** YouTube could change its media-RSS endpoint (externality;
   out of our control) or rate-limit resolution with the bot-check

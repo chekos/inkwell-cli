@@ -358,7 +358,7 @@ test_case = PodcastTestCase(
 
 ## References
 
-- [E2E Framework](../../tests/e2e/framework.py)
-- [E2E Tests](../../tests/e2e/test_full_pipeline.py)
+- [E2E Framework](https://github.com/chekos/inkwell-cli/blob/main/tests/e2e/framework.py)
+- [E2E Tests](https://github.com/chekos/inkwell-cli/blob/main/tests/e2e/test_full_pipeline.py)
 - [Devlog](../devlog/2025-11-13-phase-5-unit-8-e2e-testing.md)
 - [Benchmark Results](../experiments/2025-11-13-e2e-benchmark-results.md)

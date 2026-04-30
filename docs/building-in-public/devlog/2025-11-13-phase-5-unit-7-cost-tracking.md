@@ -492,7 +492,7 @@ See: [docs/lessons/2025-11-13-phase-5-unit-7-cost-tracking.md](../lessons/2025-1
 
 - [Gemini Pricing](https://ai.google.dev/pricing)
 - [Claude Pricing](https://www.anthropic.com/pricing)
-- [EpisodeMetadata Model](../../src/inkwell/output/models.py)
+- [EpisodeMetadata Model](https://github.com/chekos/inkwell-cli/blob/main/src/inkwell/output/models.py)
 
 ## Time Log
 

@@ -1,0 +1,51 @@
+name: Bug report
+description: Report behavior that is broken or surprising
+title: "bug: "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened?
+      description: Describe the behavior and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction steps
+      description: Include the exact command, sanitized inputs, and relevant output.
+      placeholder: |
+        1. Run `inkwell ...`
+        2. See ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Inkwell version
+      placeholder: "inkwell version"
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - CLI
+        - feeds
+        - transcription
+        - extraction
+        - output
+        - interview
+        - plugins
+        - docs
+        - release/packaging
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or traceback
+      description: Paste sanitized logs. Do not include API keys or private feed URLs.
+      render: text

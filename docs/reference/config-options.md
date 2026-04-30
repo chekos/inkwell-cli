@@ -43,7 +43,7 @@ default_output_dir: $HOME/notes/podcasts
 |-----|------|---------|-------------|
 | `transcription.api_key` | string | `""` | Google AI API key |
 | `transcription.model_name` | string | `gemini-2.5-flash` | Gemini model for transcription |
-| `youtube_check` | boolean | `true` | Check YouTube for transcripts first |
+| `transcription.youtube_check` | boolean | `true` | Check YouTube for transcripts first |
 
 ### transcription.api_key
 
@@ -62,7 +62,7 @@ transcription:
 
 The Gemini model used when audio transcription is required (i.e. no free YouTube transcript is available).
 
-Default (matches the generated config template):
+Generated config default:
 
 ```yaml
 transcription:
@@ -77,14 +77,24 @@ transcription:
 ```
 
 The model name must start with `gemini-`. When in doubt, omit this key and let the default apply.
+Generated config files may still contain the legacy top-level
+`transcription_model` key with the same default. Prefer
+`transcription.model_name` for new edits.
 
-### youtube_check
+### transcription.youtube_check
 
 When `true`, Inkwell checks for free YouTube transcripts before using Gemini.
 
 ```yaml
-youtube_check: true  # Recommended: saves money
-youtube_check: false # Always use Gemini transcription
+transcription:
+  youtube_check: true  # Recommended: saves money
+```
+
+To force Gemini transcription without checking YouTube first:
+
+```yaml
+transcription:
+  youtube_check: false # Always use Gemini transcription
 ```
 
 ---
@@ -95,6 +105,8 @@ youtube_check: false # Always use Gemini transcription
 |-----|------|---------|-------------|
 | `max_episodes_per_run` | int | `10` | Maximum episodes per batch |
 | `extraction.default_provider` | enum | `gemini` | Default LLM provider |
+| `extraction.gemini_api_key` | string | `""` | Optional Google AI key for extraction |
+| `extraction.claude_api_key` | string | `""` | Optional Anthropic key for extraction |
 | `extraction.cache_days` | int | `30` | Cache duration in days |
 
 ### extraction.default_provider
@@ -104,6 +116,12 @@ Valid values: `gemini`, `claude`
 ```yaml
 extraction:
   default_provider: gemini  # Cost-effective (recommended)
+```
+
+To use Claude for extraction:
+
+```yaml
+extraction:
   default_provider: claude  # Higher quality, 40x more expensive
 ```
 
@@ -209,12 +227,15 @@ default_output_dir: ~/ObsidianVault/podcasts
 # Transcription
 transcription:
   api_key: "your-google-ai-key"
-youtube_check: true
+  model_name: gemini-2.5-flash
+  youtube_check: true
 
 # Extraction
 max_episodes_per_run: 10
 extraction:
   default_provider: gemini
+  gemini_api_key: ""  # optional; falls back to transcription.api_key
+  claude_api_key: ""  # optional; can also use ANTHROPIC_API_KEY
   cache_days: 30
 
 # Interview

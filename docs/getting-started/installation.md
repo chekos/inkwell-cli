@@ -96,7 +96,7 @@ Inkwell requires API keys for transcription and extraction.
 
 ### Google AI (Required)
 
-Used for transcription (Gemini) and content extraction.
+Used for Gemini transcription and content extraction.
 
 1. Go to [Google AI Studio](https://aistudio.google.com/app/apikey)
 2. Click "Create API Key"
@@ -107,6 +107,11 @@ Used for transcription (Gemini) and content extraction.
 ```bash
 inkwell config set transcription.api_key "your-google-ai-api-key"
 ```
+
+This key is also used for Gemini extraction unless you set
+`extraction.gemini_api_key` separately. The Gemini transcription model is
+configurable at `transcription.model_name`; generated config files currently
+default to `gemini-2.5-flash`.
 
 **Or via environment variable:**
 
@@ -166,11 +171,13 @@ inkwell config show
 | Method | Status |
 |--------|--------|
 | `uv tool install inkwell-cli` | **Supported** (recommended) |
-| `pip install inkwell-cli` | **Supported** |
-| Docker image | Not currently provided |
-| Homebrew formula | Not currently provided |
+| PyPI package (`pip install inkwell-cli`) | **Supported** |
+| Docker image | Not yet supported |
+| Homebrew formula | Not yet supported |
 
-Docker and Homebrew are not on the current roadmap. If you'd like to see them, open a [GitHub issue](https://github.com/chekos/inkwell-cli/issues) to gauge interest.
+Docker and Homebrew packaging are not currently provided. If either install
+path would help your workflow, open a [GitHub issue](https://github.com/chekos/inkwell-cli/issues)
+so demand can be tracked.
 
 ---
 

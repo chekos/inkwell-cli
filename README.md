@@ -37,6 +37,10 @@ Current health baseline:
 uv tool install inkwell-cli
 ```
 
+Inkwell is distributed as the `inkwell-cli` package on PyPI. `uv tool install`
+is the recommended install path; Docker images and a Homebrew formula are not
+currently provided.
+
 ### API Keys
 
 ```bash
@@ -330,28 +334,30 @@ Edit `~/.config/inkwell/config.yaml`:
 ```yaml
 version: "1"
 log_level: INFO
-default_output_dir: ./output
-default_provider: gemini  # or "claude"
-youtube_check: true
+default_output_dir: ~/inkwell-notes
 max_episodes_per_run: 10
 
-# Optional API keys (or use environment variables)
-gemini_api_key: ""
-anthropic_api_key: ""
+transcription:
+  api_key: ""  # or use GOOGLE_API_KEY
+  model_name: gemini-2.5-flash
+  youtube_check: true
+
+extraction:
+  default_provider: gemini  # or "claude"
+  gemini_api_key: ""        # optional; falls back to transcription.api_key
+  claude_api_key: ""        # or use ANTHROPIC_API_KEY
 
 # Templates to enable
-templates_enabled:
+default_templates:
   - summary
   - quotes
   - key-concepts
-  - tools-mentioned
-  - books-mentioned
-  - people-mentioned
 
 # Obsidian features
-wikilinks_enabled: true
-tags_enabled: true
-dataview_frontmatter: true
+obsidian:
+  wikilinks: true
+  tags: true
+  dataview: true
 ```
 
 ### Editing Configuration

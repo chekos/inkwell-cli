@@ -202,7 +202,7 @@ class ConfigManager:
         )
 
         if old_config:
-            changes = {}
+            changes: dict[str, dict[str, object]] = {}
             if str(old_config.default_output_dir) != str(config.default_output_dir):
                 changes["default_output_dir"] = {
                     "old": str(old_config.default_output_dir),
@@ -483,7 +483,7 @@ class ConfigManager:
             feeds.feeds[resolved_name] = feed_config
             self.save_feeds(feeds)
 
-            changes = {}
+            changes: dict[str, dict[str, object]] = {}
             if str(old_config.url) != str(feed_config.url):
                 changes["url"] = {
                     "old": str(old_config.url),

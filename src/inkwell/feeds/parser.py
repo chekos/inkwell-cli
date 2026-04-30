@@ -136,6 +136,38 @@ class RSSParser:
         latest_entry = feed.entries[0]
         return self.extract_episode_metadata(latest_entry, podcast_name)
 
+    def get_latest_episodes(
+        self,
+        feed: feedparser.FeedParserDict,
+        podcast_name: str,
+        count: int,
+    ) -> list[Episode]:
+        """Extract the N latest episodes from a feed."""
+        if count < 1:
+            raise ValidationError(
+                "--count must be a positive integer",
+                suggestion="Use --count 1 or higher",
+            )
+
+        if count > MAX_EPISODES_PER_SELECTION:
+            raise ValidationError(
+                f"--count {count} exceeds maximum of {MAX_EPISODES_PER_SELECTION}",
+                suggestion="Select fewer episodes or use multiple smaller requests",
+            )
+
+        feed_size = len(feed.entries)
+        if count > feed_size:
+            raise NotFoundError(
+                resource_type="Episode count",
+                resource_id=str(count),
+                details={"feed_size": feed_size, "requested": count},
+                suggestion=f"Feed has {feed_size} episodes. Select 1-{feed_size}.",
+            )
+
+        return [
+            self.extract_episode_metadata(entry, podcast_name) for entry in feed.entries[:count]
+        ]
+
     def get_episode_by_title(
         self,
         feed: feedparser.FeedParserDict,

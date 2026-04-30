@@ -330,7 +330,7 @@ A: Read Lenny's newsletter on growth loops, check out Reforge courses.
 ### Process More Episodes
 
 ```bash
-# Process last 5 episodes
+# Process latest 5 episodes
 inkwell fetch lennys --count 5
 
 # Process specific episode

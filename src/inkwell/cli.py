@@ -18,7 +18,7 @@ from inkwell.config.logging import setup_logging
 from inkwell.config.manager import ConfigManager, normalize_feed_name, slugify_feed_name
 from inkwell.config.schema import AuthConfig, FeedConfig
 from inkwell.feeds.models import Episode
-from inkwell.feeds.parser import RSSParser
+from inkwell.feeds.parser import MAX_EPISODES_PER_SELECTION, RSSParser
 from inkwell.feeds.youtube_resolver import (
     ResolvedFeed,
     channel_id_from_feed_url,
@@ -702,6 +702,12 @@ def fetch_command(
         help="Podcast name for output directory (overrides auto-detection)",
     ),
     latest: bool = typer.Option(False, "--latest", "-l", help="Fetch the latest episode from feed"),
+    count: int | None = typer.Option(
+        None,
+        "--count",
+        min=1,
+        help="Process the N latest episodes from a feed",
+    ),
     episode: str | None = typer.Option(
         None,
         "--episode",
@@ -841,6 +847,15 @@ def fetch_command(
 
             is_url = url_or_feed.startswith(("http://", "https://"))
 
+            if is_url and count is not None:
+                raise ValidationError(
+                    "--count only works with saved feeds",
+                    suggestion=(
+                        "Use 'inkwell add <feed-url> --feed-name <name>' first, "
+                        "then run 'inkwell fetch <name> --count N'."
+                    ),
+                )
+
             # Pre-fetch validation for --save-feed (fail fast, before the
             # long-running pipeline starts).
             if save_feed:
@@ -888,14 +903,30 @@ def fetch_command(
                     console.print("  Or provide a direct episode URL.")
                     sys.exit(1)
                 else:
-                    # Found the feed - need --latest or --episode flag
-                    if not latest and not episode:
+                    selection_modes = (
+                        int(latest) + int(episode is not None) + int(count is not None)
+                    )
+                    if selection_modes > 1:
+                        raise ValidationError(
+                            "--latest, --episode, and --count are mutually exclusive",
+                            suggestion="Choose one feed selection mode",
+                        )
+
+                    if count is not None and count > MAX_EPISODES_PER_SELECTION:
+                        raise ValidationError(
+                            f"--count {count} exceeds maximum of {MAX_EPISODES_PER_SELECTION}",
+                            suggestion="Select fewer episodes or use multiple smaller requests",
+                        )
+
+                    # Found the feed - need --latest, --episode, or --count flag
+                    if selection_modes == 0:
                         console.print(
                             f"[red]✗[/red] Feed '{url_or_feed}' requires "
-                            "--latest or --episode flag."
+                            "--latest, --episode, or --count flag."
                         )
                         console.print("\nUsage:")
                         console.print(f"  inkwell fetch {url_or_feed} --latest")
+                        console.print(f"  inkwell fetch {url_or_feed} --count 5")
                         console.print(f'  inkwell fetch {url_or_feed} --episode "keyword"')
                         sys.exit(1)
 
@@ -911,6 +942,9 @@ def fetch_command(
                         console.print(
                             f"[green]✓[/green] Latest episode: {selected_episodes[0].title}"
                         )
+                    elif count is not None:
+                        selected_episodes = parser.get_latest_episodes(feed, url_or_feed, count)
+                        console.print(f"[green]✓[/green] Found {len(selected_episodes)} episodes")
                     else:
                         # episode is guaranteed to be set when not using --latest
                         assert episode is not None, "Episode selector required"

@@ -22,7 +22,7 @@ If you've added a feed, process by feed name:
 # Latest episode
 inkwell fetch my-podcast --latest
 
-# Specific number of episodes
+# Latest 5 episodes
 inkwell fetch my-podcast --count 5
 ```
 
@@ -76,6 +76,7 @@ Step 4/4: Writing markdown files...
 | Option | Short | Description | Default |
 |--------|-------|-------------|---------|
 | `--output` | `-o` | Output directory | `~/inkwell-notes` |
+| `--count` | | Latest N episodes from a saved feed | |
 | `--templates` | `-t` | Comma-separated template list | Auto-select |
 | `--category` | `-c` | Episode category | Auto-detect |
 | `--provider` | `-p` | LLM provider (claude, gemini) | Smart selection |

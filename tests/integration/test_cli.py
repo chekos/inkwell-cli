@@ -746,6 +746,132 @@ class TestCLIFetchSaveFeed:
         assert result.exit_code == 0, result.output
         assert "Latest" in result.output
 
+    def test_fetch_saved_feed_count_processes_latest_n(self, tmp_path: Path, monkeypatch) -> None:
+        """`--count N` processes the N latest episodes from a saved feed."""
+        from types import SimpleNamespace
+
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+
+        manager = ConfigManager(config_dir=tmp_path)
+        from inkwell.config.schema import FeedConfig as _FeedConfig
+
+        manager.add_feed(
+            "count-feed",
+            _FeedConfig(url="https://example.com/feed.rss"),  # type: ignore[arg-type]
+        )
+
+        async def fake_fetch_feed(*_args, **_kwargs):
+            return SimpleNamespace(entries=[object(), object()])
+
+        seen_count: list[int] = []
+
+        def fake_get_latest_episodes(_parser, _feed, podcast_name, count):
+            seen_count.append(count)
+            return [
+                SimpleNamespace(
+                    title="First",
+                    url="https://example.com/first.mp3",
+                    podcast_name=podcast_name,
+                ),
+                SimpleNamespace(
+                    title="Second",
+                    url="https://example.com/second.mp3",
+                    podcast_name=podcast_name,
+                ),
+            ]
+
+        output_dir = tmp_path / "episode-dir"
+        output_dir.mkdir()
+        processed_urls: list[str] = []
+
+        async def fake_process(_orchestrator, options, *_args, **_kwargs):
+            processed_urls.append(options.url)
+            return SimpleNamespace(
+                episode_output=SimpleNamespace(directory=output_dir),
+                extraction_results=[],
+                interview_result=None,
+                extraction_cost_usd=0.0,
+                interview_cost_usd=0.0,
+                total_cost_usd=0.0,
+            )
+
+        monkeypatch.setattr("inkwell.feeds.parser.RSSParser.fetch_feed", fake_fetch_feed)
+        monkeypatch.setattr(
+            "inkwell.feeds.parser.RSSParser.get_latest_episodes",
+            fake_get_latest_episodes,
+        )
+        monkeypatch.setattr("inkwell.pipeline.PipelineOrchestrator.process_episode", fake_process)
+
+        result = runner.invoke(
+            app,
+            [
+                "fetch",
+                "count-feed",
+                "--count",
+                "2",
+                "--dry-run",
+                "--output-dir",
+                str(tmp_path),
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert seen_count == [2]
+        assert processed_urls == [
+            "https://example.com/first.mp3",
+            "https://example.com/second.mp3",
+        ]
+        assert "Found 2 episodes" in result.output
+
+    def test_fetch_saved_feed_count_is_mutually_exclusive(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """`--count` cannot be combined with other feed selection modes."""
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+
+        manager = ConfigManager(config_dir=tmp_path)
+        from inkwell.config.schema import FeedConfig as _FeedConfig
+
+        manager.add_feed(
+            "count-feed",
+            _FeedConfig(url="https://example.com/feed.rss"),  # type: ignore[arg-type]
+        )
+
+        result = runner.invoke(
+            app,
+            ["fetch", "count-feed", "--latest", "--count", "2", "--dry-run"],
+        )
+
+        assert result.exit_code != 0
+        assert "mutually exclusive" in result.output
+
+    def test_fetch_saved_feed_count_enforces_max_before_fetch(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """Oversized `--count` values fail before fetching the RSS feed."""
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+
+        manager = ConfigManager(config_dir=tmp_path)
+        from inkwell.config.schema import FeedConfig as _FeedConfig
+
+        manager.add_feed(
+            "count-feed",
+            _FeedConfig(url="https://example.com/feed.rss"),  # type: ignore[arg-type]
+        )
+
+        async def fetch_should_not_run(*_args, **_kwargs):
+            raise AssertionError("RSS fetch should not run for invalid --count")
+
+        monkeypatch.setattr("inkwell.feeds.parser.RSSParser.fetch_feed", fetch_should_not_run)
+
+        result = runner.invoke(
+            app,
+            ["fetch", "count-feed", "--count", "101", "--dry-run"],
+        )
+
+        assert result.exit_code != 0
+        assert "maximum of 100" in result.output
+
     def test_feed_name_without_save_feed_errors(self, tmp_path: Path, monkeypatch) -> None:
         """--feed-name alone is a no-op that silently mislead users and
         scripts into thinking the channel was persisted. Reject up-front.

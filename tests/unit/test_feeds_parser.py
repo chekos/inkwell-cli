@@ -164,6 +164,44 @@ class TestRSSParser:
         assert episode.episode_number == 100
         assert episode.duration_seconds == 3600
 
+    def test_get_latest_episodes(self, valid_rss_feed: str) -> None:
+        """Test extracting the N latest episodes from a feed."""
+        feed = feedparser.parse(valid_rss_feed)
+        parser = RSSParser()
+
+        episodes = parser.get_latest_episodes(feed, "Tech Talks", 2)
+
+        assert [episode.title for episode in episodes] == [
+            "Episode 100: The Future of AI",
+            "Episode 99: Building Scalable Systems",
+        ]
+
+    def test_get_latest_episodes_rejects_zero(self, valid_rss_feed: str) -> None:
+        """Test that count must be positive."""
+        feed = feedparser.parse(valid_rss_feed)
+        parser = RSSParser()
+
+        with pytest.raises(ValidationError, match="positive integer"):
+            parser.get_latest_episodes(feed, "Tech Talks", 0)
+
+    def test_get_latest_episodes_rejects_too_many(self, valid_rss_feed: str) -> None:
+        """Test that count cannot exceed the feed size."""
+        feed = feedparser.parse(valid_rss_feed)
+        parser = RSSParser()
+
+        with pytest.raises(NotFoundError) as exc_info:
+            parser.get_latest_episodes(feed, "Tech Talks", 4)
+
+        assert "1-3" in exc_info.value.suggestion
+
+    def test_get_latest_episodes_rejects_selection_over_max(self, valid_rss_feed: str) -> None:
+        """Test that count enforces the same maximum as range/list selection."""
+        feed = feedparser.parse(valid_rss_feed)
+        parser = RSSParser()
+
+        with pytest.raises(ValidationError, match="maximum of 100"):
+            parser.get_latest_episodes(feed, "Tech Talks", 101)
+
     def test_get_episode_by_title(self, valid_rss_feed: str) -> None:
         """Test finding episode by title keyword."""
         feed = feedparser.parse(valid_rss_feed)

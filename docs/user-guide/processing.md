@@ -32,12 +32,17 @@ inkwell fetch my-podcast --count 5
 
 When you run `inkwell fetch`, here's what happens:
 
-```
-1. Download/Parse  → Get episode metadata and audio
-2. Transcribe      → YouTube API (free) or Gemini (fallback)
-3. Select Templates → Based on category or manual selection
-4. Extract Content  → AI extracts information per template
-5. Write Markdown  → Create structured note files
+```mermaid
+flowchart TD
+    A([inkwell fetch URL / feed]) --> B[Download audio\n& episode metadata]
+    B --> C{YouTube transcript\navailable?}
+    C -- Yes / Free --> D[Use YouTube transcript]
+    C -- No --> E[Transcribe with Gemini\n~$0.01 / hour]
+    D --> F[Select extraction templates\nauto or manual]
+    E --> F
+    F --> G[Extract content via AI\nper template]
+    G --> H[Write markdown files\nto output directory]
+    H --> I([Done — structured notes ready])
 ```
 
 **Example output:**

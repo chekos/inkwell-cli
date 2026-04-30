@@ -89,6 +89,7 @@ Opens `config.yaml` in your `$EDITOR` (defaults to `vi`).
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `transcription.api_key` | string | `""` | Google AI API key |
+| `transcription.model_name` | string | `gemini-3-flash-preview` | Gemini model for audio transcription |
 | `youtube_check` | boolean | `true` | Check YouTube for transcripts first |
 
 ### Extraction
@@ -134,6 +135,7 @@ default_output_dir: ~/ObsidianVault/podcasts
 # Transcription
 transcription:
   api_key: your-google-ai-key-here
+  model_name: gemini-3-flash-preview   # omit to use the default
 youtube_check: true
 
 # Extraction

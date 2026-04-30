@@ -42,6 +42,7 @@ default_output_dir: $HOME/notes/podcasts
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `transcription.api_key` | string | `""` | Google AI API key |
+| `transcription.model_name` | string | `gemini-3-flash-preview` | Gemini model for transcription |
 | `youtube_check` | boolean | `true` | Check YouTube for transcripts first |
 
 ### transcription.api_key
@@ -55,6 +56,19 @@ transcription:
 
 !!! tip
     Use `inkwell config set transcription.api_key "your-key"` to set this securely.
+    The `GOOGLE_API_KEY` environment variable overrides this value.
+
+### transcription.model_name
+
+The Gemini model used when audio transcription is required (i.e. no free YouTube transcript is available).
+
+```yaml
+transcription:
+  model_name: gemini-3-flash-preview   # default — fast and cheap
+  model_name: gemini-2.5-flash         # previous stable default
+```
+
+The model name must start with `gemini-`. When in doubt, leave this at the default; the default tracks the current recommended Gemini Flash model.
 
 ### youtube_check
 

@@ -37,6 +37,10 @@ You can process any YouTube video or podcast episode directly:
 inkwell fetch https://youtube.com/watch?v=your-video-id
 ```
 
+Inkwell shows live pipeline progress as it works, then a summary when done:
+
+![inkwell fetch terminal output showing four pipeline stages completing successfully](../assets/inkwell-fetch.svg)
+
 **What happens:**
 
 1. Inkwell checks for a free YouTube transcript

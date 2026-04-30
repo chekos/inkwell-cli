@@ -69,6 +69,32 @@ Each processed episode creates a folder with structured markdown:
 
 ---
 
+## How It Works
+
+Inkwell runs a four-stage pipeline every time you call `inkwell fetch`:
+
+```mermaid
+graph LR
+    A([RSS Feed / YouTube URL]) --> B[Feed Manager]
+    B --> C[Pipeline Orchestrator]
+
+    C --> D{Transcription Manager}
+    D -->|"YouTube — free"| T[Transcript]
+    D -->|"Gemini — fallback"| T
+
+    T --> E[Extraction Engine]
+    F[Template System\nsummary · quotes · concepts] --> E
+    E --> G[Output Manager]
+
+    G --> H([Markdown Notes\n+ Obsidian frontmatter])
+    G -->|"--interview"| I[Interview Mode]
+    I --> H
+```
+
+See [Processing Episodes](user-guide/processing.md) for a step-by-step walkthrough of each stage.
+
+---
+
 ## Next Steps
 
 <div class="grid cards" markdown>

@@ -43,6 +43,7 @@ class TestListFeeds:
     def test_list_feeds_with_data(self, tmp_path: Path, monkeypatch) -> None:
         """Should show feeds when configured."""
         monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+        monkeypatch.setattr("inkwell.config.manager.get_config_dir", lambda: tmp_path)
 
         from inkwell.config.manager import ConfigManager
         from inkwell.config.schema import AuthConfig, FeedConfig
@@ -54,6 +55,7 @@ class TestListFeeds:
                 url="https://example.com/feed.rss",  # type: ignore
                 auth=AuthConfig(type="none"),
                 category="tech",
+                custom_templates=["books-mentioned"],
             ),
         )
 
@@ -62,6 +64,32 @@ class TestListFeeds:
         assert result.exit_code == 0
         assert "test-podcast" in result.stdout
         assert "example.com" in result.stdout
+        assert "books-mentioned" in result.stdout
+
+    def test_list_feeds_json_includes_extra_templates(self, tmp_path: Path, monkeypatch) -> None:
+        """JSON feed list includes feed-level extra templates."""
+        import json
+
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+        monkeypatch.setattr("inkwell.config.manager.get_config_dir", lambda: tmp_path)
+
+        from inkwell.config.manager import ConfigManager
+        from inkwell.config.schema import FeedConfig
+
+        manager = ConfigManager(config_dir=tmp_path)
+        manager.add_feed(
+            "test-podcast",
+            FeedConfig(
+                url="https://example.com/feed.rss",  # type: ignore[arg-type]
+                custom_templates=["books-mentioned"],
+            ),
+        )
+
+        result = runner.invoke(app, ["list", "feeds", "--json"])
+
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        assert data["feeds"][0]["extra_templates"] == ["books-mentioned"]
 
 
 class TestListTemplates:

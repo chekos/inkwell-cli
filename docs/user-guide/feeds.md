@@ -49,6 +49,26 @@ inkwell add https://example.com/feed.rss --feed-name startup-podcast --category 
 | `interview` | Interview shows | summary, quotes |
 | `education` | Educational content | summary, key-concepts |
 
+### Feed with Extra Templates
+
+Use `--extra-templates` when a feed should always run additional templates beyond its category defaults:
+
+```bash
+inkwell add https://example.com/feed.rss \
+  --feed-name founder-interviews \
+  --category interview \
+  --extra-templates books-mentioned,step-by-step-plan
+```
+
+Extra templates are additive. A feed with category `interview` still gets the interview defaults, then Inkwell adds `books-mentioned` and `step-by-step-plan`.
+
+Change or clear them later:
+
+```bash
+inkwell config feed founder-interviews --extra-templates books-mentioned
+inkwell config feed founder-interviews --extra-templates ""
+```
+
 ### Private/Paid Feeds
 
 For premium podcasts requiring authentication:
@@ -127,10 +147,10 @@ inkwell list
 ╭─────────────────────────────────────────────────────────╮
 │           Configured Podcast Feeds                      │
 ├────────────────┬───────────────────┬──────┬─────────────┤
-│ Name           │ URL               │ Auth │ Category    │
+│ Name           │ URL               │ Auth │ Category    │ Extra Templates │
 ├────────────────┼───────────────────┼──────┼─────────────┤
-│ tech-show      │ feeds.example...  │ —    │ tech        │
-│ premium-show   │ private.com/...   │ ✓    │ —           │
+│ tech-show      │ feeds.example...  │ —    │ tech        │ books-mentioned │
+│ premium-show   │ private.com/...   │ ✓    │ —           │ -               │
 ╰────────────────┴───────────────────┴──────┴─────────────╯
 
 Total: 2 feed(s)
@@ -188,7 +208,7 @@ inkwell rename old-name new-name --force
 
 ```bash
 inkwell add https://tech1.com/feed.rss --feed-name tech-podcast-1 --category tech
-inkwell add https://tech2.com/feed.rss --feed-name tech-podcast-2 --category tech
+inkwell add https://tech2.com/feed.rss --feed-name tech-podcast-2 --category tech --extra-templates step-by-step-plan
 inkwell add https://biz.com/feed.rss --feed-name business-show --category business
 ```
 

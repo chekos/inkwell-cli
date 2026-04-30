@@ -447,6 +447,7 @@ class ConfigManager:
                     "url": str(feed_config.url),
                     "auth_type": feed_config.auth.type if feed_config.auth else "none",
                     "category": feed_config.category,
+                    "custom_templates": feed_config.custom_templates,
                 },
             )
             return normalized_name
@@ -499,6 +500,11 @@ class ConfigManager:
                 changes["display_name"] = {
                     "old": old_config.display_name or "",
                     "new": feed_config.display_name or "",
+                }
+            if old_config.custom_templates != feed_config.custom_templates:
+                changes["custom_templates"] = {
+                    "old": old_config.custom_templates,
+                    "new": feed_config.custom_templates,
                 }
 
             self._log_change(

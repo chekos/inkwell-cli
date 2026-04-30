@@ -95,6 +95,20 @@ class TestGeminiTranscriber:
 
         mock_genai.Client.assert_called_once_with(api_key="test-key")
 
+    def test_initialization_with_api_key_ignores_deprecated_env(
+        self, mock_genai: Mock, monkeypatch: pytest.MonkeyPatch, capsys
+    ) -> None:
+        """Test explicit API key does not read deprecated environment fallback."""
+        monkeypatch.setenv("GOOGLE_AI_API_KEY", "deprecated-key")
+        monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+
+        transcriber = GeminiTranscriber(api_key="test-key")
+
+        assert transcriber.api_key == "test-key"
+        captured = capsys.readouterr()
+        assert "GOOGLE_AI_API_KEY is deprecated" not in captured.err
+        mock_genai.Client.assert_called_once_with(api_key="test-key")
+
     def test_initialization_from_env(
         self, mock_genai: Mock, monkeypatch: pytest.MonkeyPatch
     ) -> None:

@@ -142,16 +142,18 @@ class GeminiTranscriber(TranscriptionPlugin):
             cost_threshold_usd: Cost threshold for confirmation
             cost_confirmation_callback: Callback for cost confirmation
         """
-        # Try GOOGLE_API_KEY first (standard), then GOOGLE_AI_API_KEY (deprecated)
-        _google_api_key = os.getenv("GOOGLE_API_KEY")
-        _google_ai_api_key = os.getenv("GOOGLE_AI_API_KEY")
-        self.api_key = api_key or _google_api_key or _google_ai_api_key
+        self.api_key = api_key
+        if self.api_key is None:
+            # Try GOOGLE_API_KEY first (standard), then GOOGLE_AI_API_KEY (deprecated)
+            _google_api_key = os.getenv("GOOGLE_API_KEY")
+            _google_ai_api_key = os.getenv("GOOGLE_AI_API_KEY")
+            self.api_key = _google_api_key or _google_ai_api_key
 
-        if _google_ai_api_key and not _google_api_key:
-            logger.warning(
-                "GOOGLE_AI_API_KEY is deprecated. Please use GOOGLE_API_KEY instead. "
-                "GOOGLE_AI_API_KEY will be removed in v2.0.0"
-            )
+            if _google_ai_api_key and not _google_api_key:
+                logger.warning(
+                    "GOOGLE_AI_API_KEY is deprecated. Please use GOOGLE_API_KEY instead. "
+                    "GOOGLE_AI_API_KEY will be removed in v2.0.0"
+                )
 
         if not self.api_key:
             raise ValueError(

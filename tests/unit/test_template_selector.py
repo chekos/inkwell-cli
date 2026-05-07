@@ -141,7 +141,7 @@ class TestTemplateSelector:
 
         mock_loader.load_template = Mock(side_effect=mock_load)
         mock_loader.list_templates = Mock(
-            side_effect=lambda category=None: (["tools-mentioned"] if category == "tech" else [])
+            side_effect=lambda category=None: ["tools-mentioned"] if category == "tech" else []
         )
 
         selector = TemplateSelector(template_loader=mock_loader)
@@ -257,7 +257,7 @@ class TestTemplateSelector:
 
         mock_loader.load_template = Mock(side_effect=mock_load)
         mock_loader.list_templates = Mock(
-            side_effect=lambda category=None: (["tools-mentioned"] if category == "tech" else [])
+            side_effect=lambda category=None: ["tools-mentioned"] if category == "tech" else []
         )
 
         selector = TemplateSelector(template_loader=mock_loader)

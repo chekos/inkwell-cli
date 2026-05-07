@@ -7,7 +7,7 @@ import hashlib
 import logging
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import aiofiles
 import platformdirs
@@ -159,7 +159,7 @@ class ExtractionCache:
         original_serializer = self._cache.serializer
 
         def extended_serializer(result: str) -> dict[str, Any]:
-            base_data = original_serializer(result)
+            base_data = cast(dict[str, Any], original_serializer(result))
             base_data.update(
                 {
                     "template_name": template_name,

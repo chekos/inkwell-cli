@@ -140,22 +140,33 @@ def _normalize_email(raw: str) -> str:
     return address.lower()
 
 
-def _client_ip(request: Request) -> str:
-    """Best-effort client IP extraction.
+def _client_ip(request: Request, *, trusted_proxy_count: int) -> str:
+    """Extract the per-rate-limit client IP from a request.
 
-    Cloud Run terminates TLS at the load balancer and forwards the
-    real client IP via ``X-Forwarded-For``. We pick the leftmost
-    address in the header (the original client) and fall back to the
-    socket peer if the header is absent — useful for local dev.
+    Cloud Run terminates TLS at a Google Cloud Load Balancer that
+    *appends* one entry to the end of ``X-Forwarded-For`` containing
+    the real client IP. The LEFTmost values are attacker-controlled —
+    clients can put anything they want there. The codex P1 on PR #77
+    flagged the original leftmost-takes-all implementation as a
+    rate-limit bypass.
 
-    The value is hashed with the demo salt before storage; we never
-    persist the raw IP.
+    Algorithm: with ``N = trusted_proxy_count`` we expect the rightmost
+    ``N`` entries to come from our own LB chain. The ``N``-from-the-end
+    entry (``parts[-N]``) is the real client IP — it's the leftmost
+    entry our chain appended, attacker cannot influence its position.
+
+    Falls back to the socket peer when ``X-Forwarded-For`` is absent,
+    when there are fewer entries than ``trusted_proxy_count``, or when
+    ``trusted_proxy_count == 0`` (direct-internet deploys without an
+    LB — no LB means no trusted XFF). The value is hashed with the
+    demo salt before storage; we never persist the raw IP.
     """
-    forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        first = forwarded.split(",", 1)[0].strip()
-        if first:
-            return first
+    if trusted_proxy_count > 0:
+        forwarded = request.headers.get("x-forwarded-for")
+        if forwarded:
+            parts = [p.strip() for p in forwarded.split(",") if p.strip()]
+            if len(parts) >= trusted_proxy_count:
+                return parts[-trusted_proxy_count]
     if request.client is not None and request.client.host:
         return request.client.host
     return "unknown"
@@ -435,7 +446,10 @@ def create_app(
 
         # Now the request looks credible. Burn one of the IP's daily
         # attempts (failures count too — that's the OBRA-73 contract).
-        ip_hash = hash_with_salt(_client_ip(request), salt=config.hash_salt)
+        ip_hash = hash_with_salt(
+            _client_ip(request, trusted_proxy_count=config.trusted_proxy_count),
+            salt=config.hash_salt,
+        )
         ip_decision = await limiter.record_attempt_and_check(
             ip_hash=ip_hash,
             cap=config.daily_attempts_per_ip,

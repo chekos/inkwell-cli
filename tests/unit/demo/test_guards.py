@@ -219,7 +219,7 @@ class TestRateLimits:
 
         import asyncio
 
-        asyncio.get_event_loop().run_until_complete(_seed())
+        asyncio.run(_seed())
 
         with client:
             response = client.post(
@@ -251,7 +251,7 @@ class TestRateLimits:
 
         import asyncio
 
-        asyncio.get_event_loop().run_until_complete(_seed_global())
+        asyncio.run(_seed_global())
 
         with client:
             response = client.post(
@@ -308,6 +308,66 @@ class TestRateLimits:
         assert r1.status_code == 202
         assert r2.status_code == 202
 
+    def test_spoof_prefix_does_not_bypass_ip_cap(
+        self,
+        global_config: GlobalConfig,
+    ) -> None:
+        # Codex P1 on PR #77: an attacker can rotate the leftmost XFF
+        # entries to dodge per-IP rate limits if we trust the leftmost
+        # value. With the trusted-suffix algorithm (default
+        # trusted_proxy_count=1), the IP we extract is the rightmost
+        # entry — the one GCLB appended — and attacker rotation in
+        # the prefix doesn't change it.
+        config = DemoConfig(hash_salt=_TEST_SALT, daily_attempts_per_ip=1)
+        client, _ = _build(config, global_config)
+        with client:
+            ok = client.post(
+                "/jobs",
+                data={"email": "u@example.com", "url": "https://example.com/feed.rss"},
+                # GCLB appended "203.0.113.10" — that's the real client.
+                # The attacker prefix cannot influence what we count.
+                headers={"X-Forwarded-For": "1.2.3.4, 5.6.7.8, 203.0.113.10"},
+            )
+            # Same real IP, attacker rotates a different fake prefix.
+            blocked = client.post(
+                "/jobs",
+                data={"email": "u2@example.com", "url": "https://example.com/feed.rss"},
+                headers={"X-Forwarded-For": "9.9.9.9, 203.0.113.10"},
+            )
+        assert ok.status_code == 202
+        # Attacker burned the IP's only allowed daily attempt; the
+        # second request must be refused even though the leftmost XFF
+        # entry rotated.
+        assert blocked.status_code == 429
+        assert blocked.json()["detail"]["reason"] == "ip_attempts_exhausted"
+
+    def test_trusted_proxy_count_zero_ignores_xff(
+        self,
+        global_config: GlobalConfig,
+    ) -> None:
+        # With no LB in front (direct-internet deploy), XFF is fully
+        # untrusted and we always use the socket peer. Two different
+        # XFF values therefore share the same per-IP budget.
+        config = DemoConfig(
+            hash_salt=_TEST_SALT,
+            daily_attempts_per_ip=1,
+            trusted_proxy_count=0,
+        )
+        client, _ = _build(config, global_config)
+        with client:
+            r1 = client.post(
+                "/jobs",
+                data={"email": "u@example.com", "url": "https://example.com/feed.rss"},
+                headers={"X-Forwarded-For": "203.0.113.10"},
+            )
+            r2 = client.post(
+                "/jobs",
+                data={"email": "u2@example.com", "url": "https://example.com/feed.rss"},
+                headers={"X-Forwarded-For": "203.0.113.20"},
+            )
+        assert r1.status_code == 202
+        assert r2.status_code == 429
+
 
 # ---------------------------------------------------------------------------
 # spend cap
@@ -329,7 +389,7 @@ class TestSpendCap:
 
         import asyncio
 
-        asyncio.get_event_loop().run_until_complete(_seed_spend())
+        asyncio.run(_seed_spend())
 
         with client:
             response = client.post(

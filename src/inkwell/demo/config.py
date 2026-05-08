@@ -113,6 +113,20 @@ class DemoConfig(BaseSettings):
         ge=1,
         description="Total attempts (success or failure) allowed per IP per day.",
     )
+    trusted_proxy_count: int = Field(
+        default=1,
+        ge=0,
+        le=10,
+        description=(
+            "Number of trusted proxy hops in front of the demo service. "
+            "Cloud Run sits behind one Google Cloud Load Balancer that "
+            "appends the real client IP to the end of `X-Forwarded-For`, "
+            "so the default `1` is correct there. Anything to the left of "
+            "the trusted suffix is treated as attacker-controlled and "
+            "ignored when extracting the per-IP rate-limit identity. Set "
+            "to `0` only for direct-internet deployments without an LB."
+        ),
+    )
 
     monthly_spend_cap_usd: float = Field(
         default=50.0,

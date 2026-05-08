@@ -44,9 +44,10 @@ logger = logging.getLogger(__name__)
 class DemoPipelineDisabledError(RuntimeError):
     """Raised when :data:`DemoConfig.enabled` is ``False``.
 
-    The kill switch (``INKWELL_DEMO_ENABLED=false``) lets us pause
-    processing without a redeploy. Callers should catch this and return
-    the user-facing maintenance response.
+    The kill switch (``DEMO_PIPELINE_ENABLED=false`` — canonical;
+    ``INKWELL_DEMO_ENABLED=false`` is accepted as an alias) lets us
+    pause processing without a redeploy. Callers should catch this and
+    return the user-facing maintenance response.
     """
 
 
@@ -143,7 +144,7 @@ async def process_demo_job(
             or extraction failures.
     """
     if not demo_config.enabled:
-        raise DemoPipelineDisabledError("Demo pipeline is paused (INKWELL_DEMO_ENABLED=false).")
+        raise DemoPipelineDisabledError("Demo pipeline is paused (DEMO_PIPELINE_ENABLED=false).")
 
     configure_demo_runtime(demo_config)
 

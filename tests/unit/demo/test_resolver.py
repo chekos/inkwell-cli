@@ -32,6 +32,21 @@ def _fake_getaddrinfo(*ips: str):
     return _resolve
 
 
+def _fake_getaddrinfo_by_host(mapping: dict[str, str], default: str = "93.184.216.34"):
+    """Return a getaddrinfo stub that maps specific hosts to specific IPs.
+
+    Hosts not in ``mapping`` resolve to ``default`` (a public IP). Useful
+    when a redirect chain needs the *initial* host to be public and a
+    later hop to be private.
+    """
+
+    def _resolve(host: str, *args: Any, **kwargs: Any) -> list[Any]:
+        ip = mapping.get(host, default)
+        return [(socket.AF_INET, socket.SOCK_STREAM, 0, "", (ip, 0))]
+
+    return _resolve
+
+
 def _config(**overrides: Any) -> DemoConfig:
     base: dict[str, Any] = {"max_duration_seconds": 30 * 60}
     base.update(overrides)
@@ -403,7 +418,7 @@ class TestSafeFetchFeed:
 
         with patch(
             "inkwell.demo.classifier.socket.getaddrinfo",
-            side_effect=_fake_getaddrinfo("10.0.0.5"),
+            side_effect=_fake_getaddrinfo_by_host({"internal.example.net": "10.0.0.5"}),
         ):
             with pytest.raises(DemoUrlError) as excinfo:
                 await _fetch_feed_safely("https://example.com/feed.rss")
@@ -421,7 +436,7 @@ class TestSafeFetchFeed:
 
         with patch(
             "inkwell.demo.classifier.socket.getaddrinfo",
-            side_effect=_fake_getaddrinfo("127.0.0.1"),
+            side_effect=_fake_getaddrinfo_by_host({"rebind.example.net": "127.0.0.1"}),
         ):
             with pytest.raises(DemoUrlError) as excinfo:
                 await _fetch_feed_safely("https://example.com/feed.rss")
@@ -443,7 +458,7 @@ class TestSafeFetchFeed:
 
         with patch(
             "inkwell.demo.classifier.socket.getaddrinfo",
-            side_effect=_fake_getaddrinfo("100.64.0.5"),
+            side_effect=_fake_getaddrinfo_by_host({"cgn.example.net": "100.64.0.5"}),
         ):
             with pytest.raises(DemoUrlError) as excinfo:
                 await _fetch_feed_safely("https://example.com/feed.rss")
@@ -451,7 +466,24 @@ class TestSafeFetchFeed:
 
     @pytest.mark.asyncio
     @respx.mock
+    async def test_blocks_initial_url_when_dns_rebinds_to_private_ip(self) -> None:
+        # Codex P1 follow-up: classify time and worker fetch time are
+        # decoupled (m1 + m5), so a DNS-rebinding attacker can submit a
+        # name that resolves public at classify and flips to private
+        # before the worker calls _fetch_feed_safely. The first hop
+        # must rerun the host-literal + DNS checks.
+        with patch(
+            "inkwell.demo.classifier.socket.getaddrinfo",
+            side_effect=_fake_getaddrinfo("10.0.0.5"),
+        ):
+            with pytest.raises(DemoUrlError) as excinfo:
+                await _fetch_feed_safely("https://example.com/feed.rss")
+        assert excinfo.value.reason.startswith("rss_unsafe_host:resolved_private_ip:")
+
+    @pytest.mark.asyncio
+    @respx.mock
     async def test_blocks_redirect_when_hostname_dns_fails(self) -> None:
+        # Initial host resolves public; redirect target raises gaierror.
         respx.get("https://example.com/feed.rss").mock(
             return_value=Response(
                 302,
@@ -459,12 +491,14 @@ class TestSafeFetchFeed:
             ),
         )
 
-        def _gaierror(*args: Any, **kwargs: Any) -> list[Any]:
-            raise socket.gaierror(8, "nodename nor servname provided, or not known")
+        def _resolve(host: str, *args: Any, **kwargs: Any) -> list[Any]:
+            if host == "nxdomain.example.net":
+                raise socket.gaierror(8, "nodename nor servname provided, or not known")
+            return [(socket.AF_INET, socket.SOCK_STREAM, 0, "", ("93.184.216.34", 0))]
 
         with patch(
             "inkwell.demo.classifier.socket.getaddrinfo",
-            side_effect=_gaierror,
+            side_effect=_resolve,
         ):
             with pytest.raises(DemoUrlError) as excinfo:
                 await _fetch_feed_safely("https://example.com/feed.rss")

@@ -199,15 +199,27 @@ async def _resolve_public_rss(
 
 
 async def _fetch_feed_safely(url: str) -> feedparser.FeedParserDict:
-    """Fetch RSS contents while revalidating every redirect hop.
+    """Fetch RSS contents while revalidating every hop's host.
 
     This replaces :meth:`RSSParser.fetch_feed` for the demo path. The
     upstream method passes ``follow_redirects=True`` to ``httpx``, which
     would let a public URL 30x to localhost / RFC1918 and bypass the
     classifier's host policy. Here we set ``follow_redirects=False`` and
-    walk up to :data:`_RSS_MAX_REDIRECT_HOPS` redirect hops manually,
-    calling :func:`assert_demo_safe_url` on each ``Location`` target
-    before issuing the next request.
+    walk up to :data:`_RSS_MAX_REDIRECT_HOPS` redirect hops manually.
+
+    Every iteration revalidates the target before issuing the GET:
+
+    - :func:`assert_demo_safe_url` (host-literal policy)
+    - :func:`assert_resolved_host_is_public` (DNS resolution +
+      ``not ip.is_global``)
+
+    The initial URL is included on purpose. The classifier already ran
+    these same checks at submission time, but classification and worker
+    execution are decoupled in the demo (m1 = synchronous classify, m5 =
+    Cloud Tasks delivery) — a DNS-rebinding attacker can submit a
+    hostname that resolves public at classify time and flips to
+    RFC1918/loopback before the worker fetches. Re-running the checks
+    here closes that TOCTOU window for every hop, including hop 0.
 
     Args:
         url: Caller-supplied RSS URL. Already validated by
@@ -218,15 +230,17 @@ async def _fetch_feed_safely(url: str) -> feedparser.FeedParserDict:
 
     Raises:
         DemoUrlError: With a user-safe message and structured ``reason``
-            when the fetch fails, hits an unsafe redirect, or exceeds
-            the redirect-hop budget.
+            when the fetch fails, the host is unsafe (initial or
+            redirected), or the hop budget is exhausted.
     """
     current = url
     async with httpx.AsyncClient(
         timeout=_RSS_FETCH_TIMEOUT_SECONDS,
         follow_redirects=False,
     ) as client:
-        for _hop in range(_RSS_MAX_REDIRECT_HOPS + 1):
+        for hop in range(_RSS_MAX_REDIRECT_HOPS + 1):
+            await _assert_safe_to_fetch(current, is_redirect_hop=hop > 0)
+
             response = await _safe_get(client, current)
 
             if response.status_code == 401:
@@ -242,26 +256,9 @@ async def _fetch_feed_safely(url: str) -> feedparser.FeedParserDict:
                         "We couldn't follow the RSS feed redirect.",
                         reason="rss_redirect_no_location",
                     )
-                next_target = str(httpx.URL(current).join(location))
-                next_host = httpx.URL(next_target).host
-                # Revalidate before issuing the next request:
-                # - ``assert_demo_safe_url`` checks the host literal.
-                # - ``assert_resolved_host_is_public`` resolves the host
-                #   and rejects any address Python doesn't flag as
-                #   global (covers RFC1918, loopback, link-local,
-                #   reserved, multicast, *and* RFC6598 carrier-grade NAT
-                #   space — which boolean disjunctions miss).
-                # ``getaddrinfo`` is sync; run it off the event loop.
-                try:
-                    assert_demo_safe_url(next_target)
-                    if next_host:
-                        await asyncio.to_thread(assert_resolved_host_is_public, next_host)
-                except DemoUrlError as exc:
-                    raise DemoUrlError(
-                        "That feed redirects to a private address.",
-                        reason=f"rss_redirect_to_unsafe_host:{exc.reason}",
-                    ) from exc
-                current = next_target
+                # Resolve the next target relative to the current URL and
+                # let the next iteration's top-of-loop guard validate it.
+                current = str(httpx.URL(current).join(location))
                 continue
 
             if response.status_code >= 400:
@@ -282,6 +279,31 @@ async def _fetch_feed_safely(url: str) -> feedparser.FeedParserDict:
         "Too many redirects while reading the RSS feed.",
         reason="rss_too_many_redirects",
     )
+
+
+async def _assert_safe_to_fetch(url: str, *, is_redirect_hop: bool) -> None:
+    """Run the host-literal + DNS checks before any GET.
+
+    Wraps the underlying ``DemoUrlError`` so log filters can distinguish
+    a redirect-driven rejection (``rss_redirect_to_unsafe_host:*``) from
+    a TOCTOU-driven rejection on the initial URL
+    (``rss_unsafe_host:*``).
+    """
+    host = httpx.URL(url).host
+    try:
+        assert_demo_safe_url(url)
+        if host:
+            await asyncio.to_thread(assert_resolved_host_is_public, host)
+    except DemoUrlError as exc:
+        if is_redirect_hop:
+            raise DemoUrlError(
+                "That feed redirects to a private address.",
+                reason=f"rss_redirect_to_unsafe_host:{exc.reason}",
+            ) from exc
+        raise DemoUrlError(
+            "That feed's host can't be safely fetched.",
+            reason=f"rss_unsafe_host:{exc.reason}",
+        ) from exc
 
 
 async def _safe_get(client: httpx.AsyncClient, url: str) -> httpx.Response:

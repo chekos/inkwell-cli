@@ -26,6 +26,7 @@ The returned :class:`ResolvedDemoSource` is what
 from __future__ import annotations
 
 import asyncio
+import math
 from dataclasses import dataclass
 from typing import Any
 
@@ -353,10 +354,16 @@ def _coerce_duration(info: dict[str, Any]) -> int | None:
     yt-dlp returns ``duration`` as a numeric (int or float) when known.
     Some extractors only set ``duration_string`` (``"H:MM:SS"``); we
     parse that as a fallback. Returns ``None`` if neither is usable.
+
+    Float values are rounded up via :func:`math.ceil` so a video that
+    is fractionally over the cap (``1800.9`` against a 1800s cap) is
+    rejected at the resolver — truncation would let it through and
+    defer rejection to a post-transcription backstop, after the
+    pipeline has already spent budget.
     """
     raw = info.get("duration")
     if isinstance(raw, (int, float)) and raw > 0:
-        return int(raw)
+        return math.ceil(raw)
 
     duration_string = info.get("duration_string")
     if isinstance(duration_string, str) and duration_string.strip():

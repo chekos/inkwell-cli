@@ -131,6 +131,33 @@ class TestYouTubeResolution:
         assert "duration_over_cap" in excinfo.value.reason
 
     @pytest.mark.asyncio
+    async def test_rejects_fractional_duration_over_cap(self) -> None:
+        # Codex P2: ``int(1800.9)`` truncates to 1800 and slips past a
+        # 1800s cap, deferring rejection to post-transcription backstops
+        # after pipeline spend has started. ``math.ceil`` rounds up so
+        # any fractional value strictly over the cap rejects here.
+        info = {"duration": 30 * 60 + 0.9, "title": "Just over"}
+        with patch("inkwell.demo.resolver._fetch_youtube_video_info", return_value=info):
+            with pytest.raises(DemoUrlError) as excinfo:
+                await resolve_demo_source(
+                    _classified("https://youtu.be/fractional"),
+                    demo_config=_config(),
+                )
+        assert "duration_over_cap" in excinfo.value.reason
+
+    @pytest.mark.asyncio
+    async def test_accepts_fractional_duration_at_cap(self) -> None:
+        # ``1800.0`` is exactly at the cap; ``math.ceil`` keeps it at
+        # 1800 so the resolver still accepts boundary-correct durations.
+        info = {"duration": float(30 * 60), "title": "At cap"}
+        with patch("inkwell.demo.resolver._fetch_youtube_video_info", return_value=info):
+            result = await resolve_demo_source(
+                _classified("https://youtu.be/at-cap"),
+                demo_config=_config(),
+            )
+        assert result.duration_seconds == 30 * 60
+
+    @pytest.mark.asyncio
     async def test_rejects_video_with_unknown_duration(self) -> None:
         info = {"title": "No duration", "channel": "Acme"}
         with patch("inkwell.demo.resolver._fetch_youtube_video_info", return_value=info):

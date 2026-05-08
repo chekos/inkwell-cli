@@ -564,6 +564,40 @@ class TestSafeFetchFeed:
         assert excinfo.value.reason.startswith("rss_redirect_to_unsafe_host:dns_resolution_failed:")
 
     @pytest.mark.asyncio
+    async def test_maps_malformed_redirect_location_to_demo_url_error(self) -> None:
+        # Codex P2 from PR #73 post-merge review: an RSS endpoint that
+        # 30x's with a malformed ``Location`` value would crash
+        # ``httpx.URL(current).join(location)`` with ``httpx.InvalidURL``
+        # and surface as a 500. Map it to a user-safe DemoUrlError with a
+        # structured reason so the worker doesn't leak internals.
+        #
+        # httpx.AsyncClient itself pre-validates the ``Location`` header
+        # in ``_send_handling_redirects`` and would raise
+        # ``RemoteProtocolError`` before our loop sees the response, so we
+        # patch ``_safe_get`` to hand the resolver a redirect Response
+        # with a malformed Location verbatim — that's the state our join()
+        # guard is defending against (e.g. if httpx loosens validation
+        # upstream, or a future change moves us off ``AsyncClient``).
+        from httpx import Response as _HttpxResponse
+
+        bad_response = _HttpxResponse(302, headers={"location": "invalid://[::1"})
+
+        async def _fake_safe_get(client: Any, url: str) -> _HttpxResponse:
+            return bad_response
+
+        with (
+            patch(
+                "inkwell.demo.classifier.socket.getaddrinfo",
+                side_effect=_fake_getaddrinfo("93.184.216.34"),
+            ),
+            patch("inkwell.demo.resolver._safe_get", side_effect=_fake_safe_get),
+        ):
+            with pytest.raises(DemoUrlError) as excinfo:
+                await _fetch_feed_safely("https://example.com/feed.rss")
+        assert excinfo.value.reason.startswith("rss_redirect_malformed_location:")
+        assert "InvalidURL" in excinfo.value.reason
+
+    @pytest.mark.asyncio
     @respx.mock
     async def test_rejects_redirect_chain_over_hop_budget(self) -> None:
         # Public → public → public … should hit the hop budget and refuse

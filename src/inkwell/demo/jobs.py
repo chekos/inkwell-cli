@@ -78,7 +78,22 @@ class JobStore(Protocol):
 
     async def get(self, job_id: str) -> DemoJob | None: ...
 
-    async def mark_running(self, job_id: str) -> None: ...
+    async def try_claim_for_run(self, job_id: str) -> bool:
+        """Atomically transition the job from ``QUEUED`` to ``RUNNING``.
+
+        Returns ``True`` only if the caller now owns execution of this
+        job. Returns ``False`` for unknown jobs and for jobs already in
+        ``RUNNING`` / ``COMPLETE`` / ``FAILED`` — the caller MUST skip
+        any pipeline work in those cases.
+
+        This is the idempotency primitive for the internal worker
+        route. Cloud Tasks delivers at-least-once and retries any
+        non-2xx response, so duplicate deliveries (or a retry after a
+        transient blip) must not re-spend the per-job budget. m4's
+        Firestore implementation will back this with a transactional
+        update against ``demo_jobs/{id}``.
+        """
+        ...
 
     async def mark_complete(
         self,
@@ -124,12 +139,18 @@ class InMemoryJobStore:
         async with self._lock:
             return self._jobs.get(job_id)
 
-    async def mark_running(self, job_id: str) -> None:
+    async def try_claim_for_run(self, job_id: str) -> bool:
         async with self._lock:
             job = self._jobs.get(job_id)
             if job is None:
-                return
+                return False
+            if job.status is not JobStatus.QUEUED:
+                # Already claimed (RUNNING) or finished (COMPLETE/FAILED).
+                # The caller skips its work — this is what makes a
+                # second Cloud Tasks delivery harmless.
+                return False
             job.status = JobStatus.RUNNING
+            return True
 
     async def mark_complete(
         self,

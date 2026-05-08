@@ -163,7 +163,14 @@ def _build_worker(
             logger.warning("worker received unknown job %s", job_id)
             return
 
-        await job_store.mark_running(job_id)
+        # Atomic QUEUED -> RUNNING transition. If the claim fails the
+        # job is already RUNNING / COMPLETE / FAILED — bail out without
+        # spending again. Cloud Tasks delivers at-least-once and this
+        # is the primary defense against duplicate deliveries
+        # re-running a finished job.
+        if not await job_store.try_claim_for_run(job_id):
+            logger.info("worker skipped already-claimed job %s", job_id)
+            return
 
         try:
             classified = classify_demo_url(job.submitted_url)
@@ -300,12 +307,10 @@ def create_app(
     def require_worker_secret(
         provided: Annotated[str | None, Header(alias=_WORKER_SECRET_HEADER)] = None,
     ) -> None:
-        if worker_secret is None:
-            # Internal route is disabled in this deploy.
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="not found",
-            )
+        # The route is only registered when worker_secret is set, so
+        # ``worker_secret is None`` is unreachable here. Asserting for
+        # mypy + defensive future-proofing.
+        assert worker_secret is not None  # noqa: S101
         if not provided or not secrets.compare_digest(worker_secret, provided):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -391,15 +396,26 @@ def create_app(
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="job not found")
         return _job_to_response(job)
 
-    @app.post("/_internal/jobs/{job_id}/run", dependencies=[Depends(require_worker_secret)])
-    async def run_job_internal(
-        job_id: str, store: Annotated[JobStore, Depends(get_store)]
-    ) -> dict[str, str]:
-        job = await store.get(job_id)
-        if job is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="job not found")
-        await worker(job_id)
-        return {"status": "ok", "job_id": job_id}
+    # The internal worker route is only registered when a secret is
+    # configured. Without that, even a 405 from a wrong-method probe
+    # would advertise the route's existence (Diego's m3 review point);
+    # not registering at all keeps the route surface clean for dev /
+    # preview deploys that don't run a Cloud Tasks worker.
+    if worker_secret is not None:
+
+        @app.post("/_internal/jobs/{job_id}/run", dependencies=[Depends(require_worker_secret)])
+        async def run_job_internal(
+            job_id: str, store: Annotated[JobStore, Depends(get_store)]
+        ) -> dict[str, str]:
+            job = await store.get(job_id)
+            if job is None:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="job not found")
+            # ``worker()`` is itself idempotent — ``try_claim_for_run``
+            # short-circuits a second delivery — so we just call it.
+            # Returning 200 even for the no-op skip path is correct
+            # behavior: Cloud Tasks should NOT retry.
+            await worker(job_id)
+            return {"status": "ok", "job_id": job_id}
 
     return app
 

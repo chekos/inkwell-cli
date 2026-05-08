@@ -322,13 +322,16 @@ class TestGetJob:
 
 
 class TestInternalWorkerRoute:
-    def test_disabled_when_no_secret_configured(
+    def test_route_not_registered_when_no_secret_configured(
         self,
         demo_config: DemoConfig,
         global_config: GlobalConfig,
         store: JobStore,
         dispatcher: _RecordingDispatcher,
     ) -> None:
+        # Diego's m3 review: when worker_secret is None the route must
+        # not be registered at all. A 405 from a wrong-method probe
+        # would otherwise leak the route's existence.
         with _make_client(
             demo_config=demo_config,
             global_config=global_config,
@@ -336,8 +339,12 @@ class TestInternalWorkerRoute:
             dispatcher=dispatcher,
             worker_secret=None,
         ) as client:
-            response = client.post("/_internal/jobs/abc/run")
-        assert response.status_code == 404
+            post_response = client.post("/_internal/jobs/abc/run")
+            get_response = client.get("/_internal/jobs/abc/run")
+        # Both methods 404 — no Allow header advertising POST.
+        assert post_response.status_code == 404
+        assert get_response.status_code == 404
+        assert "allow" not in {k.lower() for k in get_response.headers.keys()}
 
     def test_rejects_wrong_secret(
         self,
@@ -447,3 +454,86 @@ class TestInternalWorkerRoute:
         assert completed.status is JobStatus.COMPLETE
         assert completed.payload is not None
         assert completed.cost_usd == 0.07
+
+    @pytest.mark.asyncio
+    async def test_duplicate_delivery_is_idempotent(
+        self,
+        demo_config: DemoConfig,
+        global_config: GlobalConfig,
+        store: InMemoryJobStore,
+        dispatcher: _RecordingDispatcher,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        # Diego's m3 review (blocking): Cloud Tasks delivers
+        # at-least-once, so a duplicate delivery for a completed job
+        # must NOT re-spend. The internal route must short-circuit on
+        # any non-QUEUED status.
+        call_count = {"n": 0}
+
+        async def fake_process_demo_job(
+            classified: ClassifiedUrl,
+            *,
+            demo_config: DemoConfig,
+            global_config: GlobalConfig,
+        ) -> DemoJobResult:
+            call_count["n"] += 1
+            return DemoJobResult(
+                payload=_payload(),
+                resolved_source=Any,  # type: ignore[arg-type]
+                total_cost_usd=0.07,
+            )
+
+        monkeypatch.setattr("inkwell.demo.app.process_demo_job", fake_process_demo_job)
+
+        job = await store.create(
+            email="user@example.com",
+            url="https://example.com/feed.rss",
+        )
+
+        with _make_client(
+            demo_config=demo_config,
+            global_config=global_config,
+            store=store,
+            dispatcher=dispatcher,
+            worker_secret="real-secret",
+        ) as client:
+            first = client.post(
+                f"/_internal/jobs/{job.id}/run",
+                headers={"X-Demo-Worker-Secret": "real-secret"},
+            )
+            second = client.post(
+                f"/_internal/jobs/{job.id}/run",
+                headers={"X-Demo-Worker-Secret": "real-secret"},
+            )
+
+        # Both deliveries return 200 so Cloud Tasks doesn't retry.
+        assert first.status_code == 200
+        assert second.status_code == 200
+        # But the pipeline only ran once.
+        assert call_count["n"] == 1
+        # Job state is final.
+        completed = await store.get(job.id)
+        assert completed is not None
+        assert completed.status is JobStatus.COMPLETE
+
+    @pytest.mark.asyncio
+    async def test_concurrent_delivery_only_runs_once(
+        self,
+        demo_config: DemoConfig,
+        global_config: GlobalConfig,
+        store: InMemoryJobStore,
+        dispatcher: _RecordingDispatcher,
+    ) -> None:
+        # Even with two concurrent claims of a fresh QUEUED job, only
+        # one transition succeeds — the other returns False without
+        # mutating state.
+        job = await store.create(
+            email="user@example.com",
+            url="https://example.com/feed.rss",
+        )
+        first = await store.try_claim_for_run(job.id)
+        second = await store.try_claim_for_run(job.id)
+        assert first is True
+        assert second is False
+        # Unknown ids never claim.
+        assert await store.try_claim_for_run("nope") is False

@@ -1,0 +1,25 @@
+# Keep the build context small. The Dockerfile only needs pyproject /
+# uv.lock / src/, but Docker copies the whole working tree by default.
+
+.git/
+.github/
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+__pycache__/
+**/__pycache__/
+**/*.pyc
+*.egg-info/
+
+# Documentation + dev tooling — not shipped.
+docs/
+docs-site/
+benchmarks/
+tests/
+scripts/
+
+# Local config that mustn't leak into images.
+.env
+.env.*
+*.log

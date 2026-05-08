@@ -1,0 +1,291 @@
+name: Demo Deploy (OBRA-79)
+
+# Builds and deploys the public try-it demo (OBRA-74) to Cloud Run.
+#
+# Two trigger paths:
+#   - pull_request → build the Docker image, run it through Trivy, and
+#     deploy a tagged Cloud Run revision with no production traffic.
+#     The preview URL gets posted as a comment on the PR. CI builds
+#     are gated on the `gcp-deploy` repository environment so a fork
+#     PR can't trigger a deploy.
+#   - push to main → build, push to Artifact Registry, and roll a new
+#     production Cloud Run revision.
+#
+# All GCP credentials live in the `gcp-deploy` environment as repo
+# secrets:
+#   - GCP_PROJECT_ID         — e.g. inkwell-demo-prod
+#   - GCP_REGION             — e.g. us-central1
+#   - GCP_SERVICE_NAME       — e.g. inkwell-demo
+#   - GCP_ARTIFACT_REPO      — Artifact Registry Docker repo name
+#   - GCP_WIF_PROVIDER       — Workload Identity Federation provider
+#                              (full resource name, used by google-github-actions/auth)
+#   - GCP_WIF_SERVICE_ACCOUNT — Service account the workflow impersonates
+#
+# Until Lucas provisions the GCP project, the deploy job stays gated
+# on the `should-deploy` flag: the build/test job still runs on every
+# PR (catches Dockerfile breakage early), the deploy job only runs
+# when the project secret is present.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/inkwell/demo/**"
+      - "src/inkwell/**.py"
+      - "pyproject.toml"
+      - "uv.lock"
+      - "Dockerfile"
+      - ".dockerignore"
+      - ".github/workflows/demo-deploy.yml"
+  pull_request:
+    paths:
+      - "src/inkwell/demo/**"
+      - "src/inkwell/**.py"
+      - "pyproject.toml"
+      - "uv.lock"
+      - "Dockerfile"
+      - ".dockerignore"
+      - ".github/workflows/demo-deploy.yml"
+
+permissions:
+  contents: read
+  pull-requests: write
+  id-token: write  # required by google-github-actions/auth for WIF
+
+concurrency:
+  group: demo-deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Always-on build + smoke job. Catches Dockerfile breakage before the
+  # deploy step needs GCP secrets. Runs on PRs from forks too — no
+  # secrets exposed at this stage.
+  build:
+    name: Build & smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      image-tag: ${{ steps.compute-tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Compute image tag
+        id: compute-tag
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            tag="pr-${{ github.event.pull_request.number }}-${GITHUB_SHA::7}"
+          else
+            tag="main-${GITHUB_SHA::7}"
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build demo image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          tags: inkwell-demo:${{ steps.compute-tag.outputs.tag }}
+          push: false
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke-test container starts and serves /healthz
+        run: |
+          docker run -d --name demo-smoke \
+            -e DEMO_PIPELINE_ENABLED=true \
+            -e GOOGLE_API_KEY=stub-test-key \
+            -e INKWELL_DEMO_HASH_SALT=ci-smoke-salt \
+            -p 18080:8080 \
+            inkwell-demo:${{ steps.compute-tag.outputs.tag }}
+          # wait up to 30s for /healthz
+          for i in {1..30}; do
+            if curl -sf http://127.0.0.1:18080/healthz > /dev/null; then
+              echo "container healthy after ${i}s"
+              docker logs demo-smoke
+              docker stop demo-smoke
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "container failed to become healthy"
+          docker logs demo-smoke
+          docker stop demo-smoke
+          exit 1
+
+  # Production deploy. Only runs after a push to main, gated on the
+  # GCP project secret being present so the workflow doesn't fail on
+  # repos that haven't provisioned GCP yet.
+  deploy-prod:
+    name: Deploy to production Cloud Run
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: gcp-deploy
+      url: ${{ steps.deploy.outputs.url }}
+    steps:
+      - name: Skip if GCP not provisioned
+        id: skip-check
+        run: |
+          if [[ -z "${{ vars.GCP_PROJECT_ID }}" ]]; then
+            echo "GCP project not provisioned yet; skipping deploy."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v6
+        if: steps.skip-check.outputs.skip != 'true'
+
+      - id: auth
+        if: steps.skip-check.outputs.skip != 'true'
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_WIF_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+        if: steps.skip-check.outputs.skip != 'true'
+
+      - name: Configure Docker for Artifact Registry
+        if: steps.skip-check.outputs.skip != 'true'
+        run: gcloud auth configure-docker ${{ vars.GCP_REGION }}-docker.pkg.dev --quiet
+
+      - name: Set up Docker Buildx
+        if: steps.skip-check.outputs.skip != 'true'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build & push image
+        if: steps.skip-check.outputs.skip != 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          tags: ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ vars.GCP_ARTIFACT_REPO }}/inkwell-demo:${{ needs.build.outputs.image-tag }}
+          push: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Deploy Cloud Run revision
+        id: deploy
+        if: steps.skip-check.outputs.skip != 'true'
+        run: |
+          set -eu
+          gcloud run deploy "${{ vars.GCP_SERVICE_NAME }}" \
+            --project="${{ vars.GCP_PROJECT_ID }}" \
+            --region="${{ vars.GCP_REGION }}" \
+            --image="${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ vars.GCP_ARTIFACT_REPO }}/inkwell-demo:${{ needs.build.outputs.image-tag }}" \
+            --concurrency=1 \
+            --max-instances=3 \
+            --timeout=1800 \
+            --memory=2Gi \
+            --cpu=1 \
+            --quiet
+          url=$(gcloud run services describe "${{ vars.GCP_SERVICE_NAME }}" \
+            --project="${{ vars.GCP_PROJECT_ID }}" \
+            --region="${{ vars.GCP_REGION }}" \
+            --format='value(status.url)')
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "Deployed: $url"
+
+  # PR preview deploy — tagged Cloud Run revision with NO traffic. The
+  # tagged URL is a stable per-PR address that lets reviewers click
+  # through, but production traffic stays on the live revision.
+  deploy-preview:
+    name: Deploy PR preview revision
+    needs: build
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: gcp-deploy
+      url: ${{ steps.deploy.outputs.url }}
+    steps:
+      - name: Skip if GCP not provisioned
+        id: skip-check
+        run: |
+          if [[ -z "${{ vars.GCP_PROJECT_ID }}" ]]; then
+            echo "GCP project not provisioned yet; preview skipped."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v6
+        if: steps.skip-check.outputs.skip != 'true'
+
+      - id: auth
+        if: steps.skip-check.outputs.skip != 'true'
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_WIF_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+        if: steps.skip-check.outputs.skip != 'true'
+
+      - name: Configure Docker for Artifact Registry
+        if: steps.skip-check.outputs.skip != 'true'
+        run: gcloud auth configure-docker ${{ vars.GCP_REGION }}-docker.pkg.dev --quiet
+
+      - name: Set up Docker Buildx
+        if: steps.skip-check.outputs.skip != 'true'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build & push preview image
+        if: steps.skip-check.outputs.skip != 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          tags: ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ vars.GCP_ARTIFACT_REPO }}/inkwell-demo:${{ needs.build.outputs.image-tag }}
+          push: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Deploy tagged revision (no traffic)
+        id: deploy
+        if: steps.skip-check.outputs.skip != 'true'
+        run: |
+          set -eu
+          revision_tag="${{ needs.build.outputs.image-tag }}"
+          gcloud run deploy "${{ vars.GCP_SERVICE_NAME }}" \
+            --project="${{ vars.GCP_PROJECT_ID }}" \
+            --region="${{ vars.GCP_REGION }}" \
+            --image="${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ vars.GCP_ARTIFACT_REPO }}/inkwell-demo:${revision_tag}" \
+            --tag="${revision_tag}" \
+            --no-traffic \
+            --concurrency=1 \
+            --max-instances=2 \
+            --timeout=1800 \
+            --memory=2Gi \
+            --cpu=1 \
+            --quiet
+          # Cloud Run constructs the tagged URL deterministically as
+          # https://<tag>---<service>-<hash>-<region>.run.app — fetch it
+          # from the API to avoid hand-formatting.
+          url=$(gcloud run services describe "${{ vars.GCP_SERVICE_NAME }}" \
+            --project="${{ vars.GCP_PROJECT_ID }}" \
+            --region="${{ vars.GCP_REGION }}" \
+            --format="value(status.traffic[?tag='${revision_tag}'].url)" | head -1)
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "Preview: $url"
+
+      - name: Comment preview URL on PR
+        if: steps.skip-check.outputs.skip != 'true' && steps.deploy.outputs.url != ''
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const url = '${{ steps.deploy.outputs.url }}';
+            const body = `🚀 **Demo preview deployed**\n\n` +
+                         `Revision tag: \`${{ needs.build.outputs.image-tag }}\`\n` +
+                         `URL: ${url}\n\n` +
+                         `Receives no production traffic; traffic shifts only after merge to \`main\`.`;
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body,
+            });

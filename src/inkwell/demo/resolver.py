@@ -264,7 +264,16 @@ async def _fetch_feed_safely(url: str) -> feedparser.FeedParserDict:
                     )
                 # Resolve the next target relative to the current URL and
                 # let the next iteration's top-of-loop guard validate it.
-                current = str(httpx.URL(current).join(location))
+                # ``httpx.URL(...).join`` raises ``httpx.InvalidURL`` on a
+                # malformed ``Location`` (e.g. NUL bytes, bad ports). Map
+                # that to a user-safe DemoUrlError instead of a 500.
+                try:
+                    current = str(httpx.URL(current).join(location))
+                except httpx.InvalidURL as exc:
+                    raise DemoUrlError(
+                        "That feed's redirect target is malformed.",
+                        reason=f"rss_redirect_malformed_location:{type(exc).__name__}",
+                    ) from exc
                 continue
 
             if response.status_code >= 400:

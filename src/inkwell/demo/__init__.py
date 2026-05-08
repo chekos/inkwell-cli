@@ -9,6 +9,7 @@ from inkwell.demo.classifier import (
     ClassifiedUrl,
     DemoUrlError,
     UrlKind,
+    assert_demo_safe_url,
     classify_demo_url,
 )
 from inkwell.demo.config import DemoConfig, get_demo_config
@@ -21,6 +22,7 @@ __all__ = [
     "DemoResultPayload",
     "DemoUrlError",
     "UrlKind",
+    "assert_demo_safe_url",
     "build_demo_payload",
     "classify_demo_url",
     "get_demo_config",

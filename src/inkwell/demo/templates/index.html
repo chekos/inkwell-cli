@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Inkwell — turn a podcast into structured notes</title>
+  <link rel="stylesheet" href="{{ url_for('static', path='style.css') }}" />
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Inkwell</h1>
+      <p class="tagline">
+        Paste a public RSS feed or a YouTube video and we&rsquo;ll hand back
+        structured notes you can drop into your vault.
+      </p>
+    </header>
+
+    {% if kill_switch_active %}
+      <section class="banner banner--maintenance" role="status">
+        The demo is paused for maintenance. We&rsquo;ll still take your email
+        and let you know when it&rsquo;s back.
+      </section>
+    {% endif %}
+
+    <form id="demo-form" action="/jobs" method="post" autocomplete="off">
+      <label>
+        <span>Email</span>
+        <input
+          type="email"
+          name="email"
+          required
+          placeholder="you@example.com"
+          autocomplete="email"
+        />
+      </label>
+
+      <label>
+        <span>Public RSS or YouTube URL</span>
+        <input
+          type="url"
+          name="url"
+          required
+          placeholder="https://feeds.example.com/podcast.rss"
+          autocomplete="off"
+        />
+      </label>
+
+      <p class="fineprint">
+        Episodes up to {{ max_duration_minutes }} minutes only. By submitting,
+        you agree to our terms (consent v{{ consent_version }}).
+      </p>
+
+      <button id="submit" type="submit">Make notes</button>
+    </form>
+
+    <section id="status" hidden aria-live="polite"></section>
+
+    <article id="result" hidden>
+      <header id="result-meta"></header>
+      <div id="result-files"></div>
+
+      <aside class="cta">
+        <h3>Want this in your Obsidian vault?</h3>
+        <p>
+          The CLI does the same thing on your machine, with private feeds and
+          your own templates.
+        </p>
+        <pre><code>uv tool install inkwell-cli
+inkwell add &lt;rss-url&gt;
+inkwell process</code></pre>
+      </aside>
+    </article>
+  </main>
+
+  <script src="{{ url_for('static', path='app.js') }}" defer></script>
+</body>
+</html>

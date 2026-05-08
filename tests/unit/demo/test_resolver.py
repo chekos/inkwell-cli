@@ -309,6 +309,38 @@ class TestRSSResolution:
         assert excinfo.value.reason.startswith("rss_no_latest_episode:")
 
     @pytest.mark.asyncio
+    async def test_maps_pydantic_validation_error_to_demo_url_error(self) -> None:
+        # Codex P2: when a feed entry has a malformed enclosure URL, the
+        # ``Episode`` Pydantic model raises ``pydantic.ValidationError``
+        # (not the inkwell error). Without this catch the demo returns a
+        # 500 instead of a clean DemoUrlError.
+        import pydantic
+        from pydantic import BaseModel, HttpUrl
+
+        class _Probe(BaseModel):
+            url: HttpUrl
+
+        try:
+            _Probe(url="not a real url")  # type: ignore[arg-type]
+        except pydantic.ValidationError as real_error:
+            pyd_error = real_error
+        else:  # pragma: no cover — Pydantic must raise here
+            raise AssertionError("expected pydantic.ValidationError to be raised")
+
+        feed = _stub_feed()
+
+        with _patch_safe_fetch(feed), patch("inkwell.demo.resolver.RSSParser") as parser_cls:
+            parser_cls.return_value.get_latest_episode = MagicMock(side_effect=pyd_error)
+
+            with pytest.raises(DemoUrlError) as excinfo:
+                await resolve_demo_source(
+                    _classified("https://example.com/feed.rss", UrlKind.PUBLIC_RSS),
+                    demo_config=_config(),
+                )
+        assert excinfo.value.reason.startswith("rss_no_latest_episode:")
+        assert "ValidationError" in excinfo.value.reason
+
+    @pytest.mark.asyncio
     async def test_rejects_unsafe_audio_enclosure_url(self) -> None:
         # Even if the feed itself is on a public host, the latest episode's
         # enclosure URL might point at private infrastructure. The resolver

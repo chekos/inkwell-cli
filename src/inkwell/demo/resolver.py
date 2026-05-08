@@ -32,6 +32,7 @@ from typing import Any
 
 import feedparser
 import httpx
+import pydantic
 from yt_dlp import YoutubeDL  # type: ignore[import-untyped]
 from yt_dlp.utils import DownloadError, ExtractorError  # type: ignore[import-untyped]
 
@@ -155,7 +156,11 @@ async def _resolve_public_rss(
 
     try:
         episode = RSSParser().get_latest_episode(feed, podcast_name)
-    except (ValidationError, NotFoundError) as exc:
+    except (ValidationError, NotFoundError, pydantic.ValidationError) as exc:
+        # ``pydantic.ValidationError`` covers feed entries that fail the
+        # ``Episode`` model itself — e.g., an enclosure URL that fails
+        # ``HttpUrl`` validation. Without it those land as 500s instead of
+        # a user-safe DemoUrlError.
         raise DemoUrlError(
             "That feed doesn't have a usable latest episode.",
             reason=f"rss_no_latest_episode:{type(exc).__name__}",

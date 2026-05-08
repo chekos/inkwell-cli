@@ -285,6 +285,60 @@ class TestRSSResolution:
                 )
         assert excinfo.value.reason.startswith("rss_unsafe_enclosure:")
 
+    @pytest.mark.asyncio
+    async def test_rejects_enclosure_when_hostname_resolves_to_private_ip(self) -> None:
+        # Codex P1 follow-up: the enclosure URL host literal can be
+        # public-looking (passes assert_demo_safe_url) while resolving to
+        # RFC1918 / loopback / RFC6598 space at fetch time. The resolver
+        # must apply assert_resolved_host_is_public before handoff.
+        feed = _stub_feed()
+        episode = _episode(
+            audio_url="https://audio.attacker.tld/file.mp3",
+            duration_seconds=600,
+        )
+
+        with (
+            _patch_safe_fetch(feed),
+            patch("inkwell.demo.resolver.RSSParser") as parser_cls,
+            patch(
+                "inkwell.demo.classifier.socket.getaddrinfo",
+                side_effect=_fake_getaddrinfo("10.0.0.5"),
+            ),
+        ):
+            parser_cls.return_value.get_latest_episode = MagicMock(return_value=episode)
+
+            with pytest.raises(DemoUrlError) as excinfo:
+                await resolve_demo_source(
+                    _classified("https://example.com/feed.rss", UrlKind.PUBLIC_RSS),
+                    demo_config=_config(),
+                )
+        assert excinfo.value.reason.startswith("rss_unsafe_enclosure:resolved_private_ip:")
+
+    @pytest.mark.asyncio
+    async def test_rejects_enclosure_when_hostname_resolves_to_rfc6598(self) -> None:
+        feed = _stub_feed()
+        episode = _episode(
+            audio_url="https://cgn.attacker.tld/file.mp3",
+            duration_seconds=600,
+        )
+
+        with (
+            _patch_safe_fetch(feed),
+            patch("inkwell.demo.resolver.RSSParser") as parser_cls,
+            patch(
+                "inkwell.demo.classifier.socket.getaddrinfo",
+                side_effect=_fake_getaddrinfo("100.64.0.5"),
+            ),
+        ):
+            parser_cls.return_value.get_latest_episode = MagicMock(return_value=episode)
+
+            with pytest.raises(DemoUrlError) as excinfo:
+                await resolve_demo_source(
+                    _classified("https://example.com/feed.rss", UrlKind.PUBLIC_RSS),
+                    demo_config=_config(),
+                )
+        assert excinfo.value.reason.startswith("rss_unsafe_enclosure:resolved_private_ip:")
+
 
 class TestSafeFetchFeed:
     """Direct tests for ``_fetch_feed_safely`` redirect-revalidation."""

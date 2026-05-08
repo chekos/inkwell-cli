@@ -169,8 +169,17 @@ async def _resolve_public_rss(
     _enforce_duration_cap(episode.duration_seconds, demo_config)
 
     enclosure_url = str(episode.url)
+    enclosure_host = httpx.URL(enclosure_url).host
     try:
+        # Two layers, same as the redirect guard: assert_demo_safe_url
+        # validates the host literal; assert_resolved_host_is_public
+        # resolves it and rejects RFC1918 / loopback / link-local /
+        # RFC6598 / etc. A feed on a public domain can still publish an
+        # enclosure whose host *resolves* to private space (codex P1
+        # follow-up), so both checks are needed here too.
         assert_demo_safe_url(enclosure_url)
+        if enclosure_host:
+            await asyncio.to_thread(assert_resolved_host_is_public, enclosure_host)
     except DemoUrlError as exc:
         # Feed listed an enclosure URL pointing at a private host.
         # Refuse the whole job — we can't trust this feed to hand us a

@@ -125,6 +125,19 @@ class DemoConfig(BaseSettings):
         description="Version label written alongside captured emails.",
     )
 
+    hash_salt: str = Field(
+        default="inkwell-demo-dev-salt",
+        min_length=8,
+        description=(
+            "Per-deploy salt mixed into SHA-256 hashes of email and IP "
+            "before they are stored in Firestore. Production overrides "
+            "via Secret Manager (`INKWELL_DEMO_HASH_SALT`); the default "
+            "is a deterministic dev fixture so tests are reproducible. "
+            "Rotating the salt invalidates all rate-limit counters and "
+            "is the documented operator action for an abuse incident."
+        ),
+    )
+
     allowed_templates: tuple[str, ...] = Field(
         default=DEMO_ALLOWED_TEMPLATES,
         description="Templates the demo is allowed to render. Not user-toggleable.",

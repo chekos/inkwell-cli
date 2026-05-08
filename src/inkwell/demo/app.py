@@ -43,12 +43,16 @@ from inkwell.config.schema import GlobalConfig
 from inkwell.demo.classifier import DemoUrlError, classify_demo_url
 from inkwell.demo.config import DemoConfig, get_demo_config
 from inkwell.demo.dispatcher import Dispatcher, InProcessDispatcher
+from inkwell.demo.email_store import EmailStore, InMemoryEmailStore
+from inkwell.demo.hashing import hash_with_salt
 from inkwell.demo.jobs import DemoJob, InMemoryJobStore, JobStatus, JobStore
+from inkwell.demo.rate_limits import InMemoryRateLimiter, RateLimiter
 from inkwell.demo.service import (
     DemoDurationBackstopError,
     DemoPipelineDisabledError,
     process_demo_job,
 )
+from inkwell.demo.spend_tracker import InMemorySpendTracker, SpendTracker
 from inkwell.utils.errors import InkwellError
 
 logger = logging.getLogger(__name__)
@@ -136,6 +140,35 @@ def _normalize_email(raw: str) -> str:
     return address.lower()
 
 
+def _client_ip(request: Request) -> str:
+    """Best-effort client IP extraction.
+
+    Cloud Run terminates TLS at the load balancer and forwards the
+    real client IP via ``X-Forwarded-For``. We pick the leftmost
+    address in the header (the original client) and fall back to the
+    socket peer if the header is absent — useful for local dev.
+
+    The value is hashed with the demo salt before storage; we never
+    persist the raw IP.
+    """
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        first = forwarded.split(",", 1)[0].strip()
+        if first:
+            return first
+    if request.client is not None and request.client.host:
+        return request.client.host
+    return "unknown"
+
+
+def _refuse(status_code: int, reason: str, message: str) -> JSONResponse:
+    """Compact rate-limit refusal payload — same shape on every counter."""
+    return JSONResponse(
+        status_code=status_code,
+        content={"detail": {"reason": reason, "message": message}},
+    )
+
+
 # ---------------------------------------------------------------------------
 # worker
 # ---------------------------------------------------------------------------
@@ -147,6 +180,8 @@ WorkerCallable = Callable[[str], Awaitable[None]]
 def _build_worker(
     *,
     job_store: JobStore,
+    rate_limiter: RateLimiter,
+    spend_tracker: SpendTracker,
     demo_config: DemoConfig,
     global_config: GlobalConfig,
 ) -> WorkerCallable:
@@ -155,6 +190,11 @@ def _build_worker(
     The dispatcher invokes the returned callable per job id. We keep
     the binding lazy so tests can construct an ``InMemoryJobStore`` and
     a ``DemoConfig`` for assertion without touching real API keys.
+
+    On a successful run the worker also records the spend (monthly cap)
+    and the per-email + global success counters (daily caps) — both
+    side-effects belong on the worker so a Cloud Tasks retry that
+    races a fresh attempt doesn't double-count.
     """
 
     async def _worker(job_id: str) -> None:
@@ -225,6 +265,10 @@ def _build_worker(
             payload=result.payload,
             cost_usd=result.total_cost_usd,
         )
+        # Side-effects only after mark_complete so a crash mid-write
+        # never reports a job as complete with stale counters.
+        await spend_tracker.record_spend(cost_usd=result.total_cost_usd)
+        await rate_limiter.record_success(email_hash=job.email_hash)
         logger.info("demo job %s complete cost=$%.4f", job_id, result.total_cost_usd)
 
     return _worker
@@ -240,6 +284,9 @@ def create_app(
     demo_config: DemoConfig | None = None,
     global_config: GlobalConfig | None = None,
     job_store: JobStore | None = None,
+    email_store: EmailStore | None = None,
+    rate_limiter: RateLimiter | None = None,
+    spend_tracker: SpendTracker | None = None,
     dispatcher: Dispatcher | None = None,
     worker_secret: str | None = None,
 ) -> FastAPI:
@@ -255,7 +302,13 @@ def create_app(
             (API keys, defaults). Loaded via :class:`ConfigManager` if
             omitted.
         job_store: :class:`JobStore` implementation. Defaults to
-            in-memory; m4 swaps in Firestore.
+            in-memory; the Firestore swap lands in a follow-up issue.
+        email_store: :class:`EmailStore` implementation. Defaults to
+            in-memory; same Firestore-swap path.
+        rate_limiter: :class:`RateLimiter` implementation. Defaults to
+            in-memory daily counters.
+        spend_tracker: :class:`SpendTracker` implementation. Defaults
+            to in-memory monthly accumulator.
         dispatcher: :class:`Dispatcher` implementation. Defaults to
             in-process asyncio tasks; m5 swaps in Cloud Tasks.
         worker_secret: Shared secret expected on the
@@ -266,9 +319,14 @@ def create_app(
     config = demo_config or get_demo_config()
     global_cfg = global_config or ConfigManager().load_config()
     store: JobStore = job_store or InMemoryJobStore()
+    emails: EmailStore = email_store or InMemoryEmailStore()
+    limiter: RateLimiter = rate_limiter or InMemoryRateLimiter()
+    spend: SpendTracker = spend_tracker or InMemorySpendTracker()
 
     worker = _build_worker(
         job_store=store,
+        rate_limiter=limiter,
+        spend_tracker=spend,
         demo_config=config,
         global_config=global_cfg,
     )
@@ -337,12 +395,18 @@ def create_app(
 
     @app.post("/jobs", status_code=status.HTTP_202_ACCEPTED)
     async def create_job(
+        request: Request,
         store: Annotated[JobStore, Depends(get_store)],
         dispatcher: Annotated[Dispatcher, Depends(get_dispatch)],
         config: Annotated[DemoConfig, Depends(get_config)],
         email: Annotated[str, Form(...)],
         url: Annotated[str, Form(...)],
     ) -> JSONResponse:
+        # OBRA-74 hard requirement #5: capture the email *before* any
+        # refusal path so a kill switch / rate limit / spend cap pause
+        # still preserves acquisition signal. Email format errors do
+        # short-circuit, but anything that gets past _normalize_email
+        # is recorded.
         try:
             normalized_email = _normalize_email(email)
         except DemoUrlError as exc:
@@ -351,8 +415,16 @@ def create_app(
                 detail={"reason": exc.reason, "message": exc.user_message},
             ) from exc
 
+        await emails.capture(
+            email=normalized_email,
+            salt=config.hash_salt,
+            consent_version=config.consent_version,
+        )
+
         # Run the cheap classifier synchronously so users get immediate
-        # feedback on bad URLs instead of polling for a failure.
+        # feedback on bad URLs instead of polling for a failure. Bad
+        # URLs do not consume a per-IP attempt — there's no point
+        # punishing a typo.
         try:
             classify_demo_url(url)
         except DemoUrlError as exc:
@@ -361,11 +433,57 @@ def create_app(
                 detail={"reason": exc.reason, "message": exc.user_message},
             ) from exc
 
-        job = await store.create(email=normalized_email, url=url)
+        # Now the request looks credible. Burn one of the IP's daily
+        # attempts (failures count too — that's the OBRA-73 contract).
+        ip_hash = hash_with_salt(_client_ip(request), salt=config.hash_salt)
+        ip_decision = await limiter.record_attempt_and_check(
+            ip_hash=ip_hash,
+            cap=config.daily_attempts_per_ip,
+        )
+        if not ip_decision.allowed:
+            return _refuse(
+                status.HTTP_429_TOO_MANY_REQUESTS,
+                ip_decision.outcome.value,
+                ip_decision.user_message,
+            )
+
+        # Per-email success quota — read-only check, the success isn't
+        # consumed until the worker confirms the run completed.
+        email_hash = hash_with_salt(normalized_email, salt=config.hash_salt)
+        email_decision = await limiter.check_email_quota(
+            email_hash=email_hash,
+            cap=config.daily_runs_per_email,
+        )
+        if not email_decision.allowed:
+            return _refuse(
+                status.HTTP_429_TOO_MANY_REQUESTS,
+                email_decision.outcome.value,
+                email_decision.user_message,
+            )
+
+        # Global daily success cap.
+        global_decision = await limiter.check_global_cap(cap=config.daily_run_cap)
+        if not global_decision.allowed:
+            return _refuse(
+                status.HTTP_429_TOO_MANY_REQUESTS,
+                global_decision.outcome.value,
+                global_decision.user_message,
+            )
+
+        # Monthly spend cap.
+        spend_decision = await spend.check_cap(cap_usd=config.monthly_spend_cap_usd)
+        if spend_decision.paused:
+            return JSONResponse(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                content=MaintenanceResponse(detail=spend_decision.user_message).model_dump(),
+            )
+
+        job = await store.create(email=normalized_email, url=url, salt=config.hash_salt)
 
         if not config.enabled:
-            # Kill switch on: keep the email captured for acquisition
-            # signal, but don't run the pipeline.
+            # Kill switch on: email is already captured above. Mark
+            # the job failed so it shows in admin/audit views and
+            # return the maintenance response.
             await store.mark_failed(
                 job.id,
                 error_code="demo_pipeline_disabled",

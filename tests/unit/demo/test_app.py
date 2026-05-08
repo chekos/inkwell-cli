@@ -298,6 +298,7 @@ class TestGetJob:
         job = await store.create(
             email="user@example.com",
             url="https://example.com/feed.rss",
+            salt="test-salt",
         )
         await store.mark_complete(job.id, payload=_payload(), cost_usd=0.07)
 
@@ -433,6 +434,7 @@ class TestInternalWorkerRoute:
         job = await store.create(
             email="user@example.com",
             url="https://example.com/feed.rss",
+            salt="test-salt",
         )
 
         with _make_client(
@@ -488,6 +490,7 @@ class TestInternalWorkerRoute:
         job = await store.create(
             email="user@example.com",
             url="https://example.com/feed.rss",
+            salt="test-salt",
         )
 
         with _make_client(
@@ -530,6 +533,7 @@ class TestInternalWorkerRoute:
         job = await store.create(
             email="user@example.com",
             url="https://example.com/feed.rss",
+            salt="test-salt",
         )
         first = await store.try_claim_for_run(job.id)
         second = await store.try_claim_for_run(job.id)

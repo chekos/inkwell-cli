@@ -2,29 +2,31 @@
 
 The OBRA-73 plan splits the demo storage layer into two stages:
 
-- m3 (this file) — an in-memory store that lives for the lifetime of
-  the Cloud Run instance. Good enough for one box, plenty for tests
-  and local dev, but loses every job on restart and doesn't share
-  state across instances.
-- m4 — a Firestore-backed implementation that satisfies the
-  ``emails`` / ``demo_jobs`` / ``rate_limits`` schema in the plan and
-  carries job state across instance churn.
+- m3 — an in-memory store that lives for the lifetime of the Cloud Run
+  instance. Good enough for one box, plenty for tests and local dev,
+  but loses every job on restart and doesn't share state across
+  instances.
+- m4 (in progress) layers email capture, rate limiting, and a monthly
+  spend cap on top. The Firestore swap of these stores ships in a
+  follow-up issue once we have the GCP project provisioned; the
+  protocols here are the contract that swap honors.
 
-m3 keeps both behind :class:`JobStore` so m4's swap is a single import
-change in ``app.py``. The route layer never sees ``InMemoryJobStore``
-directly.
+Hashing is centralized in :mod:`inkwell.demo.hashing` so a single salt
+rotation invalidates every counter that depends on email/URL/IP
+identity. ``JobStore.create`` requires the caller to pass a salt
+explicitly so an unsalted hash can never reach storage.
 """
 
 from __future__ import annotations
 
 import asyncio
 import enum
-import hashlib
 import time
 import uuid
 from dataclasses import dataclass, field
 from typing import Protocol
 
+from inkwell.demo.hashing import hash_with_salt
 from inkwell.demo.payload import DemoResultPayload
 
 
@@ -71,10 +73,10 @@ class JobStore(Protocol):
     Implementations must be safe to call from inside an ``asyncio`` task
     spawned by the FastAPI route handler. The in-memory implementation
     achieves that with a single ``asyncio.Lock``; the Firestore
-    implementation in m4 will rely on Firestore's own atomic updates.
+    implementation will rely on Firestore's own atomic updates.
     """
 
-    async def create(self, *, email: str, url: str) -> DemoJob: ...
+    async def create(self, *, email: str, url: str, salt: str) -> DemoJob: ...
 
     async def get(self, job_id: str) -> DemoJob | None: ...
 
@@ -89,7 +91,7 @@ class JobStore(Protocol):
         This is the idempotency primitive for the internal worker
         route. Cloud Tasks delivers at-least-once and retries any
         non-2xx response, so duplicate deliveries (or a retry after a
-        transient blip) must not re-spend the per-job budget. m4's
+        transient blip) must not re-spend the per-job budget. The
         Firestore implementation will back this with a transactional
         update against ``demo_jobs/{id}``.
         """
@@ -116,18 +118,18 @@ class InMemoryJobStore:
     """Process-local :class:`JobStore`. Single-instance only.
 
     Suitable for m3 (one Cloud Run revision, ``--concurrency=1``) and
-    for tests. Replaced by the Firestore implementation in m4.
+    for tests. Replaced by the Firestore implementation in a follow-up.
     """
 
     def __init__(self) -> None:
         self._jobs: dict[str, DemoJob] = {}
         self._lock = asyncio.Lock()
 
-    async def create(self, *, email: str, url: str) -> DemoJob:
+    async def create(self, *, email: str, url: str, salt: str) -> DemoJob:
         job = DemoJob(
             id=uuid.uuid4().hex,
-            email_hash=_hash(email.strip().lower()),
-            url_hash=_hash(url.strip()),
+            email_hash=hash_with_salt(email.strip().lower(), salt=salt),
+            url_hash=hash_with_salt(url.strip(), salt=salt),
             submitted_url=url,
             submitted_at=time.time(),
         )
@@ -183,13 +185,3 @@ class InMemoryJobStore:
             job.error_code = error_code
             job.error_message = error_message
             job.completed_at = time.time()
-
-
-def _hash(value: str) -> str:
-    """SHA-256 hex digest of an unsalted lowercased string.
-
-    m4 layers a per-deploy salt on top via Secret Manager. For m3 the
-    raw hash is sufficient — the goal here is "don't print the email
-    into logs", not cross-deploy unlinkability.
-    """
-    return hashlib.sha256(value.encode("utf-8")).hexdigest()

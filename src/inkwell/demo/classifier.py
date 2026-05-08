@@ -144,7 +144,7 @@ def assert_resolved_host_is_public(host: str) -> None:
 
     try:
         infos = socket.getaddrinfo(host, None, 0, socket.SOCK_STREAM)
-    except socket.gaierror as exc:
+    except (socket.gaierror, UnicodeError) as exc:
         raise DemoUrlError(
             "We couldn't resolve that host.",
             reason=f"dns_resolution_failed:{type(exc).__name__}",

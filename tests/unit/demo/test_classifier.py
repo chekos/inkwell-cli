@@ -250,6 +250,18 @@ class TestClassifierDnsResolution:
                 classify_demo_url("https://nxdomain.example.com/feed.rss")
         assert excinfo.value.reason.startswith("dns_resolution_failed:")
 
+    def test_rejects_when_dns_resolution_raises_unicode_error(self) -> None:
+        def _unicode_error(*_args: Any, **_kwargs: Any) -> list[Any]:
+            raise UnicodeError("label empty or too long")
+
+        with patch(
+            "inkwell.demo.classifier.socket.getaddrinfo",
+            side_effect=_unicode_error,
+        ):
+            with pytest.raises(DemoUrlError) as excinfo:
+                classify_demo_url("https://malformed.example.com/feed.rss")
+        assert excinfo.value.reason == "dns_resolution_failed:UnicodeError"
+
     def test_accepts_public_hostname_resolving_to_public_ip(self) -> None:
         with patch(
             "inkwell.demo.classifier.socket.getaddrinfo",

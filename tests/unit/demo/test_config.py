@@ -61,10 +61,58 @@ def test_allowed_templates_cannot_be_empty() -> None:
         DemoConfig(allowed_templates=())
 
 
-def test_max_duration_is_clamped_to_one_hour() -> None:
-    """Cloud Tasks max HTTP timeout is 30 minutes; enforce a guardrail upstream."""
+def test_max_duration_is_clamped_to_thirty_minutes() -> None:
+    """OBRA-81 P2: env override may not exceed the documented 30-minute cap.
+
+    The 30-minute number matches both the demo budget envelope and the
+    Cloud Tasks HTTP dispatch ceiling. An operator raising
+    INKWELL_DEMO_MAX_DURATION_SECONDS past 1800 used to validate (the
+    field allowed up to 3600); now the validator refuses any value over
+    1800 so widening the cap requires a code change.
+    """
+    # Exactly at the cap is accepted.
+    DemoConfig(max_duration_seconds=30 * 60)
+
+    # Anything over the cap is refused, including values that the prior
+    # 1-hour ceiling silently allowed.
+    for over_cap in (30 * 60 + 1, 45 * 60, 60 * 60):
+        with pytest.raises(PydanticValidationError):
+            DemoConfig(max_duration_seconds=over_cap)
+
+
+def test_max_duration_env_override_cannot_widen_cap(monkeypatch: pytest.MonkeyPatch) -> None:
+    """OBRA-81 P2: the env-var path enforces the same 30-minute ceiling."""
+    monkeypatch.setenv("INKWELL_DEMO_MAX_DURATION_SECONDS", str(45 * 60))
     with pytest.raises(PydanticValidationError):
-        DemoConfig(max_duration_seconds=60 * 60 + 1)
+        DemoConfig()
+
+
+def test_allowed_templates_env_override_cannot_widen_allowlist() -> None:
+    """OBRA-81 P2: env override may narrow the canonical allowlist but never widen it.
+
+    The canonical allowlist is code-defined: an operator must not be
+    able to silently re-enable internal or high-cost templates that
+    blow the demo budget envelope. Validation rejects supersets and
+    names the offending templates.
+    """
+    with pytest.raises(PydanticValidationError) as excinfo:
+        DemoConfig(allowed_templates=("summary", "evil"))
+    assert "evil" in str(excinfo.value)
+
+
+def test_allowed_templates_can_be_narrowed() -> None:
+    """Operators can still subset the allowlist (e.g., disable quotes)."""
+    config = DemoConfig(allowed_templates=("summary",))
+    assert config.allowed_templates == ("summary",)
+
+
+def test_allowed_templates_env_override_rejects_superset(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The env-var path enforces the same subset constraint."""
+    # Pydantic-settings parses comma-separated lists for tuple fields.
+    monkeypatch.setenv("INKWELL_DEMO_ALLOWED_TEMPLATES", '["summary","evil"]')
+    with pytest.raises(PydanticValidationError) as excinfo:
+        DemoConfig()
+    assert "evil" in str(excinfo.value)
 
 
 def test_kill_switch_via_canonical_env(monkeypatch: pytest.MonkeyPatch) -> None:

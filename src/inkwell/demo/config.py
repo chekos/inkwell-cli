@@ -85,7 +85,11 @@ class DemoConfig(BaseSettings):
     max_duration_seconds: int = Field(
         default=DEMO_MAX_DURATION_SECONDS_DEFAULT,
         ge=60,
-        le=60 * 60,
+        # Hard upper bound matches the documented 30-minute demo cap and
+        # the Cloud Tasks HTTP dispatch ceiling. Operators may tighten
+        # this via INKWELL_DEMO_MAX_DURATION_SECONDS but cannot widen
+        # past 1800s without a code change.
+        le=DEMO_MAX_DURATION_SECONDS_DEFAULT,
         description="Hard cap on episode/video duration accepted by the demo.",
     )
 
@@ -135,6 +139,18 @@ class DemoConfig(BaseSettings):
     def _validate_allowed_templates(cls, value: tuple[str, ...]) -> tuple[str, ...]:
         if not value:
             raise ValueError("allowed_templates must be non-empty")
+        # The canonical allowlist is code-defined and not user-toggleable.
+        # An env override may narrow it (subset) but never widen it: a
+        # superset value would let an operator silently re-enable
+        # high-cost or internal templates and break the demo budget
+        # envelope. Reject any template not in DEMO_ALLOWED_TEMPLATES.
+        invalid = sorted({t for t in value if t not in DEMO_ALLOWED_TEMPLATES})
+        if invalid:
+            raise ValueError(
+                "allowed_templates may only narrow the canonical demo "
+                f"allowlist {DEMO_ALLOWED_TEMPLATES!r}; got disallowed "
+                f"values {invalid!r}."
+            )
         return tuple(value)
 
 

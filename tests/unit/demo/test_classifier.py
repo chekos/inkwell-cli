@@ -1,13 +1,27 @@
 """Tests for the demo URL classifier."""
 
+import socket
+from typing import Any
+from unittest.mock import patch
+
 import pytest
 
 from inkwell.demo.classifier import (
     DemoUrlError,
     UrlKind,
     assert_demo_safe_url,
+    assert_resolved_host_is_public,
     classify_demo_url,
 )
+
+
+def _fake_getaddrinfo(*ips: str):
+    """Return a getaddrinfo stub that resolves any host to ``ips``."""
+
+    def _resolve(_host: str, *_args: Any, **_kwargs: Any) -> list[Any]:
+        return [(socket.AF_INET, socket.SOCK_STREAM, 0, "", (ip, 0)) for ip in ips]
+
+    return _resolve
 
 
 class TestYouTubeAcceptance:
@@ -188,3 +202,116 @@ class TestAssertDemoSafeUrl:
     def test_rejects_empty_input(self) -> None:
         with pytest.raises(DemoUrlError):
             assert_demo_safe_url("")
+
+
+class TestClassifierDnsResolution:
+    """OBRA-81 P1: classifier must reject hostnames that *resolve* to private IPs.
+
+    ``_reject_private_or_local_host`` only checks the host literal in
+    the URL string. A public-looking hostname whose A/AAAA records
+    point at RFC1918 / loopback / link-local space (DNS rebinding,
+    attacker-controlled DNS, internal split-horizon resolvers) used to
+    pass and only get caught later on redirect hops in the resolver.
+    The classifier now closes that gap at submission time.
+    """
+
+    @pytest.mark.parametrize(
+        ("resolved_ip", "expected_reason_prefix"),
+        [
+            ("10.0.0.5", "resolved_private_ip:"),
+            ("192.168.1.10", "resolved_private_ip:"),
+            ("172.16.0.1", "resolved_private_ip:"),
+            ("127.0.0.1", "resolved_private_ip:"),
+            ("169.254.169.254", "resolved_private_ip:"),  # link-local / IMDS
+            ("::1", "resolved_private_ip:"),
+        ],
+    )
+    def test_rejects_public_hostname_resolving_to_private_ip(
+        self, resolved_ip: str, expected_reason_prefix: str
+    ) -> None:
+        with patch(
+            "inkwell.demo.classifier.socket.getaddrinfo",
+            side_effect=_fake_getaddrinfo(resolved_ip),
+        ):
+            with pytest.raises(DemoUrlError) as excinfo:
+                classify_demo_url("https://internal.example.com/feed.rss")
+        assert excinfo.value.reason.startswith(expected_reason_prefix)
+        assert resolved_ip in excinfo.value.reason
+
+    def test_rejects_when_dns_resolution_fails(self) -> None:
+        def _gaierror(*_args: Any, **_kwargs: Any) -> list[Any]:
+            raise socket.gaierror(8, "nodename nor servname provided, or not known")
+
+        with patch(
+            "inkwell.demo.classifier.socket.getaddrinfo",
+            side_effect=_gaierror,
+        ):
+            with pytest.raises(DemoUrlError) as excinfo:
+                classify_demo_url("https://nxdomain.example.com/feed.rss")
+        assert excinfo.value.reason.startswith("dns_resolution_failed:")
+
+    def test_rejects_when_dns_resolution_raises_unicode_error(self) -> None:
+        def _unicode_error(*_args: Any, **_kwargs: Any) -> list[Any]:
+            raise UnicodeError("label empty or too long")
+
+        with patch(
+            "inkwell.demo.classifier.socket.getaddrinfo",
+            side_effect=_unicode_error,
+        ):
+            with pytest.raises(DemoUrlError) as excinfo:
+                classify_demo_url("https://malformed.example.com/feed.rss")
+        assert excinfo.value.reason == "dns_resolution_failed:UnicodeError"
+
+    def test_accepts_public_hostname_resolving_to_public_ip(self) -> None:
+        with patch(
+            "inkwell.demo.classifier.socket.getaddrinfo",
+            side_effect=_fake_getaddrinfo("93.184.216.34"),
+        ):
+            result = classify_demo_url("https://example.com/feed.rss")
+        assert result.kind is UrlKind.PUBLIC_RSS
+
+    def test_rejects_when_any_resolved_address_is_private(self) -> None:
+        # Mixed result (one public, one private) must still be refused —
+        # the worker would happily connect to the private one otherwise.
+        with patch(
+            "inkwell.demo.classifier.socket.getaddrinfo",
+            side_effect=_fake_getaddrinfo("93.184.216.34", "10.0.0.5"),
+        ):
+            with pytest.raises(DemoUrlError) as excinfo:
+                classify_demo_url("https://mixed.example.com/feed.rss")
+        assert excinfo.value.reason.startswith("resolved_private_ip:")
+
+
+class TestAssertResolvedHostIsPublic:
+    """Direct coverage of the standalone DNS-resolution helper."""
+
+    def test_skips_dns_for_ip_literal(self) -> None:
+        # IP literals are already covered by _reject_private_or_local_host;
+        # the DNS helper must short-circuit to avoid a redundant lookup.
+        with patch(
+            "inkwell.demo.classifier.socket.getaddrinfo",
+            side_effect=AssertionError("getaddrinfo should not be called for IP literals"),
+        ):
+            assert_resolved_host_is_public("93.184.216.34")
+            assert_resolved_host_is_public("::1")
+
+    def test_raises_on_private_resolution(self) -> None:
+        with patch(
+            "inkwell.demo.classifier.socket.getaddrinfo",
+            side_effect=_fake_getaddrinfo("10.0.0.5"),
+        ):
+            with pytest.raises(DemoUrlError) as excinfo:
+                assert_resolved_host_is_public("internal.example.com")
+        assert excinfo.value.reason == "resolved_private_ip:internal.example.com->10.0.0.5"
+
+    def test_raises_on_dns_failure(self) -> None:
+        def _gaierror(*_args: Any, **_kwargs: Any) -> list[Any]:
+            raise socket.gaierror(8, "nodename nor servname provided, or not known")
+
+        with patch(
+            "inkwell.demo.classifier.socket.getaddrinfo",
+            side_effect=_gaierror,
+        ):
+            with pytest.raises(DemoUrlError) as excinfo:
+                assert_resolved_host_is_public("nxdomain.example.com")
+        assert excinfo.value.reason == "dns_resolution_failed:gaierror"

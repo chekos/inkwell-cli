@@ -12,10 +12,14 @@ encodings that libc resolvers normalize back to those ranges (decimal
 ``2130706433``, hex ``0x7f000001``, octal ``0177.0.0.1``, short-form
 ``127.1``) — is rejected before anything reaches the inkwell pipeline.
 
-This is intentionally a pure function: no network calls. Network
-verification (HEAD on the RSS, ``yt-dlp`` metadata for YouTube duration)
-happens later in the resolver layer where it can be cached and rate
-limited.
+URL-shape and host-literal validation is pure; the only network call
+the classifier makes is a ``socket.getaddrinfo`` lookup against the
+parsed host so a public-looking name whose A/AAAA records resolve to
+loopback / RFC1918 / link-local space (DNS rebinding,
+attacker-controlled DNS, internal split-horizon resolvers) is rejected
+at submission time. Heavier verification (HEAD on the RSS, ``yt-dlp``
+metadata for YouTube duration) still happens later in the resolver
+layer where it can be cached and rate limited.
 
 **Redirect note for the resolver/fetcher (m2):** ``classify_demo_url``
 only validates the URL the user pasted. Any HTTP fetch in the demo path
@@ -101,11 +105,63 @@ def classify_demo_url(raw_url: str) -> ClassifiedUrl:
         raise DemoUrlError("URL is missing a host.", reason="missing_host")
 
     _reject_private_or_local_host(host)
+    assert_resolved_host_is_public(host)
 
     if host in YOUTUBE_HOSTS:
         return _classify_youtube(parsed, url)
 
     return ClassifiedUrl(kind=UrlKind.PUBLIC_RSS, normalized_url=url)
+
+
+def assert_resolved_host_is_public(host: str) -> None:
+    """Resolve ``host`` and reject if any address is private or reserved.
+
+    :func:`_reject_private_or_local_host` only inspects the host literal
+    in the URL string. This adds the next layer: a public-looking
+    hostname can still resolve to loopback / RFC1918 / link-local space
+    via DNS rebinding, attacker-controlled DNS, or an internal
+    split-horizon resolver. Both checks together close the SSRF surface
+    for the URL the user pasted.
+
+    No-op for IP literals — those are already covered by
+    :func:`_reject_private_or_local_host`, and ``getaddrinfo`` on a
+    literal would just echo it back.
+
+    Args:
+        host: Lowercased hostname extracted from the URL.
+
+    Raises:
+        DemoUrlError: When the host can't be resolved or any resolved
+            address falls in a disallowed range. ``reason`` is
+            ``dns_resolution_failed:<errtype>`` or
+            ``resolved_private_ip:<host>-><ip>`` for logging.
+    """
+    try:
+        ipaddress.ip_address(host)
+        return
+    except ValueError:
+        pass
+
+    try:
+        infos = socket.getaddrinfo(host, None, 0, socket.SOCK_STREAM)
+    except (socket.gaierror, UnicodeError) as exc:
+        raise DemoUrlError(
+            "We couldn't resolve that host.",
+            reason=f"dns_resolution_failed:{type(exc).__name__}",
+        ) from exc
+
+    for info in infos:
+        sockaddr = info[4]
+        ip_str = sockaddr[0]
+        try:
+            ip = ipaddress.ip_address(ip_str)
+        except ValueError:
+            continue
+        if _ip_is_disallowed(ip):
+            raise DemoUrlError(
+                "URL resolves to a private address.",
+                reason=f"resolved_private_ip:{host}->{ip}",
+            )
 
 
 def assert_demo_safe_url(url: str) -> None:
@@ -116,6 +172,12 @@ def assert_demo_safe_url(url: str) -> None:
     :func:`classify_demo_url`. The recommended pattern with ``httpx`` is
     ``follow_redirects=False`` plus a manual loop that calls this on
     each ``Location`` header.
+
+    Note: this is a *string-only* check. The async redirect path in
+    :mod:`inkwell.demo.resolver` calls
+    :func:`_assert_resolved_host_is_public` alongside it (via
+    ``asyncio.to_thread``) to add the DNS layer without blocking the
+    event loop.
 
     Args:
         url: Absolute URL string to validate.

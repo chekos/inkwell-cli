@@ -48,9 +48,6 @@ dependencies = [
     "regex>=2024.11.0",
     "aiofiles>=24.1.0",
     "jinja2>=3.1.0",
-    "fastapi>=0.136.1",
-    "uvicorn[standard]>=0.46.0",
-    "python-multipart>=0.0.27",
 ]
 
 [project.urls]
@@ -102,11 +99,7 @@ local_scheme = "no-local-version"
 where = ["src"]
 
 [tool.setuptools.package-data]
-inkwell = [
-    "templates/**/*.yaml",
-    "demo/templates/*.html",
-    "demo/static/*",
-]
+inkwell = ["templates/**/*.yaml"]
 
 [tool.ruff]
 line-length = 100

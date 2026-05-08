@@ -327,7 +327,7 @@ class TestSafeFetchFeed:
         )
 
         with patch(
-            "inkwell.demo.resolver.socket.getaddrinfo",
+            "inkwell.demo.classifier.socket.getaddrinfo",
             side_effect=_fake_getaddrinfo("93.184.216.34"),
         ):
             feed = await _fetch_feed_safely("https://old.example.com/feed.rss")
@@ -348,7 +348,7 @@ class TestSafeFetchFeed:
         )
 
         with patch(
-            "inkwell.demo.resolver.socket.getaddrinfo",
+            "inkwell.demo.classifier.socket.getaddrinfo",
             side_effect=_fake_getaddrinfo("10.0.0.5"),
         ):
             with pytest.raises(DemoUrlError) as excinfo:
@@ -366,8 +366,30 @@ class TestSafeFetchFeed:
         )
 
         with patch(
-            "inkwell.demo.resolver.socket.getaddrinfo",
+            "inkwell.demo.classifier.socket.getaddrinfo",
             side_effect=_fake_getaddrinfo("127.0.0.1"),
+        ):
+            with pytest.raises(DemoUrlError) as excinfo:
+                await _fetch_feed_safely("https://example.com/feed.rss")
+        assert excinfo.value.reason.startswith("rss_redirect_to_unsafe_host:resolved_private_ip:")
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_blocks_redirect_when_hostname_resolves_to_rfc6598(self) -> None:
+        # 100.64.0.0/10 is RFC6598 carrier-grade NAT space. Python flags
+        # neither ``is_private`` nor ``is_reserved`` on it, so the
+        # boolean-disjunction check codex flagged on PR #73 missed it.
+        # ``not ip.is_global`` catches it.
+        respx.get("https://example.com/feed.rss").mock(
+            return_value=Response(
+                302,
+                headers={"location": "https://cgn.example.net/feed.rss"},
+            ),
+        )
+
+        with patch(
+            "inkwell.demo.classifier.socket.getaddrinfo",
+            side_effect=_fake_getaddrinfo("100.64.0.5"),
         ):
             with pytest.raises(DemoUrlError) as excinfo:
                 await _fetch_feed_safely("https://example.com/feed.rss")
@@ -387,7 +409,7 @@ class TestSafeFetchFeed:
             raise socket.gaierror(8, "nodename nor servname provided, or not known")
 
         with patch(
-            "inkwell.demo.resolver.socket.getaddrinfo",
+            "inkwell.demo.classifier.socket.getaddrinfo",
             side_effect=_gaierror,
         ):
             with pytest.raises(DemoUrlError) as excinfo:
@@ -407,7 +429,7 @@ class TestSafeFetchFeed:
         )
 
         with patch(
-            "inkwell.demo.resolver.socket.getaddrinfo",
+            "inkwell.demo.classifier.socket.getaddrinfo",
             side_effect=_fake_getaddrinfo("93.184.216.34"),
         ):
             with pytest.raises(DemoUrlError) as excinfo:

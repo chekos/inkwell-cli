@@ -315,3 +315,17 @@ class TestAssertResolvedHostIsPublic:
             with pytest.raises(DemoUrlError) as excinfo:
                 assert_resolved_host_is_public("nxdomain.example.com")
         assert excinfo.value.reason == "dns_resolution_failed:gaierror"
+
+    def test_raises_on_rfc6598_resolution(self) -> None:
+        # Codex flagged this gap on PR #73: Python doesn't set
+        # ``is_private`` or ``is_reserved`` on RFC6598 carrier-grade NAT
+        # space (100.64.0.0/10), so a hostname that resolves into that
+        # range slipped past a boolean-disjunction check. ``not is_global``
+        # catches it.
+        with patch(
+            "inkwell.demo.classifier.socket.getaddrinfo",
+            side_effect=_fake_getaddrinfo("100.64.0.42"),
+        ):
+            with pytest.raises(DemoUrlError) as excinfo:
+                assert_resolved_host_is_public("cgn.example.com")
+        assert excinfo.value.reason == "resolved_private_ip:cgn.example.com->100.64.0.42"

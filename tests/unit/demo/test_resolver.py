@@ -7,6 +7,7 @@ path is covered with an explicit reason.
 
 from __future__ import annotations
 
+import socket
 from datetime import datetime, timezone
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -20,6 +21,15 @@ from inkwell.demo.config import DemoConfig
 from inkwell.demo.resolver import _fetch_feed_safely, resolve_demo_source
 from inkwell.feeds.models import Episode
 from inkwell.utils.errors import ValidationError
+
+
+def _fake_getaddrinfo(*ips: str):
+    """Return a getaddrinfo stub that resolves any host to ``ips``."""
+
+    def _resolve(host: str, *args: Any, **kwargs: Any) -> list[Any]:
+        return [(socket.AF_INET, socket.SOCK_STREAM, 0, "", (ip, 0)) for ip in ips]
+
+    return _resolve
 
 
 def _config(**overrides: Any) -> DemoConfig:
@@ -316,9 +326,73 @@ class TestSafeFetchFeed:
             return_value=Response(200, content=rss_xml),
         )
 
-        feed = await _fetch_feed_safely("https://old.example.com/feed.rss")
+        with patch(
+            "inkwell.demo.resolver.socket.getaddrinfo",
+            side_effect=_fake_getaddrinfo("93.184.216.34"),
+        ):
+            feed = await _fetch_feed_safely("https://old.example.com/feed.rss")
         assert feed.entries
         assert feed.entries[0]["title"] == "Ep 1"
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_blocks_redirect_when_hostname_resolves_to_private_ip(self) -> None:
+        # Public-looking hostname; assert_demo_safe_url passes the host
+        # literal, but DNS resolution returns RFC1918. The redirect guard
+        # must reject before issuing the next request.
+        respx.get("https://example.com/feed.rss").mock(
+            return_value=Response(
+                302,
+                headers={"location": "https://internal.example.net/feed.rss"},
+            ),
+        )
+
+        with patch(
+            "inkwell.demo.resolver.socket.getaddrinfo",
+            side_effect=_fake_getaddrinfo("10.0.0.5"),
+        ):
+            with pytest.raises(DemoUrlError) as excinfo:
+                await _fetch_feed_safely("https://example.com/feed.rss")
+        assert excinfo.value.reason.startswith("rss_redirect_to_unsafe_host:resolved_private_ip:")
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_blocks_redirect_when_hostname_resolves_to_loopback(self) -> None:
+        respx.get("https://example.com/feed.rss").mock(
+            return_value=Response(
+                302,
+                headers={"location": "https://rebind.example.net/feed.rss"},
+            ),
+        )
+
+        with patch(
+            "inkwell.demo.resolver.socket.getaddrinfo",
+            side_effect=_fake_getaddrinfo("127.0.0.1"),
+        ):
+            with pytest.raises(DemoUrlError) as excinfo:
+                await _fetch_feed_safely("https://example.com/feed.rss")
+        assert excinfo.value.reason.startswith("rss_redirect_to_unsafe_host:resolved_private_ip:")
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_blocks_redirect_when_hostname_dns_fails(self) -> None:
+        respx.get("https://example.com/feed.rss").mock(
+            return_value=Response(
+                302,
+                headers={"location": "https://nxdomain.example.net/feed.rss"},
+            ),
+        )
+
+        def _gaierror(*args: Any, **kwargs: Any) -> list[Any]:
+            raise socket.gaierror(8, "nodename nor servname provided, or not known")
+
+        with patch(
+            "inkwell.demo.resolver.socket.getaddrinfo",
+            side_effect=_gaierror,
+        ):
+            with pytest.raises(DemoUrlError) as excinfo:
+                await _fetch_feed_safely("https://example.com/feed.rss")
+        assert excinfo.value.reason.startswith("rss_redirect_to_unsafe_host:dns_resolution_failed:")
 
     @pytest.mark.asyncio
     @respx.mock
@@ -332,8 +406,12 @@ class TestSafeFetchFeed:
             ),
         )
 
-        with pytest.raises(DemoUrlError) as excinfo:
-            await _fetch_feed_safely("https://example.com/feed.rss")
+        with patch(
+            "inkwell.demo.resolver.socket.getaddrinfo",
+            side_effect=_fake_getaddrinfo("93.184.216.34"),
+        ):
+            with pytest.raises(DemoUrlError) as excinfo:
+                await _fetch_feed_safely("https://example.com/feed.rss")
         assert excinfo.value.reason == "rss_too_many_redirects"
 
     @pytest.mark.asyncio

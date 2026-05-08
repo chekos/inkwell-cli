@@ -200,6 +200,7 @@ class PipelineOrchestrator:
                 {
                     "source": transcript.source,
                     "duration_seconds": transcript_result.duration_seconds,
+                    "media_duration_seconds": transcript.duration_seconds,
                     "word_count": len(transcript.full_text.split()),
                     "from_cache": transcript_result.from_cache,
                 },

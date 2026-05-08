@@ -26,6 +26,8 @@ The returned :class:`ResolvedDemoSource` is what
 from __future__ import annotations
 
 import asyncio
+import ipaddress
+import socket
 from dataclasses import dataclass
 from typing import Any
 
@@ -229,10 +231,18 @@ async def _fetch_feed_safely(url: str) -> feedparser.FeedParserDict:
                     )
                 next_target = str(httpx.URL(current).join(location))
                 # Revalidate before issuing the next request. assert_demo_safe_url
-                # raises DemoUrlError on private/loopback/legacy-encoding hosts;
-                # we wrap with a redirect-specific reason for log clarity.
+                # checks the host literal; _assert_resolved_host_is_public adds
+                # DNS resolution so a public hostname that resolves to
+                # loopback / RFC1918 from the worker is rejected too.
                 try:
                     assert_demo_safe_url(next_target)
+                except DemoUrlError as exc:
+                    raise DemoUrlError(
+                        "That feed redirects to a private address.",
+                        reason=f"rss_redirect_to_unsafe_host:{exc.reason}",
+                    ) from exc
+                try:
+                    await _assert_resolved_host_is_public(next_target)
                 except DemoUrlError as exc:
                     raise DemoUrlError(
                         "That feed redirects to a private address.",
@@ -259,6 +269,67 @@ async def _fetch_feed_safely(url: str) -> feedparser.FeedParserDict:
         "Too many redirects while reading the RSS feed.",
         reason="rss_too_many_redirects",
     )
+
+
+async def _assert_resolved_host_is_public(url: str) -> None:
+    """Resolve the URL's hostname and reject if any IP is private or reserved.
+
+    :func:`assert_demo_safe_url` validates the host literal in the URL
+    string. This adds the next layer: a public-looking hostname can still
+    resolve to loopback / RFC1918 / link-local space (DNS rebinding,
+    attacker-controlled DNS, internal split-horizon resolvers). Both
+    checks together close the SSRF surface for redirect hops.
+
+    No-op for IP literals — :func:`assert_demo_safe_url` already covered
+    those, and ``getaddrinfo`` on a literal would just echo it back.
+
+    Args:
+        url: Fully-qualified URL whose host will be resolved.
+
+    Raises:
+        DemoUrlError: When the host can't be resolved or any resolved
+            address falls in a disallowed range.
+    """
+    host = httpx.URL(url).host
+    if not host:
+        raise DemoUrlError(
+            "URL is missing a host.",
+            reason="missing_host",
+        )
+
+    try:
+        ipaddress.ip_address(host)
+        return
+    except ValueError:
+        pass
+
+    try:
+        infos = await asyncio.to_thread(socket.getaddrinfo, host, None, 0, socket.SOCK_STREAM)
+    except socket.gaierror as exc:
+        raise DemoUrlError(
+            "We couldn't resolve that host.",
+            reason=f"dns_resolution_failed:{type(exc).__name__}",
+        ) from exc
+
+    for info in infos:
+        sockaddr = info[4]
+        ip_str = sockaddr[0]
+        try:
+            ip = ipaddress.ip_address(ip_str)
+        except ValueError:
+            continue
+        if (
+            ip.is_private
+            or ip.is_loopback
+            or ip.is_link_local
+            or ip.is_reserved
+            or ip.is_multicast
+            or ip.is_unspecified
+        ):
+            raise DemoUrlError(
+                "URL resolves to a private address.",
+                reason=f"resolved_private_ip:{host}->{ip}",
+            )
 
 
 async def _safe_get(client: httpx.AsyncClient, url: str) -> httpx.Response:

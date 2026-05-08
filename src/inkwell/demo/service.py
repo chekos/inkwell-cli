@@ -208,6 +208,11 @@ class _DurationBackstop:
     transcription just measured. We raise inside the
     ``transcription_complete`` step so the orchestrator stops before
     spending any LLM extraction budget.
+
+    Reads ``media_duration_seconds`` from the orchestrator payload, not
+    ``duration_seconds`` — the latter carries
+    :attr:`TranscriptionResult.duration_seconds`, which is wall-clock
+    transcription time, not media length.
     """
 
     __slots__ = ("_cap_seconds", "_metadata_duration_seconds")
@@ -219,7 +224,7 @@ class _DurationBackstop:
     def __call__(self, step: str, data: dict) -> None:
         if step != "transcription_complete":
             return
-        actual_duration = data.get("duration_seconds")
+        actual_duration = data.get("media_duration_seconds")
         if not isinstance(actual_duration, (int, float)):
             return
         if actual_duration > self._cap_seconds:

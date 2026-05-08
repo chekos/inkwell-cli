@@ -58,6 +58,11 @@ class DemoConfig(BaseSettings):
         env_file=None,
         case_sensitive=False,
         extra="ignore",
+        # validation_alias on `enabled` would otherwise hide the field
+        # name from programmatic construction (`DemoConfig(enabled=False)`
+        # silently used the default). Tests and the FastAPI app build
+        # configs by name; env vars build them by alias. Both must work.
+        populate_by_name=True,
     )
 
     enabled: bool = Field(

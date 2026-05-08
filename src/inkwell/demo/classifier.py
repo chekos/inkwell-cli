@@ -348,11 +348,11 @@ def _reject_legacy_ipv4_encoding(host: str) -> None:
 
 
 def _ip_is_disallowed(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
-    return (
-        ip.is_private
-        or ip.is_loopback
-        or ip.is_link_local
-        or ip.is_reserved
-        or ip.is_multicast
-        or ip.is_unspecified
-    )
+    # ``not ip.is_global`` blocks every range Python flags as
+    # private/loopback/link_local/reserved/multicast/unspecified AND the
+    # ones it does NOT mark with those booleans — most importantly
+    # RFC6598 carrier-grade NAT space (100.64.0.0/10), which a public
+    # hostname can resolve to in deployments behind ISP CGN. Codex
+    # flagged this gap on PR #73; using ``is_global`` is the one-call
+    # answer recommended by the stdlib docs.
+    return not ip.is_global

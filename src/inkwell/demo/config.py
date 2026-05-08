@@ -11,17 +11,21 @@ defaults that the OBRA-73 plan calls out as non-negotiable:
   without a redeploy.
 - Allowlisted templates only (``summary``, ``quotes``, ``key-concepts``).
 
-The settings are read from environment variables prefixed ``INKWELL_DEMO_``
-so production overrides land cleanly through Cloud Run env vars or Secret
-Manager mounts. They are loaded once and cached so a hot worker container
-doesn't re-parse env on every job.
+Most settings are read from environment variables prefixed
+``INKWELL_DEMO_`` so production overrides land cleanly through Cloud Run
+env vars or Secret Manager mounts. The kill switch is the one exception:
+OBRA-74 fixes its name as ``DEMO_PIPELINE_ENABLED`` (un-prefixed) and
+that is what the operations runbook documents, so :attr:`DemoConfig.enabled`
+accepts both ``DEMO_PIPELINE_ENABLED`` (canonical) and
+``INKWELL_DEMO_ENABLED`` (consistency alias). They are loaded once and
+cached so a hot worker container doesn't re-parse env on every job.
 """
 
 from __future__ import annotations
 
 from functools import lru_cache
 
-from pydantic import Field, field_validator
+from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # These are the canonical demo template names. They map 1:1 to existing
@@ -58,6 +62,11 @@ class DemoConfig(BaseSettings):
 
     enabled: bool = Field(
         default=True,
+        # OBRA-74 acceptance criterion #4 names the env var as
+        # DEMO_PIPELINE_ENABLED (no prefix). The INKWELL_DEMO_ENABLED
+        # form is kept as an alias so operators who follow the prefix
+        # convention also get the kill switch.
+        validation_alias=AliasChoices("DEMO_PIPELINE_ENABLED", "INKWELL_DEMO_ENABLED"),
         description=(
             "Master kill switch. When false, the API accepts emails but "
             "refuses to run the pipeline."

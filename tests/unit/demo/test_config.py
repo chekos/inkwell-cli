@@ -67,11 +67,31 @@ def test_max_duration_is_clamped_to_one_hour() -> None:
         DemoConfig(max_duration_seconds=60 * 60 + 1)
 
 
-def test_kill_switch_via_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    """`INKWELL_DEMO_ENABLED=false` flips the kill switch without code changes."""
+def test_kill_switch_via_canonical_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`DEMO_PIPELINE_ENABLED=false` flips the kill switch.
+
+    OBRA-74 acceptance criterion #4 fixes this exact env var name.
+    """
+    monkeypatch.delenv("INKWELL_DEMO_ENABLED", raising=False)
+    monkeypatch.setenv("DEMO_PIPELINE_ENABLED", "false")
+    config = DemoConfig()
+    assert config.enabled is False
+
+
+def test_kill_switch_via_prefixed_alias(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`INKWELL_DEMO_ENABLED=false` is accepted as an alias for consistency."""
+    monkeypatch.delenv("DEMO_PIPELINE_ENABLED", raising=False)
     monkeypatch.setenv("INKWELL_DEMO_ENABLED", "false")
     config = DemoConfig()
     assert config.enabled is False
+
+
+def test_canonical_env_takes_precedence_over_alias(monkeypatch: pytest.MonkeyPatch) -> None:
+    """When both are set, the OBRA-74 canonical name wins."""
+    monkeypatch.setenv("DEMO_PIPELINE_ENABLED", "true")
+    monkeypatch.setenv("INKWELL_DEMO_ENABLED", "false")
+    config = DemoConfig()
+    assert config.enabled is True
 
 
 def test_can_override_caps_via_env(monkeypatch: pytest.MonkeyPatch) -> None:

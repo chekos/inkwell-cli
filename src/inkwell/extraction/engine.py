@@ -167,45 +167,12 @@ class ExtractionEngine:
             return
 
         group = get_entry_point_group("extraction")
+        discovered_names: set[str] = set()
 
         for result in discover_plugins(group):
+            discovered_names.add(result.name)
             if result.success and result.plugin is not None:
-                # Configure the plugin
-                plugin_config: dict[str, Any] = {}
-
-                # Provide API key based on plugin name
-                if result.name == "claude" and self._claude_api_key:
-                    plugin_config["api_key"] = self._claude_api_key
-                elif result.name == "gemini" and self._gemini_api_key:
-                    plugin_config["api_key"] = self._gemini_api_key
-
-                try:
-                    result.plugin.configure(plugin_config, self.cost_tracker)
-                    result.plugin.validate()
-
-                    # Register with built-in priority
-                    self._registry.register(
-                        name=result.name,
-                        plugin=result.plugin,  # type: ignore[arg-type]
-                        priority=PluginRegistry.PRIORITY_BUILTIN,
-                        source=result.source,
-                    )
-                    logger.debug(f"Registered extraction plugin: {result.name}")
-                except Exception as e:
-                    # Register as broken plugin
-                    self._registry.register(
-                        name=result.name,
-                        plugin=None,
-                        priority=0,
-                        source=result.source,
-                        error=str(e),
-                    )
-                    # Only warn for the default provider - others failing is expected
-                    # if user hasn't configured their API keys
-                    if result.name == self.default_provider:
-                        logger.warning(f"Failed to configure extraction plugin {result.name}: {e}")
-                    else:
-                        logger.debug(f"Extraction plugin {result.name} not configured: {e}")
+                self._register_extraction_plugin(result.name, result.plugin, result.source)
             else:
                 # Register broken plugin for visibility
                 self._registry.register(
@@ -217,7 +184,78 @@ class ExtractionEngine:
                     recovery_hint=result.recovery_hint,
                 )
 
+        self._register_builtin_extraction_plugins(discovered_names)
         self._plugins_loaded = True
+
+    def _register_builtin_extraction_plugins(self, discovered_names: set[str]) -> None:
+        """Register built-in extractors when package entry points are unavailable."""
+
+        builtin_extractors = {
+            "claude": "inkwell.extraction.extractors.claude:ClaudeExtractor",
+            "gemini": "inkwell.extraction.extractors.gemini:GeminiExtractor",
+        }
+
+        for name, source in builtin_extractors.items():
+            if name in discovered_names:
+                continue
+
+            module_name, class_name = source.split(":", 1)
+            try:
+                module = __import__(module_name, fromlist=[class_name])
+                plugin_class = getattr(module, class_name)
+                try:
+                    plugin = plugin_class(lazy_init=True)
+                except TypeError:
+                    plugin = plugin_class()
+            except Exception as e:
+                self._registry.register(
+                    name=name,
+                    plugin=None,
+                    priority=0,
+                    source=f"builtin:{source}",
+                    error=str(e),
+                )
+                continue
+
+            self._register_extraction_plugin(name, plugin, f"builtin:{source}")
+
+    def _register_extraction_plugin(
+        self,
+        name: str,
+        plugin: ExtractionPlugin,
+        source: str,
+    ) -> None:
+        """Configure, validate, and register one extraction plugin."""
+
+        plugin_config: dict[str, Any] = {}
+
+        if name == "claude" and self._claude_api_key:
+            plugin_config["api_key"] = self._claude_api_key
+        elif name == "gemini" and self._gemini_api_key:
+            plugin_config["api_key"] = self._gemini_api_key
+
+        try:
+            plugin.configure(plugin_config, self.cost_tracker)
+            plugin.validate()
+            self._registry.register(
+                name=name,
+                plugin=plugin,
+                priority=PluginRegistry.PRIORITY_BUILTIN,
+                source=source,
+            )
+            logger.debug(f"Registered extraction plugin: {name}")
+        except Exception as e:
+            self._registry.register(
+                name=name,
+                plugin=None,
+                priority=0,
+                source=source,
+                error=str(e),
+            )
+            if name == self.default_provider:
+                logger.warning(f"Failed to configure extraction plugin {name}: {e}")
+            else:
+                logger.debug(f"Extraction plugin {name} not configured: {e}")
 
     @property
     def extraction_registry(self) -> PluginRegistry[ExtractionPlugin]:

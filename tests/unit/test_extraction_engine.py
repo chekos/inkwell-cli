@@ -97,6 +97,19 @@ class TestExtractionEngineInit:
             )
             assert engine.cache == temp_cache
 
+    def test_builtin_extractors_load_without_entry_points(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Built-in extractors remain available when package metadata is absent."""
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+
+        with patch("inkwell.extraction.engine.discover_plugins", return_value=iter(())):
+            engine = ExtractionEngine(gemini_api_key="AIzaSyD" + "X" * 32)
+
+            assert engine.extraction_registry.get("gemini") is not None
+            assert engine.extraction_registry.get("claude") is None
+
 
 class TestExtractionEngineConfigInjection:
     """Test configuration dependency injection patterns.

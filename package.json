@@ -1,0 +1,10 @@
+{
+  "name": "inkwell",
+  "private": true,
+  "packageManager": "pnpm@10.26.2",
+  "scripts": {
+    "web:dev": "pnpm --dir apps/web dev",
+    "web:build": "pnpm --dir apps/web build",
+    "web:lint": "pnpm --dir apps/web lint"
+  }
+}

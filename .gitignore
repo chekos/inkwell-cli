@@ -16,6 +16,8 @@ eggs/
 .eggs/
 lib/
 lib64/
+!apps/web/src/lib/
+!apps/web/src/lib/**
 parts/
 sdist/
 var/
@@ -144,6 +146,11 @@ ENV/
 env.bak/
 venv.bak/
 
+# JavaScript / web app
+node_modules/
+.next/
+out/
+
 # Spyder project settings
 .spyderproject
 .spyproject
@@ -211,6 +218,7 @@ __marimo__/
 # Session lock files (runtime only, not tracked)
 .locks/
 *.lock
+supabase/.temp/
 
 # Encryption keyfiles (NEVER commit these - they decrypt credentials)
 .keyfile

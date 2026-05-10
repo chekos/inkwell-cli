@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import tempfile
 from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 from uuid import UUID
 
 import httpx
@@ -23,6 +25,8 @@ from inkwell.config.schema import (
 from inkwell.output.models import OutputFile
 from inkwell.pipeline import PipelineOptions, PipelineOrchestrator
 from inkwell.pipeline.models import PipelineResult
+
+logger = logging.getLogger(__name__)
 
 
 class ImportJobPayload(BaseModel):
@@ -293,10 +297,12 @@ async def _process_with_pipeline(
 ) -> PipelineResult:
     config = build_worker_config(output_dir)
     orchestrator = PipelineOrchestrator(config)
+    episode_title = await _resolve_episode_title(payload.url)
     options = PipelineOptions(
         url=payload.url,
         category=payload.category,
         templates=payload.templates,
+        episode_title=episode_title,
         output_dir=output_dir,
         overwrite=True,
         interview=False,
@@ -323,6 +329,42 @@ def build_worker_config(output_dir: Path) -> GlobalConfig:
         ),
         interview=InterviewConfig(enabled=False, auto_start=False),
     )
+
+
+async def _resolve_episode_title(url: str) -> str | None:
+    """Resolve a friendly title for direct web imports when cheap metadata exists."""
+
+    if not _is_youtube_url(url):
+        return None
+
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(10.0, connect=5.0)) as client:
+            response = await client.get(
+                "https://www.youtube.com/oembed",
+                params={"url": url, "format": "json"},
+            )
+            response.raise_for_status()
+            title = response.json().get("title")
+    except Exception as exc:
+        logger.warning("Could not resolve YouTube oEmbed title: %s", exc)
+        return None
+
+    if isinstance(title, str) and title.strip():
+        return title.strip()
+    return None
+
+
+def _is_youtube_url(url: str) -> bool:
+    try:
+        host = urlparse(url).hostname
+    except ValueError:
+        return False
+    return (host or "").lower() in {
+        "youtube.com",
+        "www.youtube.com",
+        "m.youtube.com",
+        "youtu.be",
+    }
 
 
 def build_note_from_result(result: PipelineResult) -> tuple[str, str, str | None, dict[str, Any]]:

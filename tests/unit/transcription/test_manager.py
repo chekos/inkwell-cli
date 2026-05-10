@@ -59,6 +59,7 @@ class TestTranscriptionManager:
         """Create mock Gemini transcriber."""
         gemini = Mock()
         gemini.transcribe = AsyncMock()
+        gemini.transcribe_youtube_url = AsyncMock()
         return gemini
 
     @pytest.fixture
@@ -170,7 +171,7 @@ class TestTranscriptionManager:
         gemini_transcript = sample_transcript.model_copy(
             update={"source": "gemini", "cost_usd": 0.001}
         )
-        mock_gemini.transcribe.return_value = gemini_transcript
+        mock_gemini.transcribe_youtube_url.return_value = gemini_transcript
 
         result = await manager.transcribe("https://youtube.com/watch?v=test")
 
@@ -182,11 +183,14 @@ class TestTranscriptionManager:
         assert "youtube" in result.attempts
         assert "gemini" in result.attempts
 
-        # Verify audio was downloaded
-        mock_downloader.download.assert_called_once()
+        # Verify YouTube URLs bypass server-side audio downloads when using Gemini.
+        mock_downloader.download.assert_not_called()
 
         # Verify Gemini was used
-        mock_gemini.transcribe.assert_called_once()
+        mock_gemini.transcribe_youtube_url.assert_called_once_with(
+            "https://youtube.com/watch?v=test"
+        )
+        mock_gemini.transcribe.assert_not_called()
 
         # Verify result was cached
         mock_cache.set.assert_called_once()
@@ -202,6 +206,7 @@ class TestTranscriptionManager:
         """Test handling when all tiers fail."""
         mock_cache.get.return_value = None
         mock_youtube.transcribe.side_effect = APIError("YouTube failed")
+        mock_gemini.transcribe_youtube_url.side_effect = APIError("Gemini URL failed")
         mock_gemini.transcribe.side_effect = Exception("Gemini failed")
 
         result = await manager.transcribe("https://youtube.com/watch?v=test")
@@ -226,7 +231,7 @@ class TestTranscriptionManager:
         mock_cache.get.return_value = None
 
         gemini_transcript = sample_transcript.model_copy(update={"source": "gemini"})
-        mock_gemini.transcribe.return_value = gemini_transcript
+        mock_gemini.transcribe_youtube_url.return_value = gemini_transcript
 
         result = await manager.transcribe("https://youtube.com/watch?v=test", skip_youtube=True)
 
@@ -237,6 +242,10 @@ class TestTranscriptionManager:
 
         # Verify YouTube was not called
         mock_youtube.transcribe.assert_not_called()
+        mock_gemini.transcribe_youtube_url.assert_called_once_with(
+            "https://youtube.com/watch?v=test"
+        )
+        mock_gemini.transcribe.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_transcribe_disable_cache(
@@ -393,6 +402,7 @@ class TestTranscriptionManager:
         """yt-dlp 403s should point at audio download, not Gemini auth."""
         mock_cache.get.return_value = None
         mock_youtube.can_transcribe.return_value = False
+        mock_gemini.transcribe_youtube_url.side_effect = APIError("Gemini URL failed")
         mock_downloader.download.side_effect = APIError(
             "Failed to download audio from https://youtube.com/watch?v=x. "
             "Error: HTTP Error 403: Forbidden"

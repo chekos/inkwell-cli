@@ -7,6 +7,7 @@ import warnings
 from collections.abc import Callable
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
+from urllib.parse import urlparse
 
 from inkwell.audio import AudioDownloader
 from inkwell.config.precedence import resolve_config_value
@@ -34,7 +35,8 @@ class TranscriptionManager:
     Orchestrates:
     - Cache lookup
     - Tier 1: YouTube transcript extraction (free, fast)
-    - Tier 2: Audio download + Gemini transcription (fallback, costs money)
+    - Tier 2: Gemini public YouTube URL transcription (fallback, costs money)
+    - Tier 3: Audio download + Gemini transcription (fallback, costs money)
     - Cache storage
 
     Follows ADR-009 multi-tier strategy for cost optimization.
@@ -281,6 +283,8 @@ class TranscriptionManager:
                 progress_callback,
             )
 
+        is_youtube_url = self._is_youtube_url(episode_url)
+
         if use_cache:
             _progress("checking_cache")
             attempts.append("cache")
@@ -341,7 +345,42 @@ class TranscriptionManager:
                 from_cache=False,
             )
 
-        attempts.append("gemini")
+        gemini_attempt_recorded = False
+        direct_youtube_transcriber = getattr(
+            self.gemini_transcriber, "transcribe_youtube_url", None
+        )
+        if is_youtube_url and callable(direct_youtube_transcriber):
+            attempts.append("gemini")
+            gemini_attempt_recorded = True
+            try:
+                _progress("transcribing_gemini_youtube", url=episode_url)
+                transcript = await direct_youtube_transcriber(episode_url)
+
+                try:
+                    if transcript.cost_usd:
+                        total_cost += transcript.cost_usd
+                except Exception as e:
+                    logger.warning(f"Failed to track transcription cost: {e}")
+
+                if use_cache:
+                    _progress("caching_result")
+                    await self.cache.set(episode_url, transcript)
+
+                duration = (datetime.now(timezone.utc) - start_time).total_seconds()
+                return TranscriptionResult(
+                    success=True,
+                    transcript=transcript,
+                    attempts=attempts,
+                    duration_seconds=duration,
+                    cost_usd=total_cost,
+                    from_cache=False,
+                )
+            except Exception as e:
+                logger.warning(f"Gemini YouTube URL transcription failed: {e}")
+
+        if not gemini_attempt_recorded:
+            attempts.append("gemini")
+
         try:
             # Download audio (with auth credentials for private feeds)
             _progress("downloading_audio", url=episode_url)
@@ -438,6 +477,12 @@ class TranscriptionManager:
                 cost_usd=total_cost,
                 from_cache=False,
             )
+
+    def _is_youtube_url(self, url: str) -> bool:
+        """Return True for YouTube watch, shorts, live, and short-link URLs."""
+        parsed = urlparse(url)
+        host = parsed.netloc.lower()
+        return host in {"youtu.be", "youtube.com", "www.youtube.com", "m.youtube.com"}
 
     async def _transcribe_with_override(
         self,

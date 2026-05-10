@@ -21,7 +21,7 @@ secret = modal.Secret.from_name("inkwell-worker")
 app = modal.App(name="inkwell-worker", image=image, secrets=[secret])
 
 
-@app.function(timeout=1800)
+@app.function(timeout=1800, cloud="oci")
 def process_import(payload: dict[str, Any]) -> dict[str, Any]:
     """Run an import in a long-lived Modal function."""
 

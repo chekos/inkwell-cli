@@ -1,0 +1,23 @@
+project_id = "inkwell-cli"
+
+[auth]
+site_url = "https://inkwell-tau-snowy.vercel.app"
+additional_redirect_urls = [
+  "https://inkwell-tau-snowy.vercel.app",
+  "https://inkwell-tau-snowy.vercel.app/app",
+  "https://inkwell-ssz-projects.vercel.app",
+  "https://inkwell-ssz-projects.vercel.app/app",
+  "https://inkwell-chekos-ssz-projects.vercel.app",
+  "https://inkwell-chekos-ssz-projects.vercel.app/app",
+  "https://*-ssz-projects.vercel.app/**",
+  "http://localhost:3000",
+  "http://localhost:3000/app",
+  "http://localhost:3000/**",
+  "http://127.0.0.1:3000",
+  "http://127.0.0.1:3000/app",
+  "http://127.0.0.1:3000/**",
+]
+
+[auth.email.template.magic_link]
+subject = "Sign in to Inkwell"
+content_path = "./supabase/templates/magic_link.html"

@@ -1,6 +1,15 @@
 import { LoginForm } from "./LoginForm";
 
-export default function LoginPage() {
+type LoginPageProps = {
+  searchParams?: Promise<{
+    error?: string | string[];
+  }>;
+};
+
+export default async function LoginPage({ searchParams }: LoginPageProps) {
+  const params = searchParams ? await searchParams : {};
+  const error = Array.isArray(params.error) ? params.error[0] : params.error;
+
   return (
     <main className="grid min-h-screen place-items-center px-4 py-10">
       <section className="w-full max-w-md border border-border bg-surface p-6">
@@ -13,8 +22,21 @@ export default function LoginPage() {
             Save generated podcast and media notes in your private web library.
           </p>
         </div>
-        <LoginForm />
+        <LoginForm initialError={getLoginErrorMessage(error)} />
       </section>
     </main>
   );
+}
+
+function getLoginErrorMessage(error: string | undefined) {
+  switch (error) {
+    case "callback_error":
+      return "That sign-in link could not be completed. Please request a fresh link.";
+    case "auth_callback_failed":
+      return "That sign-in link expired or was opened somewhere that did not start the request. Please request a fresh link.";
+    case "auth_confirm_failed":
+      return "That sign-in link is invalid or expired. Please request a fresh link.";
+    default:
+      return null;
+  }
 }

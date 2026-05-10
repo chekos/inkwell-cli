@@ -248,6 +248,108 @@ class TestTranscriptFetching:
         assert mock_transcript_list.find_transcript.call_count == 2
 
     @pytest.mark.asyncio
+    async def test_translates_available_transcript_when_preferred_missing(
+        self, transcriber, mock_transcript_data
+    ):
+        """Use YouTube's translation API when only another caption language is listed."""
+        url = "https://youtube.com/watch?v=test123"
+
+        mock_translation_language = Mock()
+        mock_translation_language.language_code = "en"
+
+        mock_es_transcript = Mock()
+        mock_es_transcript.language_code = "es"
+        mock_es_transcript.is_translatable = True
+        mock_es_transcript.translation_languages = [mock_translation_language]
+
+        mock_translated_transcript = Mock()
+        mock_translated_transcript.language_code = "en"
+        mock_translated_transcript.fetch.return_value = mock_transcript_data
+        mock_es_transcript.translate.return_value = mock_translated_transcript
+
+        mock_transcript_list = Mock()
+        mock_transcript_list.find_transcript.side_effect = NoTranscriptFound(
+            "test123", ["en"], None
+        )
+        mock_transcript_list.find_generated_transcript.side_effect = NoTranscriptFound(
+            "test123", ["en"], None
+        )
+        mock_transcript_list.__iter__ = Mock(return_value=iter([mock_es_transcript]))
+
+        with patch.object(transcriber.api, "list", return_value=mock_transcript_list):
+            transcript = await transcriber.transcribe(url)
+
+        assert transcript.language == "en"
+        assert transcript.source == "youtube"
+        mock_es_transcript.translate.assert_called_once_with("en")
+        mock_es_transcript.fetch.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_original_available_transcript(
+        self, transcriber, mock_transcript_data
+    ):
+        """Use the original caption language when preferred translations cannot be fetched."""
+        url = "https://youtube.com/watch?v=test123"
+
+        mock_translation_language = Mock()
+        mock_translation_language.language_code = "en"
+
+        mock_es_transcript = Mock()
+        mock_es_transcript.language_code = "es"
+        mock_es_transcript.is_translatable = True
+        mock_es_transcript.translation_languages = [mock_translation_language]
+        mock_es_transcript.fetch.return_value = mock_transcript_data
+
+        mock_translated_transcript = Mock()
+        mock_translated_transcript.language_code = "en"
+        mock_translated_transcript.fetch.side_effect = CouldNotRetrieveTranscript("test123")
+        mock_es_transcript.translate.return_value = mock_translated_transcript
+
+        mock_transcript_list = Mock()
+        mock_transcript_list.find_transcript.side_effect = NoTranscriptFound(
+            "test123", ["en"], None
+        )
+        mock_transcript_list.find_generated_transcript.side_effect = NoTranscriptFound(
+            "test123", ["en"], None
+        )
+        mock_transcript_list.__iter__ = Mock(return_value=iter([mock_es_transcript]))
+
+        with patch.object(transcriber.api, "list", return_value=mock_transcript_list):
+            transcript = await transcriber.transcribe(url)
+
+        assert transcript.language == "es"
+        assert transcript.source == "youtube"
+        mock_translated_transcript.fetch.assert_called_once()
+        mock_es_transcript.fetch.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_uses_available_non_preferred_transcript(self, transcriber, mock_transcript_data):
+        """Do not fall through to audio download just because English captions are absent."""
+        url = "https://youtube.com/watch?v=test123"
+
+        mock_es_transcript = Mock()
+        mock_es_transcript.language_code = "es"
+        mock_es_transcript.is_translatable = False
+        mock_es_transcript.translation_languages = []
+        mock_es_transcript.fetch.return_value = mock_transcript_data
+
+        mock_transcript_list = Mock()
+        mock_transcript_list.find_transcript.side_effect = NoTranscriptFound(
+            "test123", ["en"], None
+        )
+        mock_transcript_list.find_generated_transcript.side_effect = NoTranscriptFound(
+            "test123", ["en"], None
+        )
+        mock_transcript_list.__iter__ = Mock(return_value=iter([mock_es_transcript]))
+
+        with patch.object(transcriber.api, "list", return_value=mock_transcript_list):
+            transcript = await transcriber.transcribe(url)
+
+        assert transcript.language == "es"
+        assert transcript.source == "youtube"
+        assert len(transcript.segments) == 3
+
+    @pytest.mark.asyncio
     async def test_invalid_url_raises_error(self, transcriber):
         """Test that invalid URL raises APIError."""
         url = "https://youtube.com/invalid"
@@ -303,14 +405,8 @@ class TestTranscriptFetching:
 
     @pytest.mark.asyncio
     async def test_no_transcript_in_any_language(self, transcriber):
-        """Test when no transcript available in any preferred language."""
+        """Test when no transcript is available at all."""
         url = "https://youtube.com/watch?v=test123"
-
-        # Mock available transcripts
-        mock_fr_transcript = Mock()
-        mock_fr_transcript.language_code = "fr"
-        mock_de_transcript = Mock()
-        mock_de_transcript.language_code = "de"
 
         mock_transcript_list = Mock()
         mock_transcript_list.find_transcript.side_effect = NoTranscriptFound(
@@ -320,17 +416,15 @@ class TestTranscriptFetching:
             "test123", ["en"], None
         )
         # For the error message
-        mock_transcript_list.__iter__ = Mock(
-            return_value=iter([mock_fr_transcript, mock_de_transcript])
-        )
+        mock_transcript_list.__iter__ = Mock(return_value=iter([]))
 
         with patch.object(transcriber.api, "list", return_value=mock_transcript_list):
             with pytest.raises(APIError) as exc_info:
                 await transcriber.transcribe(url)
 
         error_msg = str(exc_info.value)
-        assert "No transcript found" in error_msg
-        assert "fr, de" in error_msg  # Available languages mentioned
+        assert "No usable transcript found" in error_msg
+        assert "Available languages: none" in error_msg
 
     @pytest.mark.asyncio
     async def test_unexpected_error_handling(self, transcriber):

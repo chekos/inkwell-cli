@@ -221,6 +221,102 @@ class YouTubeTranscriber(TranscriptionPlugin):
 
         return None
 
+    def _language_matches_preference(self, language_code: str, preferred_language: str) -> bool:
+        """Return True when a transcript language satisfies a preference.
+
+        Treat a base language preference like ``en`` as matching regional variants
+        such as ``en-US`` or ``en-GB``.
+        """
+        return language_code == preferred_language or language_code.startswith(
+            f"{preferred_language}-"
+        )
+
+    def _translation_language_code(self, translation_language: Any) -> str | None:
+        """Extract a language code from youtube-transcript-api translation metadata."""
+        if isinstance(translation_language, dict):
+            value = translation_language.get("language_code")
+            return str(value) if value else None
+
+        value = getattr(translation_language, "language_code", None)
+        return str(value) if value else None
+
+    def _transcript_candidates(
+        self,
+        transcript_list: Any,
+        available_transcripts: list[Any],
+    ) -> list[tuple[Any, str]]:
+        """Build transcript candidates from most preferred to broadest fallback."""
+        candidates: list[tuple[Any, str]] = []
+        seen_ids: set[int] = set()
+
+        def add_candidate(transcript_obj: Any, reason: str) -> None:
+            transcript_id = id(transcript_obj)
+            if transcript_id in seen_ids:
+                return
+
+            seen_ids.add(transcript_id)
+            candidates.append((transcript_obj, reason))
+
+        found_preferred_transcript = False
+        for lang in self.preferred_languages:
+            try:
+                add_candidate(
+                    transcript_list.find_transcript([lang]),
+                    f"preferred language {lang}",
+                )
+                found_preferred_transcript = True
+                break
+            except NoTranscriptFound:
+                continue
+
+        if not found_preferred_transcript:
+            try:
+                add_candidate(
+                    transcript_list.find_generated_transcript(self.preferred_languages),
+                    "generated preferred language",
+                )
+            except NoTranscriptFound:
+                pass
+
+        for lang in self.preferred_languages:
+            for transcript_obj in available_transcripts:
+                language_code = getattr(transcript_obj, "language_code", "")
+                if self._language_matches_preference(language_code, lang):
+                    add_candidate(transcript_obj, f"language variant {language_code}")
+
+        for lang in self.preferred_languages:
+            for transcript_obj in available_transcripts:
+                if not getattr(transcript_obj, "is_translatable", False):
+                    continue
+
+                translation_languages = getattr(transcript_obj, "translation_languages", [])
+                if not any(
+                    self._translation_language_code(translation_language) == lang
+                    for translation_language in translation_languages
+                ):
+                    continue
+
+                try:
+                    source_language_code = getattr(transcript_obj, "language_code", "unknown")
+                    add_candidate(
+                        transcript_obj.translate(lang),
+                        f"{source_language_code} translated to {lang}",
+                    )
+                except Exception as e:
+                    logger.warning(
+                        "Could not prepare translated transcript candidate for %s: %s",
+                        lang,
+                        e,
+                    )
+
+        for transcript_obj in available_transcripts:
+            add_candidate(
+                transcript_obj,
+                f"available language {getattr(transcript_obj, 'language_code', 'unknown')}",
+            )
+
+        return candidates
+
     async def transcribe(
         self,
         url_or_request: str | TranscriptionRequest,
@@ -275,56 +371,68 @@ class YouTubeTranscriber(TranscriptionPlugin):
         try:
             # List available transcripts
             transcript_list = self.api.list(video_id)
+            try:
+                available_transcripts = list(transcript_list)
+            except TypeError:
+                available_transcripts = []
+            candidates = self._transcript_candidates(transcript_list, available_transcripts)
+            last_retrieval_error: CouldNotRetrieveTranscript | None = None
 
-            # Try to find transcript in preferred languages
-            transcript_obj = None
-            for lang in self.preferred_languages:
+            for transcript_obj, reason in candidates:
                 try:
-                    transcript_obj = transcript_list.find_transcript([lang])
-                    logger.info(f"Found transcript in language: {lang}")
-                    break
-                except NoTranscriptFound:
+                    # Fetch transcript data. youtube-transcript-api >= 1.0 returns a
+                    # FetchedTranscript whose entries are FetchedTranscriptSnippet
+                    # dataclasses (attribute access, not dict subscript). Prior code
+                    # used entry["text"] + # type: ignore[index]; that silently broke
+                    # every YouTube-caption fetch and forced fallback to paid Gemini.
+                    transcript_data = transcript_obj.fetch()
+                except (TranscriptsDisabled, VideoUnavailable):
+                    raise
+                except CouldNotRetrieveTranscript as e:
+                    last_retrieval_error = e
+                    logger.warning(
+                        "Could not fetch YouTube transcript candidate (%s) for %s: %s",
+                        reason,
+                        video_id,
+                        e,
+                    )
                     continue
 
-            # If no preferred language found, try generated transcript
-            if transcript_obj is None:
-                try:
-                    transcript_obj = transcript_list.find_generated_transcript(
-                        self.preferred_languages
+                segments = [
+                    TranscriptSegment(
+                        text=entry.text,
+                        start=entry.start,
+                        duration=entry.duration,
                     )
-                    logger.info("Using auto-generated transcript")
-                except NoTranscriptFound as e:
-                    raise APIError(
-                        f"No transcript found for video {video_id} in languages: "
-                        f"{', '.join(self.preferred_languages)}. "
-                        "Available languages: "
-                        f"{', '.join(t.language_code for t in transcript_list)}"
-                    ) from e
+                    for entry in transcript_data
+                ]
 
-            # Fetch transcript data. youtube-transcript-api >= 1.0 returns a
-            # FetchedTranscript whose entries are FetchedTranscriptSnippet
-            # dataclasses (attribute access, not dict subscript). Prior code
-            # used entry["text"] + # type: ignore[index]; that silently broke
-            # every YouTube-caption fetch and forced fallback to paid Gemini.
-            transcript_data = transcript_obj.fetch()
-
-            segments = [
-                TranscriptSegment(
-                    text=entry.text,
-                    start=entry.start,
-                    duration=entry.duration,
+                language_code = getattr(transcript_obj, "language_code", "unknown")
+                logger.info(
+                    "Successfully fetched YouTube transcript: %s segments (%s, %s)",
+                    len(segments),
+                    language_code,
+                    reason,
                 )
-                for entry in transcript_data
-            ]
 
-            logger.info(f"Successfully fetched YouTube transcript: {len(segments)} segments")
+                return Transcript(
+                    segments=segments,
+                    source="youtube",
+                    language=language_code,
+                    episode_url=url,
+                )
 
-            return Transcript(
-                segments=segments,
-                source="youtube",
-                language=transcript_obj.language_code,
-                episode_url=url,
+            available_languages = (
+                ", ".join(t.language_code for t in available_transcripts) or "none"
             )
+            message = (
+                f"No usable transcript found for video {video_id}. "
+                f"Preferred languages: {', '.join(self.preferred_languages)}. "
+                f"Available languages: {available_languages}."
+            )
+            if last_retrieval_error is not None:
+                raise APIError(message) from last_retrieval_error
+            raise APIError(message)
 
         except TranscriptsDisabled as e:
             logger.warning(f"Transcripts disabled for video {video_id}")

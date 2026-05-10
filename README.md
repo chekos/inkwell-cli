@@ -20,7 +20,7 @@ Inkwell is beta software with the core podcast-to-markdown pipeline implemented 
 
 Current health baseline:
 - Podcast feed management with RSS and YouTube channel URL support
-- Multi-tier transcription: cache → YouTube transcripts → Gemini
+- Multi-tier transcription: cache → YouTube transcripts → Gemini YouTube URL/audio fallback
 - Template-based LLM extraction with Claude/Gemini providers
 - Interactive interview mode
 - Obsidian-friendly markdown with frontmatter, wikilinks, and tags
@@ -76,8 +76,9 @@ That's it! You now have a structured markdown directory ready for Obsidian.
 
 **Multi-tier transcription** that optimizes for cost and quality:
 1. **Cache (Free)**: Check local cache first (30-day TTL)
-2. **YouTube (Free)**: Extract existing transcripts from YouTube videos
-3. **Gemini (Paid)**: Download audio and transcribe as fallback (~$0.115/episode)
+2. **YouTube (Free)**: Extract existing captions/transcripts from YouTube videos, including non-English captions when English is unavailable
+3. **Gemini YouTube URL (Preview)**: For public YouTube videos where cloud workers are blocked from captions or downloads, ask Gemini to process bounded clips directly from the public video URL
+4. **Gemini Audio (Paid)**: Download audio and transcribe as the final fallback for non-YouTube sources or sources where URL-based video input is not available
 
 **Result**: Most episodes cost $0.005-0.012 (YouTube + extraction)
 
@@ -129,6 +130,7 @@ inkwell costs --days 1
 
 **Typical Costs**:
 - YouTube + Gemini extraction: $0.005-0.012
+- Public YouTube URL fallback + Gemini extraction: currently similar to YouTube + extraction while Gemini's YouTube URL input is in preview; pricing and limits may change
 - Gemini transcription + extraction: $0.115-0.175
 - **Recommendation**: Use YouTube when available (saves 95%)
 
@@ -390,9 +392,11 @@ nano ~/.config/inkwell/config.yaml
 
 ### High-Level Pipeline
 
-```
-RSS Feed → Parse Episodes → Check YouTube → Download Audio
-       → Transcribe (YouTube or Gemini)
+```text
+RSS Feed → Parse Episodes → Check YouTube captions
+       → [YouTube only] Gemini public URL fallback
+       → [Final fallback] Download Audio
+       → Transcribe (YouTube captions or Gemini)
        → Extract Content (Template-based LLM)
        → Generate Wikilinks & Tags
        → [Optional] Interactive Interview
@@ -408,7 +412,8 @@ RSS Feed → Parse Episodes → Check YouTube → Download Audio
 
 2. **Transcription** (`src/inkwell/transcription/`)
    - YouTube transcript extraction (free)
-   - Gemini API fallback (paid)
+   - Gemini public YouTube URL fallback for cloud-IP blocking
+   - Gemini audio fallback (paid)
    - 30-day cache with TTL
 
 3. **Extraction** (`src/inkwell/extraction/`)

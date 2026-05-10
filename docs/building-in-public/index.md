@@ -64,7 +64,7 @@ When finishing work:
 
 ## Browse the Documentation
 
-- [All ADRs](adr/index.md) - 34 architecture decisions
+- [All ADRs](adr/index.md) - 38 architecture decisions
 - [Engineering Logs](devlog/index.md) - Development progress by phase
 - [Research](research/index.md) - Technology evaluations
 - [Experiments](experiments/index.md) - Benchmarks and tests

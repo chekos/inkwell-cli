@@ -4,7 +4,7 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 
 ## Project Overview
 
-**Inkwell** is a CLI tool that transforms podcast episodes into structured, searchable markdown notes. It downloads audio from RSS feeds (including private/paid feeds), transcribes content, extracts key information through LLM processing, and optionally conducts an interactive interview to capture personal insights.
+**Inkwell** is a CLI tool and small web app that transforms podcast episodes and media URLs into structured, searchable markdown notes. The Python pipeline handles RSS/private-feed ingestion, YouTube URL ingestion, transcription, LLM extraction, optional interview capture, and Obsidian-friendly output. The web app lets signed-in users paste URLs, run the Python pipeline through a Modal worker, and save generated notes in Supabase.
 
 **Vision:** Transform passive podcast listening into active knowledge building by capturing both *what was said* and *what you thought about it*.
 
@@ -21,11 +21,16 @@ See [docs/_internal/prd.md](./docs/_internal/prd.md) for complete product requir
 **Podcast Processing:**
 - RSS Parsing: `feedparser`
 - Audio Download: `yt-dlp`
-- Transcription: `youtube-transcript-api` (primary), `google-generativeai` (fallback)
+- Transcription: `youtube-transcript-api` (primary), `google-genai` / Gemini (public YouTube URL and audio fallback)
 
 **LLM & AI:**
-- Interview Mode: `Codex-agent-sdk`
-- Content Extraction: Codex/Gemini APIs
+- Interview Mode: Codex Agent SDK
+- Content Extraction: Claude/Gemini APIs
+
+**Web App:**
+- Frontend: Next.js App Router in `apps/web/`
+- Hosting/Auth/Data: Vercel + Supabase Auth/Postgres/RLS
+- Worker: Modal in `workers/inkwell/`
 
 **System Requirements:**
 - ffmpeg (required for audio processing)
@@ -75,22 +80,27 @@ See [ADR-008](./docs/building-in-public/adr/008-use-uv-for-python-tooling.md) fo
 ## Architecture
 
 ### Core Pipeline Flow
-```
-RSS Feed → Parse → Check YouTube → Download Audio
-         → Transcribe (YouTube API or Gemini)
+```text
+RSS Feed / Direct URL → Parse or resolve source → Check YouTube captions
+         → [YouTube] Gemini public URL fallback
+         → [Final fallback] Download Audio
+         → Transcribe (YouTube captions, Gemini public YouTube URL, or Gemini audio)
          → LLM Extraction Pipeline
          → [Optional] Interactive Interview
          → Generate Markdown Files
          → Save to Output Directory
 ```
 
-### Key Components (To Be Implemented)
+For the web app, Vercel creates durable import jobs in Supabase and dispatches them to the Modal worker. The worker updates job state, runs the same Python pipeline, and writes one saved note row back to Supabase.
+
+### Key Components
 
 1. **Feed Management** - Add/list/remove podcast feeds with auth support
-2. **Transcription Layer** - YouTube transcript extraction → Gemini fallback
+2. **Transcription Layer** - YouTube transcript extraction → Gemini public URL fallback → Gemini audio fallback
 3. **LLM Extraction** - Template-based content extraction (quotes, concepts, etc.)
 4. **Interview Mode** - Interactive Q&A using Codex Agent SDK
 5. **Output Generation** - Structured markdown with Obsidian compatibility
+6. **Web Import Flow** - Next.js app, Supabase job/note storage, Modal worker dispatch
 
 ### Output Structure
 Each processed episode creates a directory:

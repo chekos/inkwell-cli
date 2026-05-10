@@ -171,16 +171,22 @@ class ExtractionEngine:
 
         for result in discover_plugins(group):
             discovered_names.add(result.name)
-            if result.success and result.plugin is not None:
+            if result.success and isinstance(result.plugin, ExtractionPlugin):
                 self._register_extraction_plugin(result.name, result.plugin, result.source)
             else:
                 # Register broken plugin for visibility
+                error = result.error
+                if result.success and result.plugin is not None:
+                    error = (
+                        f"Entry point did not load an ExtractionPlugin: "
+                        f"{type(result.plugin).__name__}"
+                    )
                 self._registry.register(
                     name=result.name,
                     plugin=None,
                     priority=0,
                     source=result.source,
-                    error=result.error,
+                    error=error,
                     recovery_hint=result.recovery_hint,
                 )
 

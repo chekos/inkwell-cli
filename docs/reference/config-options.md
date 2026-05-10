@@ -47,7 +47,7 @@ default_output_dir: $HOME/notes/podcasts
 
 ### transcription.api_key
 
-Your Google AI API key for Gemini transcription.
+Your Google AI API key for Gemini transcription. It is used for audio transcription and for the public YouTube URL fallback when YouTube blocks caption or media download requests from a cloud worker.
 
 ```yaml
 transcription:
@@ -60,7 +60,7 @@ transcription:
 
 ### transcription.model_name
 
-The Gemini model used when audio transcription is required (i.e. no free YouTube transcript is available).
+The Gemini model used when Gemini transcription is required. For public YouTube URLs, Inkwell may use Gemini's video URL input before falling back to server-side audio download.
 
 Generated config default:
 
@@ -83,7 +83,7 @@ Generated config files may still contain the legacy top-level
 
 ### transcription.youtube_check
 
-When `true`, Inkwell checks for free YouTube transcripts before using Gemini.
+When `true`, Inkwell checks for free YouTube transcripts before using Gemini. If captions are unavailable or blocked for a public YouTube URL, Inkwell can still try Gemini's public URL input before attempting a server-side audio download.
 
 ```yaml
 transcription:

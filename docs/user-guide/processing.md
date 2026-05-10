@@ -34,12 +34,15 @@ When you run `inkwell fetch`, here's what happens:
 
 ```mermaid
 flowchart TD
-    A([inkwell fetch URL / feed]) --> B[Download audio\n& episode metadata]
+    A([inkwell fetch URL / feed]) --> B[Resolve source\n& episode metadata]
     B --> C{YouTube transcript\navailable?}
     C -- Yes / Free --> D[Use YouTube transcript]
-    C -- No --> E[Transcribe with Gemini\n~$0.01 / hour]
+    C -- No / blocked --> E{Public YouTube URL?}
+    E -- Yes --> J[Gemini video URL fallback\nbounded clips]
+    E -- No --> K[Download audio\nand transcribe with Gemini]
     D --> F[Select extraction templates\nauto or manual]
-    E --> F
+    J --> F
+    K --> F
     F --> G[Extract content via AI\nper template]
     G --> H[Write markdown files\nto output directory]
     H --> I([Done — structured notes ready])
@@ -202,14 +205,15 @@ Inkwell first checks for existing YouTube transcripts. These are:
 - **Free** - No API cost
 - **Fast** - Already available
 - **Accurate** - Human-corrected for popular videos
+- **Flexible** - Inkwell can use available non-English captions when English captions are missing
 
 ### Gemini Fallback
 
-If no YouTube transcript exists, Inkwell uses Google's Gemini:
+If no YouTube transcript exists or YouTube blocks the worker, Inkwell uses Google's Gemini:
 
-- Downloads audio
-- Transcribes using Gemini Flash
-- Cost: ~$0.01 per hour of audio
+- Public YouTube URLs: process bounded video clips directly from the URL
+- Other sources: download audio and transcribe using Gemini Flash
+- Cost: URL input is currently a Gemini preview feature; downloaded audio is billed by Gemini usage
 
 ---
 

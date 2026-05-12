@@ -2,8 +2,10 @@ import Link from "next/link";
 
 import { EmptyState } from "@/components/EmptyState";
 import { StatusBadge } from "@/components/StatusBadge";
+import { PageHeader, SectionTitle } from "@/components/ui";
 import { getLibraryData } from "@/lib/app-data";
 import { stageLabel } from "@/lib/format";
+import { sourceHost } from "@/lib/source";
 
 import { LibraryList } from "./LibraryList";
 
@@ -23,12 +25,10 @@ export default async function LibraryPage() {
 
   return (
     <div className="space-y-8">
-      <div>
-        <h1 className="text-3xl font-semibold tracking-tight">Library</h1>
-        <p className="mt-3 max-w-2xl text-sm leading-6 text-muted">
-          Recent saved notes and import jobs that still need attention.
-        </p>
-      </div>
+      <PageHeader
+        title="Library"
+        description="Search saved notes, scan source context, and return to import jobs that still need attention."
+      />
 
       {data.notes.length === 0 ? (
         <EmptyState
@@ -41,12 +41,16 @@ export default async function LibraryPage() {
 
       {data.jobs.length > 0 ? (
         <section>
-          <h2 className="mb-3 text-lg font-semibold">Needs attention</h2>
-          <div className="divide-y divide-border border border-border bg-surface">
+          <SectionTitle title="Needs attention" description="Queued, running, failed, or cancelled jobs remain visible here." />
+          <div className="divide-y divide-border border border-border bg-surface shadow-soft">
             {data.jobs.map((job) => (
-              <Link key={job.id} href={`/app/jobs/${job.id}`} className="flex items-center justify-between gap-4 p-4 hover:bg-surface-strong">
+              <Link
+                key={job.id}
+                href={`/app/jobs/${job.id}`}
+                className="flex items-center justify-between gap-4 p-4 transition hover:bg-surface-strong"
+              >
                 <div>
-                  <p className="font-mono text-xs text-muted">{job.id.slice(0, 8)}</p>
+                  <p className="font-semibold">{sourceHost(job.source?.url)}</p>
                   <p className="mt-1 text-sm text-muted">{stageLabel(job.stage)}</p>
                 </div>
                 <StatusBadge status={job.status} />

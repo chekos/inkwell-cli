@@ -3,15 +3,28 @@ import type { Database } from "@/lib/database.types";
 
 type ImportJobRow = Database["public"]["Tables"]["import_jobs"]["Row"];
 type NoteRow = Database["public"]["Tables"]["notes"]["Row"];
-type DashboardJob = Pick<
+type SourceRow = Database["public"]["Tables"]["sources"]["Row"];
+
+export type SourceSummary = Pick<SourceRow, "url" | "title" | "source_type">;
+
+export type DashboardJob = Pick<
   ImportJobRow,
   "id" | "status" | "stage" | "error_message" | "created_at" | "finished_at"
->;
-type DashboardNote = Pick<NoteRow, "id" | "title" | "summary" | "created_at" | "source_id">;
+> & {
+  source: SourceSummary | null;
+};
+
+export type DashboardNote = Pick<NoteRow, "id" | "title" | "summary" | "created_at" | "updated_at" | "source_id"> & {
+  source: SourceSummary | null;
+};
+
 export type LibraryNote = Pick<
   NoteRow,
   "id" | "title" | "summary" | "created_at" | "updated_at"
->;
+> & {
+  source: SourceSummary | null;
+};
+
 type JobDetail = Pick<
   ImportJobRow,
   | "id"
@@ -23,7 +36,10 @@ type JobDetail = Pick<
   | "started_at"
   | "finished_at"
   | "source_id"
->;
+> & {
+  source: SourceSummary | null;
+};
+
 type NoteDetail = Pick<
   NoteRow,
   | "id"
@@ -35,7 +51,10 @@ type NoteDetail = Pick<
   | "updated_at"
   | "source_id"
   | "import_job_id"
->;
+> & {
+  source: SourceSummary | null;
+};
+
 type JobNote = Pick<NoteRow, "id">;
 
 export async function getCurrentUser() {
@@ -66,12 +85,12 @@ export async function getDashboardData() {
   const [notesResult, jobsResult] = await Promise.all([
     supabase
       .from("notes")
-      .select("id,title,summary,created_at,source_id")
+      .select("id,title,summary,created_at,updated_at,source_id,source:sources(url,title,source_type)")
       .order("created_at", { ascending: false })
       .limit(5),
     supabase
       .from("import_jobs")
-      .select("id,status,stage,error_message,created_at,finished_at")
+      .select("id,status,stage,error_message,created_at,finished_at,source:sources(url,title,source_type)")
       .order("created_at", { ascending: false })
       .limit(5),
   ]);
@@ -92,11 +111,11 @@ export async function getLibraryData() {
   const [notesResult, jobsResult] = await Promise.all([
     supabase
       .from("notes")
-      .select("id,title,summary,created_at,updated_at")
+      .select("id,title,summary,created_at,updated_at,source:sources(url,title,source_type)")
       .order("created_at", { ascending: false }),
     supabase
       .from("import_jobs")
-      .select("id,status,stage,error_message,created_at,finished_at")
+      .select("id,status,stage,error_message,created_at,finished_at,source:sources(url,title,source_type)")
       .neq("status", "succeeded")
       .order("created_at", { ascending: false }),
   ]);
@@ -116,7 +135,7 @@ export async function getJob(id: string) {
 
   const { data } = await supabase
     .from("import_jobs")
-    .select("id,status,stage,error_code,error_message,created_at,started_at,finished_at,source_id")
+    .select("id,status,stage,error_code,error_message,created_at,started_at,finished_at,source_id,source:sources(url,title,source_type)")
     .eq("id", id)
     .single();
 
@@ -146,7 +165,7 @@ export async function getNote(id: string) {
 
   const { data } = await supabase
     .from("notes")
-    .select("id,title,body_markdown,summary,metadata,created_at,updated_at,source_id,import_job_id")
+    .select("id,title,body_markdown,summary,metadata,created_at,updated_at,source_id,import_job_id,source:sources(url,title,source_type)")
     .eq("id", id)
     .single();
 

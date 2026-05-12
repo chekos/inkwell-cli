@@ -19,8 +19,9 @@ const STYLES: Record<ImportJobStatus, string> = {
 export function StatusBadge({ status }: { status: ImportJobStatus }) {
   return (
     <span
-      className={`inline-flex h-7 items-center rounded-full border px-2.5 text-xs font-medium ${STYLES[status]}`}
+      className={`inline-flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-xs font-semibold ${STYLES[status]}`}
     >
+      <span aria-hidden="true" className="size-1.5 rounded-full bg-current" />
       {LABELS[status]}
     </span>
   );

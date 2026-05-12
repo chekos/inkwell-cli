@@ -1,6 +1,12 @@
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
+import { slugifyHeading } from "@/lib/markdown";
+
+function headingText(children: React.ReactNode) {
+  return Array.isArray(children) ? children.join("") : String(children);
+}
+
 export function MarkdownViewer({ markdown }: { markdown: string }) {
   return (
     <article className="max-w-none">
@@ -8,17 +14,26 @@ export function MarkdownViewer({ markdown }: { markdown: string }) {
         remarkPlugins={[remarkGfm]}
         components={{
           h1: ({ children }) => (
-            <h1 className="mb-4 text-2xl font-semibold tracking-normal text-[var(--foreground)]">
+            <h1
+              id={slugifyHeading(headingText(children))}
+              className="mb-4 scroll-mt-8 text-2xl font-semibold tracking-normal text-[var(--foreground)]"
+            >
               {children}
             </h1>
           ),
           h2: ({ children }) => (
-            <h2 className="mb-3 mt-8 text-xl font-semibold tracking-normal text-[var(--foreground)]">
+            <h2
+              id={slugifyHeading(headingText(children))}
+              className="mb-3 mt-8 scroll-mt-8 text-xl font-semibold tracking-normal text-[var(--foreground)]"
+            >
               {children}
             </h2>
           ),
           h3: ({ children }) => (
-            <h3 className="mb-2 mt-6 text-base font-semibold text-[var(--foreground)]">
+            <h3
+              id={slugifyHeading(headingText(children))}
+              className="mb-2 mt-6 scroll-mt-8 text-base font-semibold text-[var(--foreground)]"
+            >
               {children}
             </h3>
           ),

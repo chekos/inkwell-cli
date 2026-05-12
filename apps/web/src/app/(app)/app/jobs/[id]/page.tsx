@@ -1,10 +1,14 @@
 import Link from "next/link";
+import { ArrowRight, ExternalLink } from "lucide-react";
 import { notFound } from "next/navigation";
 
 import { JobAutoRefresh } from "@/components/JobAutoRefresh";
+import { JobTimeline } from "@/components/JobTimeline";
 import { StatusBadge } from "@/components/StatusBadge";
-import { formatDate, stageLabel } from "@/lib/format";
+import { PageHeader, Panel } from "@/components/ui";
+import { formatDate } from "@/lib/format";
 import { getJob, getJobNote } from "@/lib/app-data";
+import { detectSourceKind, sourceHost, sourceKindLabel } from "@/lib/source";
 
 export default async function JobPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -16,67 +20,78 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
   }
 
   const jobIsActive = job.status === "queued" || job.status === "running";
+  const sourceKind = sourceKindLabel(job.source?.source_type ?? detectSourceKind(job.source?.url));
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6">
+    <div className="mx-auto max-w-5xl space-y-6">
       <JobAutoRefresh active={jobIsActive} />
-      <div className="flex items-start justify-between gap-4 border-b border-border pb-6">
-        <div>
-          <p className="font-mono text-xs text-muted">{job.id}</p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-tight">Import job</h1>
-        </div>
-        <StatusBadge status={job.status} />
-      </div>
 
-      <section className="border border-border bg-surface p-5">
-        <dl className="grid gap-5 sm:grid-cols-2">
-          <div>
-            <dt className="text-xs font-semibold uppercase text-muted">Stage</dt>
-            <dd className="mt-1 text-sm">{stageLabel(job.stage)}</dd>
+      <PageHeader
+        title={job.source?.title ?? "Import job"}
+        description={`${sourceKind} from ${sourceHost(job.source?.url)}.`}
+        meta={
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-mono text-xs text-muted">{job.id}</span>
+            <StatusBadge status={job.status} />
           </div>
-          <div>
-            <dt className="text-xs font-semibold uppercase text-muted">Created</dt>
-            <dd className="mt-1 text-sm">{formatDate(job.created_at)}</dd>
-          </div>
-          <div>
-            <dt className="text-xs font-semibold uppercase text-muted">Started</dt>
-            <dd className="mt-1 text-sm">{formatDate(job.started_at)}</dd>
-          </div>
-          <div>
-            <dt className="text-xs font-semibold uppercase text-muted">Finished</dt>
-            <dd className="mt-1 text-sm">{formatDate(job.finished_at)}</dd>
-          </div>
-        </dl>
-      </section>
-
-      {job.status === "failed" ? (
-        <section className="border border-danger/30 bg-danger/10 p-5">
-          <h2 className="font-semibold text-danger">Import failed</h2>
-          <p className="mt-2 text-sm leading-6 text-muted">
-            {job.error_message ?? "The worker could not finish this import."}
-          </p>
-          <Link href="/app/new" className="mt-4 inline-flex text-sm font-semibold text-accent">
-            Start another import
-          </Link>
-        </section>
-      ) : null}
-
-      {job.status === "succeeded" ? (
-        <section className="border border-accent/30 bg-accent/10 p-5">
-          <h2 className="font-semibold text-accent">Import complete</h2>
-          <p className="mt-2 text-sm leading-6 text-muted">
-            The worker finished and saved this import to your library.
-          </p>
-          {note ? (
+        }
+        action={
+          note ? (
             <Link
               href={`/app/notes/${note.id}`}
-              className="mt-4 inline-flex h-10 items-center rounded-sm bg-accent px-3 text-sm font-semibold text-accent-foreground"
+              className="inline-flex h-10 items-center gap-2 rounded-sm bg-accent px-3 text-sm font-semibold text-accent-foreground transition hover:bg-accent-strong"
             >
               Open note
+              <ArrowRight aria-hidden="true" className="size-4" />
             </Link>
-          ) : null}
-        </section>
-      ) : null}
+          ) : null
+        }
+      />
+
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_18rem]">
+        <JobTimeline
+          status={job.status}
+          stage={job.stage}
+          errorMessage={job.error_message}
+          createdAt={job.created_at}
+          startedAt={job.started_at}
+          finishedAt={job.finished_at}
+        />
+
+        <Panel>
+          <h2 className="text-lg font-semibold tracking-tight">Job details</h2>
+          <dl className="mt-5 space-y-4 text-sm">
+            <div>
+              <dt className="text-xs font-semibold uppercase text-muted">Created</dt>
+              <dd className="mt-1">{formatDate(job.created_at)}</dd>
+            </div>
+            <div>
+              <dt className="text-xs font-semibold uppercase text-muted">Started</dt>
+              <dd className="mt-1">{formatDate(job.started_at)}</dd>
+            </div>
+            <div>
+              <dt className="text-xs font-semibold uppercase text-muted">Finished</dt>
+              <dd className="mt-1">{formatDate(job.finished_at)}</dd>
+            </div>
+            {job.source?.url ? (
+              <div>
+                <dt className="text-xs font-semibold uppercase text-muted">Source</dt>
+                <dd className="mt-1">
+                  <a
+                    href={job.source.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 break-all font-medium text-accent hover:underline"
+                  >
+                    {sourceHost(job.source.url)}
+                    <ExternalLink aria-hidden="true" className="size-3" />
+                  </a>
+                </dd>
+              </div>
+            ) : null}
+          </dl>
+        </Panel>
+      </div>
     </div>
   );
 }

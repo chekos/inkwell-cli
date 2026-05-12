@@ -2,7 +2,7 @@
 
 import { ArrowRight, Link2, Loader2, Radio, Sparkles } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useRef, useState, useTransition } from "react";
 
 import { detectSourceKind, sourceKindLabel } from "@/lib/source";
 
@@ -25,13 +25,21 @@ export function ImportCommand({
   const [url, setUrl] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const submittingRef = useRef(false);
   const [isPending, startTransition] = useTransition();
 
   const sourceKind = useMemo(() => detectSourceKind(url), [url]);
   const sourceLabel = sourceKindLabel(sourceKind);
+  const isBusy = isSubmitting || isPending;
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
+    if (submittingRef.current) {
+      return;
+    }
+
     setError(null);
     setNotice(null);
 
@@ -43,22 +51,34 @@ export function ImportCommand({
       return;
     }
 
-    const response = await fetch("/api/imports", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ url: normalizedUrl }),
-    });
+    submittingRef.current = true;
+    setIsSubmitting(true);
 
-    const payload = (await response.json()) as ImportPayload;
+    let response: Response;
+    let payload: ImportPayload;
+
+    try {
+      response = await fetch("/api/imports", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ url: normalizedUrl }),
+      });
+      payload = (await response.json()) as ImportPayload;
+    } catch {
+      submittingRef.current = false;
+      setIsSubmitting(false);
+      setError("Could not reach Inkwell. Check your connection and try again.");
+      return;
+    }
 
     if (!response.ok || !payload.statusUrl) {
+      submittingRef.current = false;
+      setIsSubmitting(false);
       setError(payload.error ?? "Could not create the import job.");
       return;
     }
 
-    if (payload.dispatchReason) {
-      setNotice(payload.dispatchReason);
-    }
+    setNotice(payload.dispatchReason ?? "Import job created. Opening the status page.");
 
     startTransition(() => {
       router.push(payload.statusUrl!);
@@ -66,7 +86,7 @@ export function ImportCommand({
   }
 
   return (
-    <form onSubmit={submit} className={variant === "full" ? "space-y-5" : "space-y-4"}>
+    <form aria-busy={isBusy} onSubmit={submit} className={variant === "full" ? "space-y-5" : "space-y-4"}>
       <div className="flex items-start gap-3">
         <span className="grid size-10 shrink-0 place-items-center rounded-sm bg-accent/10 text-accent">
           <Sparkles aria-hidden="true" className="size-5" />
@@ -84,11 +104,13 @@ export function ImportCommand({
           <input
             id="source-url"
             type="url"
+            aria-label="Source URL"
             required
             value={url}
+            disabled={isBusy}
             onChange={(event) => setUrl(event.target.value)}
             placeholder="https://www.youtube.com/watch?v=..."
-            className="min-w-0 flex-1 bg-transparent text-base outline-none placeholder:text-muted/70"
+            className="min-w-0 flex-1 bg-transparent text-base outline-none placeholder:text-muted/70 disabled:cursor-not-allowed disabled:text-muted"
           />
           {sourceKind !== "unknown" ? (
             <span className="hidden shrink-0 rounded-sm border border-border bg-surface px-2 py-1 text-xs font-semibold text-muted sm:inline-flex">
@@ -114,6 +136,11 @@ export function ImportCommand({
           {error}
         </p>
       ) : null}
+      {isSubmitting ? (
+        <p role="status" className="border border-accent/30 bg-accent/10 px-3 py-2 text-sm font-medium text-accent">
+          Creating import job. The worker will open on the status page when it is ready.
+        </p>
+      ) : null}
       {notice ? (
         <p role="status" className="border border-warning/30 bg-warning/10 px-3 py-2 text-sm font-medium text-warning">
           {notice}
@@ -122,11 +149,11 @@ export function ImportCommand({
 
       <button
         type="submit"
-        disabled={isPending}
+        disabled={isBusy}
         className="inline-flex h-11 items-center justify-center gap-2 rounded-sm bg-accent px-4 text-sm font-semibold text-accent-foreground transition hover:bg-accent-strong disabled:cursor-not-allowed disabled:opacity-60"
       >
-        {isPending ? <Loader2 aria-hidden="true" className="size-4 animate-spin" /> : <ArrowRight aria-hidden="true" className="size-4" />}
-        {isPending ? "Creating job..." : "Start import"}
+        {isBusy ? <Loader2 aria-hidden="true" className="size-4 animate-spin" /> : <ArrowRight aria-hidden="true" className="size-4" />}
+        {isBusy ? "Creating import..." : "Start import"}
       </button>
     </form>
   );

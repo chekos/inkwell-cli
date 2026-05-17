@@ -2,6 +2,8 @@
 
 -
 
+/cc @codex
+
 ## Validation
 
 - [ ] `uv run ruff check .`
@@ -17,6 +19,8 @@
 
 ## Agent Review
 
+- [ ] @codex review clean (no unresolved comments)
+- [ ] Ready for Sergio's merge approval
 - [ ] Code quality review requested when behavior changed
 - [ ] Security/data-integrity review requested when credentials, files, paths, or external input changed
 - [ ] Docs/release review requested when packaging, CI, or public docs changed

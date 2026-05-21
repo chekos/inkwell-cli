@@ -1095,6 +1095,47 @@ class TestCLIFetchSaveFeed:
         assert result.exit_code != 0
         assert "Playlist" in result.stdout or "playlist" in result.stdout
 
+    def test_fetch_local_file_is_recognized_but_not_processed_yet(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """Phase 1 recognizes local files without routing them through fetch yet."""
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+
+        local_media = tmp_path / "episode.mp3"
+        local_media.write_bytes(b"fake audio")
+
+        result = runner.invoke(
+            app,
+            [
+                "fetch",
+                str(local_media),
+                "--dry-run",
+            ],
+        )
+
+        assert result.exit_code != 0
+        assert "Local file ingestion is recognized" in result.output
+        assert "saved feed or media URL" in result.output
+
+    def test_fetch_stdin_is_recognized_but_not_processed_yet(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """Phase 1 recognizes stdin without introducing text ingestion yet."""
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+
+        result = runner.invoke(
+            app,
+            [
+                "fetch",
+                "-",
+                "--dry-run",
+            ],
+        )
+
+        assert result.exit_code != 0
+        assert "Stdin ingestion is recognized" in result.output
+        assert "saved feed or media URL" in result.output
+
 
 class TestCLIFetchHintSuppression:
     """The --save-feed hint must not fire when the fetch itself failed."""

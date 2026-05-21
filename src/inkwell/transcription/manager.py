@@ -21,6 +21,7 @@ from inkwell.plugins.types.transcription import TranscriptionPlugin, Transcripti
 from inkwell.transcription.cache import TranscriptCache
 from inkwell.transcription.gemini import CostEstimate, GeminiTranscriber
 from inkwell.transcription.models import Transcript, TranscriptionResult
+from inkwell.transcription.policy import TranscriptionAttemptKind, TranscriptionAttemptPolicy
 from inkwell.transcription.youtube import YouTubeTranscriber
 from inkwell.utils.errors import APIError
 
@@ -56,6 +57,7 @@ class TranscriptionManager:
         cost_confirmation_callback: Callable[[CostEstimate], bool] | None = None,
         cost_tracker: "CostTracker | None" = None,
         use_plugin_registry: bool = True,
+        attempt_policy: TranscriptionAttemptPolicy | None = None,
     ):
         """Initialize transcription manager.
 
@@ -71,6 +73,7 @@ class TranscriptionManager:
             cost_confirmation_callback: Callback for Gemini cost confirmation
             cost_tracker: Cost tracker for recording API usage (optional, for DI)
             use_plugin_registry: Whether to load transcribers from plugin registry (default: True)
+            attempt_policy: Ordered fallback policy (default: built-in policy)
 
         Note:
             Prefer passing `config` over individual parameters. Individual parameters
@@ -98,6 +101,7 @@ class TranscriptionManager:
         )
         self.cost_tracker = cost_tracker
         self._use_plugin_registry = use_plugin_registry
+        self.attempt_policy = attempt_policy or TranscriptionAttemptPolicy()
 
         self._config = config
         self._gemini_api_key = gemini_api_key
@@ -280,69 +284,11 @@ class TranscriptionManager:
             if progress_callback:
                 progress_callback(step, kwargs)
 
-        override = transcriber_override or os.environ.get("INKWELL_TRANSCRIBER")
-        local_media_path = self._local_media_path(episode_url)
-        if override:
-            return await self._transcribe_with_override(
-                override,
-                episode_url,
-                use_cache,
-                auth_username,
-                auth_password,
-                progress_callback,
-                local_media_path=local_media_path,
-            )
+        def _record_attempt(provider: str) -> None:
+            if provider not in attempts:
+                attempts.append(provider)
 
-        if local_media_path is not None:
-            return await self._transcribe_local_media(
-                local_media_path,
-                episode_url,
-                progress_callback,
-            )
-
-        is_youtube_url = self._is_youtube_url(episode_url)
-
-        if use_cache:
-            _progress("checking_cache")
-            attempts.append("cache")
-            cached = await self.cache.get(episode_url)
-            if cached:
-                duration = (datetime.now(timezone.utc) - start_time).total_seconds()
-                return TranscriptionResult(
-                    success=True,
-                    transcript=cached,
-                    attempts=attempts,
-                    duration_seconds=duration,
-                    cost_usd=0.0,  # Cache hit is free
-                    from_cache=True,
-                )
-
-        if not skip_youtube and await self.youtube_transcriber.can_transcribe(episode_url):
-            _progress("trying_youtube")
-            attempts.append("youtube")
-            try:
-                transcript = await self.youtube_transcriber.transcribe(episode_url)
-
-                if use_cache:
-                    _progress("caching_result")
-                    await self.cache.set(episode_url, transcript)
-
-                duration = (datetime.now(timezone.utc) - start_time).total_seconds()
-                return TranscriptionResult(
-                    success=True,
-                    transcript=transcript,
-                    attempts=attempts,
-                    duration_seconds=duration,
-                    cost_usd=0.0,  # YouTube tier is free
-                    from_cache=False,
-                )
-
-            except APIError:
-                # YouTube failed - continue to Gemini tier
-                pass
-
-        if self.gemini_transcriber is None:
-            # Gemini not available - provide helpful error message
+        def _gemini_unavailable_result() -> TranscriptionResult:
             duration = (datetime.now(timezone.utc) - start_time).total_seconds()
             error_msg = "Transcription failed: No transcript source available.\n\nAttempted:\n"
             if "youtube" in attempts:
@@ -362,94 +308,25 @@ class TranscriptionManager:
                 from_cache=False,
             )
 
-        gemini_attempt_recorded = False
-        direct_youtube_transcriber = getattr(
-            self.gemini_transcriber, "transcribe_youtube_url", None
-        )
-        if is_youtube_url and callable(direct_youtube_transcriber):
-            attempts.append("gemini")
-            gemini_attempt_recorded = True
-            try:
-                _progress("transcribing_gemini_youtube", url=episode_url)
-                transcript = await direct_youtube_transcriber(episode_url)
-
-                try:
-                    if transcript.cost_usd:
-                        total_cost += transcript.cost_usd
-                except Exception as e:
-                    logger.warning(f"Failed to track transcription cost: {e}")
-
-                if use_cache:
-                    _progress("caching_result")
-                    await self.cache.set(episode_url, transcript)
-
-                duration = (datetime.now(timezone.utc) - start_time).total_seconds()
-                return TranscriptionResult(
-                    success=True,
-                    transcript=transcript,
-                    attempts=attempts,
-                    duration_seconds=duration,
-                    cost_usd=total_cost,
-                    from_cache=False,
-                )
-            except Exception as e:
-                logger.warning(f"Gemini YouTube URL transcription failed: {e}")
-
-        if not gemini_attempt_recorded:
-            attempts.append("gemini")
-
-        try:
-            # Download audio (with auth credentials for private feeds)
-            _progress("downloading_audio", url=episode_url)
-            audio_path = await self.audio_downloader.download(
-                episode_url,
-                username=auth_username,
-                password=auth_password,
-            )
-
-            # Transcribe with Gemini
-            _progress("transcribing_gemini", audio_path=str(audio_path))
-            transcript = await self.gemini_transcriber.transcribe(audio_path, episode_url)
-
-            # Track cost (non-critical - don't fail transcription on cost tracking errors)
-            try:
-                if transcript.cost_usd:
-                    total_cost += transcript.cost_usd
-
-                    if self.cost_tracker:
-                        # Estimate token counts from transcript
-                        # Note: This is approximate; real counts would come from Gemini API
-                        transcript_tokens = len(transcript.full_text) // 4
-                        self.cost_tracker.add_cost(
-                            provider="gemini",
-                            model="gemini-2.5-flash",
-                            operation="transcription",
-                            input_tokens=transcript_tokens,
-                            output_tokens=transcript_tokens,
-                            episode_title=None,  # Not available here
-                        )
-            except Exception as e:
-                logger.warning(f"Failed to track transcription cost: {e}")
-
-            if use_cache:
-                _progress("caching_result")
-                await self.cache.set(episode_url, transcript)
-
+        def _no_source_result() -> TranscriptionResult:
             duration = (datetime.now(timezone.utc) - start_time).total_seconds()
+            attempted = ", ".join(attempts) if attempts else "none"
             return TranscriptionResult(
-                success=True,
-                transcript=transcript,
+                success=False,
+                error=(
+                    "Transcription failed: no transcript source produced a transcript.\n\n"
+                    f"Attempted: {attempted}"
+                ),
                 attempts=attempts,
                 duration_seconds=duration,
                 cost_usd=total_cost,
                 from_cache=False,
             )
 
-        except Exception as e:
-            # All tiers failed - provide detailed error message
+        def _audio_failure_result(error: Exception) -> TranscriptionResult:
             duration = (datetime.now(timezone.utc) - start_time).total_seconds()
 
-            error_str = str(e)
+            error_str = str(error)
             error_msg = f"Transcription failed after {duration:.1f}s.\n\n"
 
             if "timeout" in error_str.lower() or "timed out" in error_str.lower():
@@ -474,7 +351,7 @@ class TranscriptionManager:
                     "  • Private feed requires authentication\n"
                     "  • Network connectivity issues\n"
                     "  • yt-dlp is outdated or blocked by the source site\n\n"
-                    f"Error details: {e}"
+                    f"Error details: {error}"
                 )
             elif "401" in error_str or "403" in error_str or "invalid" in error_str.lower():
                 error_msg += (
@@ -484,7 +361,7 @@ class TranscriptionManager:
                     "Get a new key at: https://aistudio.google.com/apikey"
                 )
             else:
-                error_msg += f"Error details: {e}"
+                error_msg += f"Error details: {error}"
 
             return TranscriptionResult(
                 success=False,
@@ -494,6 +371,177 @@ class TranscriptionManager:
                 cost_usd=total_cost,
                 from_cache=False,
             )
+
+        override = transcriber_override or os.environ.get("INKWELL_TRANSCRIBER")
+        local_media_path = self._local_media_path(episode_url)
+        if override:
+            return await self._transcribe_with_override(
+                override,
+                episode_url,
+                use_cache,
+                auth_username,
+                auth_password,
+                progress_callback,
+                local_media_path=local_media_path,
+            )
+
+        is_youtube_url = self._is_youtube_url(episode_url)
+        attempt_plan = self.attempt_policy.plan(
+            use_cache=use_cache,
+            skip_youtube=skip_youtube,
+            is_youtube_url=is_youtube_url,
+            is_local_media=local_media_path is not None,
+        )
+
+        for attempt in attempt_plan:
+            if attempt.kind is TranscriptionAttemptKind.GEMINI_LOCAL_MEDIA:
+                assert local_media_path is not None
+                return await self._transcribe_local_media(
+                    local_media_path,
+                    episode_url,
+                    progress_callback,
+                )
+
+            if attempt.kind is TranscriptionAttemptKind.CACHE:
+                _progress("checking_cache")
+                _record_attempt(attempt.record_as)
+                cached = await self.cache.get(episode_url)
+                if cached:
+                    duration = (datetime.now(timezone.utc) - start_time).total_seconds()
+                    return TranscriptionResult(
+                        success=True,
+                        transcript=cached,
+                        attempts=attempts,
+                        duration_seconds=duration,
+                        cost_usd=0.0,  # Cache hit is free
+                        from_cache=True,
+                    )
+                continue
+
+            if attempt.kind is TranscriptionAttemptKind.YOUTUBE_TRANSCRIPT:
+                if not await self.youtube_transcriber.can_transcribe(episode_url):
+                    continue
+
+                _progress("trying_youtube")
+                _record_attempt(attempt.record_as)
+                try:
+                    transcript = await self.youtube_transcriber.transcribe(episode_url)
+
+                    if use_cache:
+                        _progress("caching_result")
+                        await self.cache.set(episode_url, transcript)
+
+                    duration = (datetime.now(timezone.utc) - start_time).total_seconds()
+                    return TranscriptionResult(
+                        success=True,
+                        transcript=transcript,
+                        attempts=attempts,
+                        duration_seconds=duration,
+                        cost_usd=0.0,  # YouTube tier is free
+                        from_cache=False,
+                    )
+
+                except APIError:
+                    # YouTube failed - continue to the next policy attempt.
+                    continue
+
+            if attempt.kind is TranscriptionAttemptKind.GEMINI_YOUTUBE_URL:
+                gemini_transcriber = self.gemini_transcriber
+                if gemini_transcriber is None:
+                    return _gemini_unavailable_result()
+
+                direct_youtube_transcriber = getattr(
+                    gemini_transcriber, "transcribe_youtube_url", None
+                )
+                if not callable(direct_youtube_transcriber):
+                    continue
+
+                _record_attempt(attempt.record_as)
+                try:
+                    _progress("transcribing_gemini_youtube", url=episode_url)
+                    transcript = await direct_youtube_transcriber(episode_url)
+
+                    try:
+                        if transcript.cost_usd:
+                            total_cost += transcript.cost_usd
+                    except Exception as e:
+                        logger.warning(f"Failed to track transcription cost: {e}")
+
+                    if use_cache:
+                        _progress("caching_result")
+                        await self.cache.set(episode_url, transcript)
+
+                    duration = (datetime.now(timezone.utc) - start_time).total_seconds()
+                    return TranscriptionResult(
+                        success=True,
+                        transcript=transcript,
+                        attempts=attempts,
+                        duration_seconds=duration,
+                        cost_usd=total_cost,
+                        from_cache=False,
+                    )
+                except Exception as e:
+                    logger.warning(f"Gemini YouTube URL transcription failed: {e}")
+                    continue
+
+            if attempt.kind is TranscriptionAttemptKind.GEMINI_AUDIO:
+                gemini_transcriber = self.gemini_transcriber
+                if gemini_transcriber is None:
+                    return _gemini_unavailable_result()
+
+                _record_attempt(attempt.record_as)
+                try:
+                    # Download audio (with auth credentials for private feeds)
+                    _progress("downloading_audio", url=episode_url)
+                    audio_path = await self.audio_downloader.download(
+                        episode_url,
+                        username=auth_username,
+                        password=auth_password,
+                    )
+
+                    # Transcribe with Gemini
+                    _progress("transcribing_gemini", audio_path=str(audio_path))
+                    transcript = await gemini_transcriber.transcribe(audio_path, episode_url)
+
+                    # Track cost (non-critical - don't fail transcription on cost tracking errors)
+                    try:
+                        if transcript.cost_usd:
+                            total_cost += transcript.cost_usd
+
+                            if self.cost_tracker:
+                                # Estimate token counts from transcript
+                                # Note: This is approximate; real counts would come from Gemini API
+                                transcript_tokens = len(transcript.full_text) // 4
+                                self.cost_tracker.add_cost(
+                                    provider="gemini",
+                                    model="gemini-2.5-flash",
+                                    operation="transcription",
+                                    input_tokens=transcript_tokens,
+                                    output_tokens=transcript_tokens,
+                                    episode_title=None,  # Not available here
+                                )
+                    except Exception as e:
+                        logger.warning(f"Failed to track transcription cost: {e}")
+
+                    if use_cache:
+                        _progress("caching_result")
+                        await self.cache.set(episode_url, transcript)
+
+                    duration = (datetime.now(timezone.utc) - start_time).total_seconds()
+                    return TranscriptionResult(
+                        success=True,
+                        transcript=transcript,
+                        attempts=attempts,
+                        duration_seconds=duration,
+                        cost_usd=total_cost,
+                        from_cache=False,
+                    )
+
+                except Exception as e:
+                    # All policy attempts failed - provide detailed error message.
+                    return _audio_failure_result(e)
+
+        return _no_source_result()
 
     def _is_youtube_url(self, url: str) -> bool:
         """Return True for YouTube watch, shorts, live, and short-link URLs."""

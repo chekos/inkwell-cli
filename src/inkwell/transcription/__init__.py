@@ -29,6 +29,11 @@ from inkwell.transcription.models import (
     TranscriptionResult,
     TranscriptSegment,
 )
+from inkwell.transcription.policy import (
+    TranscriptionAttempt,
+    TranscriptionAttemptKind,
+    TranscriptionAttemptPolicy,
+)
 from inkwell.transcription.youtube import YouTubeTranscriber
 
 __all__ = [
@@ -40,6 +45,9 @@ __all__ = [
     "TranscriptCache",
     "TRANSCRIPT_CACHE_FORMAT_VERSION",
     "TranscriptionManager",
+    "TranscriptionAttempt",
+    "TranscriptionAttemptKind",
+    "TranscriptionAttemptPolicy",
     "TranscriptSegment",
     "TranscriptionResult",
     "YouTubeTranscriber",

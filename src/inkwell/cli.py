@@ -40,6 +40,7 @@ from inkwell.utils.errors import (
     ValidationError,
 )
 from inkwell.utils.progress import PipelineProgress
+from inkwell.utils.url_metadata import derive_readable_title_from_url
 
 app = typer.Typer(
     name="inkwell",
@@ -344,6 +345,97 @@ def _fetch_json_payload(
         "errors": [],
         "warnings": [],
     }
+
+
+def _validate_extract_only_options(
+    *,
+    json_output: bool,
+    dry_run: bool,
+    interview: bool,
+    interview_template: str | None,
+    interview_format: str | None,
+    max_questions: int | None,
+    no_resume: bool,
+    resume_session: str | None,
+    podcast_name: str | None,
+    templates: str | None,
+    category: str | None,
+    provider: str | None,
+    extractor: str | None,
+    skip_cache: bool,
+    save_feed: bool,
+) -> None:
+    """Reject fetch options that do not apply to transcript-only extraction."""
+    conflicts = []
+    if json_output:
+        conflicts.append("--json")
+    if dry_run:
+        conflicts.append("--dry-run")
+    if interview:
+        conflicts.append("--interview")
+    if interview_template:
+        conflicts.append("--interview-template")
+    if interview_format:
+        conflicts.append("--interview-format")
+    if max_questions is not None:
+        conflicts.append("--max-questions")
+    if no_resume:
+        conflicts.append("--no-resume")
+    if resume_session:
+        conflicts.append("--resume-session")
+    if podcast_name:
+        conflicts.append("--podcast-name")
+    if templates:
+        conflicts.append("--templates")
+    if category:
+        conflicts.append("--category")
+    if provider:
+        conflicts.append("--provider")
+    if extractor:
+        conflicts.append("--extractor")
+    if skip_cache:
+        conflicts.append("--skip-cache")
+    if save_feed:
+        conflicts.append("--save-feed")
+
+    if conflicts:
+        raise ValidationError(
+            f"--extract cannot be combined with {', '.join(conflicts)}",
+            suggestion=(
+                "Use regular 'inkwell fetch' for structured extraction, or run "
+                "'inkwell fetch SOURCE --extract' for transcript-only output."
+            ),
+        )
+
+
+def _extract_transcript_output_path(
+    *,
+    output_dir: Path,
+    title: str | None,
+    url: str,
+    used_filenames: set[str],
+    overwrite: bool,
+) -> Path:
+    """Choose an output path for a transcript-only extraction file."""
+    readable_title = title or derive_readable_title_from_url(url) or "transcript"
+    base_name = _slugify(readable_title) or "transcript"
+    filename = f"{base_name}.transcript.md"
+    path = output_dir / filename
+
+    if filename not in used_filenames and path.exists() and not overwrite:
+        raise FileExistsError(f"Transcript already exists: {path} (use --overwrite to replace it)")
+
+    suffix = 2
+    while filename in used_filenames:
+        filename = f"{base_name}-{suffix}.transcript.md"
+        path = output_dir / filename
+        suffix += 1
+
+    if path.exists() and not overwrite:
+        raise FileExistsError(f"Transcript already exists: {path} (use --overwrite to replace it)")
+
+    used_filenames.add(filename)
+    return path
 
 
 def _derive_feed_name(resolved: ResolvedFeed, existing: set[str]) -> str:
@@ -1130,6 +1222,11 @@ def fetch_command(
     ),
     skip_cache: bool = typer.Option(False, "--skip-cache", help="Skip extraction cache"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Show cost estimate without extracting"),
+    extract_only: bool = typer.Option(
+        False,
+        "--extract",
+        help="Emit transcript text only; skip structured extraction, interview, and note output.",
+    ),
     overwrite: bool = typer.Option(
         False, "--overwrite", help="Overwrite existing episode directory"
     ),
@@ -1219,11 +1316,32 @@ def fetch_command(
 
     async def run_fetch() -> None:
         nonlocal url_or_feed
-        machine_output = json_output or plain
+        machine_output = json_output or plain or extract_only
         status_console = err_console if machine_output else console
         processed_results = []
+        extract_transcripts: list[str] = []
+        extract_output_paths: list[Path] = []
+        extract_used_filenames: set[str] = set()
         try:
             _validate_machine_output_options(json_output=json_output, plain=plain)
+            if extract_only:
+                _validate_extract_only_options(
+                    json_output=json_output,
+                    dry_run=dry_run,
+                    interview=interview,
+                    interview_template=interview_template,
+                    interview_format=interview_format,
+                    max_questions=max_questions,
+                    no_resume=no_resume,
+                    resume_session=resume_session,
+                    podcast_name=podcast_name,
+                    templates=templates,
+                    category=category,
+                    provider=provider,
+                    extractor=extractor,
+                    skip_cache=skip_cache,
+                    save_feed=save_feed,
+                )
 
             manager = ConfigManager()
             config = manager.load_config()
@@ -1437,6 +1555,66 @@ def fetch_command(
                     # Direct YouTube URL: when yt-dlp provides a video title,
                     # use it so direct-URL capture folders are readable.
                     episode_title = pre_resolved.episode_title
+
+                if extract_only:
+                    transcription_manager = TranscriptionManager(
+                        config=config.transcription,
+                        media_cache=config.cache.media,
+                    )
+
+                    extract_substeps = {
+                        "checking_cache": "Checking transcript cache...",
+                        "trying_youtube": "Trying YouTube transcript...",
+                        "downloading_audio": "Downloading audio...",
+                        "transcribing_gemini": "Transcribing with Gemini...",
+                        "transcribing_gemini_youtube": "Transcribing YouTube URL with Gemini...",
+                        "caching_result": "Caching transcript...",
+                    }
+
+                    with Progress(
+                        SpinnerColumn(),
+                        TextColumn("[progress.description]{task.description}"),
+                        console=status_console,
+                    ) as progress:
+                        task = progress.add_task("Extracting transcript...", total=None)
+
+                        def handle_extract_progress(step: str, _data: dict) -> None:
+                            progress.update(task, description=extract_substeps.get(step, step))
+
+                        transcript_result = await transcription_manager.transcribe(
+                            url,
+                            use_cache=True,
+                            auth_username=auth_username,
+                            auth_password=auth_password,
+                            progress_callback=handle_extract_progress,
+                            transcriber_override=transcriber,
+                        )
+                        progress.update(task, completed=True)
+
+                    if not transcript_result.success or transcript_result.transcript is None:
+                        raise InkwellError(
+                            "Transcript extraction failed",
+                            suggestion=transcript_result.error,
+                        )
+
+                    transcript_text = transcript_result.transcript.full_text
+
+                    if output_dir is not None:
+                        output_dir.mkdir(parents=True, exist_ok=True)
+                        transcript_path = _extract_transcript_output_path(
+                            output_dir=output_dir,
+                            title=episode_title,
+                            url=url,
+                            used_filenames=extract_used_filenames,
+                            overwrite=overwrite,
+                        )
+                        transcript_path.write_text(transcript_text, encoding="utf-8")
+                        extract_output_paths.append(transcript_path)
+                        status_console.print(f"[green]✓[/green] Wrote {transcript_path}")
+                    else:
+                        extract_transcripts.append(transcript_text)
+
+                    continue
 
                 # Compute effective output directory
                 effective_output_dir = base_output_dir
@@ -1677,6 +1855,13 @@ def fetch_command(
                         "\n[dim]Want to track this channel? Re-run with "
                         "[cyan]--save-feed[/cyan] to save it as a feed.[/dim]"
                     )
+
+            if extract_only:
+                if output_dir is None:
+                    print("\n\n".join(extract_transcripts))
+                elif plain:
+                    print("\n".join(str(path) for path in extract_output_paths))
+                return
 
             if json_output:
                 _print_json_payload(

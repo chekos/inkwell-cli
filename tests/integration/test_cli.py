@@ -472,6 +472,134 @@ class TestCLIFetchMachineOutput:
         assert result.stdout == ""
 
 
+class TestCLIFetchExtractOnly:
+    """Tests for `inkwell fetch --extract` transcript-only mode."""
+
+    def test_fetch_extract_outputs_transcript_to_stdout_and_skips_pipeline(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """Transcript-only mode does not run structured extraction or write notes."""
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+        seen: dict[str, object] = {}
+
+        async def fake_transcribe(_manager, episode_url: str, **kwargs):
+            seen["url"] = episode_url
+            seen["kwargs"] = kwargs
+            return _sample_transcription_result()
+
+        async def fail_process(*_args, **_kwargs):
+            raise AssertionError("Pipeline should not run in --extract mode")
+
+        monkeypatch.setattr("inkwell.cli.TranscriptionManager.transcribe", fake_transcribe)
+        monkeypatch.setattr("inkwell.pipeline.PipelineOrchestrator.process_episode", fail_process)
+
+        result = runner.invoke(
+            app,
+            ["fetch", "https://example.com/great-talk.mp3", "--extract"],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert result.stdout == "Hello world\n"
+        assert "Inkwell Extraction Pipeline" not in result.stdout
+        assert "Inkwell Extraction Pipeline" not in result.stderr
+        assert seen["url"] == "https://example.com/great-talk.mp3"
+
+    def test_fetch_extract_writes_transcript_file_when_output_dir_requested(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """An explicit output directory writes transcript-only files, not note folders."""
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+        output_dir = tmp_path / "transcripts"
+
+        async def fake_transcribe(*_args, **_kwargs):
+            return _sample_transcription_result()
+
+        monkeypatch.setattr("inkwell.cli.TranscriptionManager.transcribe", fake_transcribe)
+
+        result = runner.invoke(
+            app,
+            [
+                "fetch",
+                "https://example.com/great-talk.mp3",
+                "--extract",
+                "--output-dir",
+                str(output_dir),
+                "--plain",
+            ],
+        )
+
+        expected_path = output_dir / "great-talk.transcript.md"
+        assert result.exit_code == 0, result.output
+        assert result.stdout == f"{expected_path}\n"
+        assert expected_path.read_text(encoding="utf-8") == "Hello world"
+        assert not (output_dir / "summary.md").exists()
+
+    def test_fetch_extract_preserves_saved_feed_latest_selection(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """Extract-only mode still uses saved feed episode selection."""
+        from types import SimpleNamespace
+
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+
+        manager = ConfigManager(config_dir=tmp_path)
+        from inkwell.config.schema import FeedConfig as _FeedConfig
+
+        manager.add_feed(
+            "saved-show",
+            _FeedConfig(url="https://example.com/feed.rss"),  # type: ignore[arg-type]
+        )
+
+        async def fake_fetch_feed(*_args, **_kwargs):
+            return SimpleNamespace(entries=[object()])
+
+        def fake_get_latest_episode(*_args, **_kwargs):
+            return SimpleNamespace(
+                title="Latest Talk",
+                url="https://example.com/latest-talk.mp3",
+                podcast_name="Saved Show",
+            )
+
+        seen_urls: list[str] = []
+
+        async def fake_transcribe(_manager, episode_url: str, **_kwargs):
+            seen_urls.append(episode_url)
+            return _sample_transcription_result()
+
+        monkeypatch.setattr("inkwell.feeds.parser.RSSParser.fetch_feed", fake_fetch_feed)
+        monkeypatch.setattr(
+            "inkwell.feeds.parser.RSSParser.get_latest_episode",
+            fake_get_latest_episode,
+        )
+        monkeypatch.setattr("inkwell.cli.TranscriptionManager.transcribe", fake_transcribe)
+
+        result = runner.invoke(app, ["fetch", "saved-show", "--latest", "--extract"])
+
+        assert result.exit_code == 0, result.output
+        assert result.stdout == "Hello world\n"
+        assert seen_urls == ["https://example.com/latest-talk.mp3"]
+
+    def test_fetch_extract_rejects_structured_extraction_options(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """Options that imply structured notes are rejected instead of ignored."""
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+
+        result = runner.invoke(
+            app,
+            [
+                "fetch",
+                "https://example.com/great-talk.mp3",
+                "--extract",
+                "--interview",
+            ],
+        )
+
+        assert result.exit_code != 0
+        assert "--extract cannot be combined with --interview" in result.stderr
+        assert result.stdout == ""
+
+
 class TestCLIFetchSaveFeed:
     """Pre-fetch validation for `inkwell fetch --save-feed`.
 

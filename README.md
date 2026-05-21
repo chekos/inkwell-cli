@@ -14,9 +14,7 @@ Transform podcast episodes into structured, searchable markdown notes for Obsidi
 
 ## Status
 
-**Current release: v0.20.0**
-
-Inkwell is beta software with the core podcast-to-markdown pipeline implemented and released on PyPI. The project has automated CI, branch protection, PyPI Trusted Publishing, MkDocs documentation, and a large regression suite.
+Inkwell is beta software with the core podcast-to-markdown pipeline implemented and released on PyPI. The PyPI badge above reflects the current published release. The project has automated CI, branch protection, PyPI Trusted Publishing, MkDocs documentation, and a large regression suite.
 
 Current health baseline:
 - Podcast feed management with RSS and YouTube channel URL support

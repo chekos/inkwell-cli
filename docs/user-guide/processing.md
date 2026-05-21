@@ -90,6 +90,7 @@ Step 4/4: Writing markdown files...
 | `--provider` | `-p` | LLM provider (claude, gemini) | Smart selection |
 | `--skip-cache` | | Skip extraction cache | `false` |
 | `--dry-run` | | Cost estimate only | `false` |
+| `--extract` | | Emit transcript text only and skip note generation | `false` |
 | `--overwrite` | | Overwrite existing directory | `false` |
 | `--interview` | | Enable interview mode | `false` |
 
@@ -183,6 +184,18 @@ inkwell fetch URL --dry-run
 # If acceptable, process
 inkwell fetch URL
 ```
+
+### Transcript Only
+
+```bash
+# Print transcript text to stdout; progress goes to stderr
+inkwell fetch URL --extract
+
+# Write transcript-only files without creating episode note directories
+inkwell fetch my-podcast --latest --extract --output-dir ~/transcripts --plain
+```
+
+Use this when you want the clean media transcript first and want to decide later whether to run Inkwell's structured note templates or reflection flow.
 
 ### Re-extract with Different Templates
 

@@ -256,6 +256,7 @@ inkwell fetch <SOURCE> [OPTIONS]
 | `--provider` | `-p` | string | Auto | LLM provider (gemini, claude, auto) |
 | `--skip-cache` | | flag | false | Skip extraction cache |
 | `--dry-run` | | flag | false | Show cost estimate only |
+| `--extract` | | flag | false | Emit transcript text only; skip structured extraction, interview, and note output |
 | `--overwrite` | | flag | false | Overwrite existing directory |
 | `--interview` | | flag | false | Enable interview mode |
 | `--interview-template` | | string | Config | Interview template (reflective, analytical, creative) |
@@ -306,6 +307,12 @@ inkwell fetch URL --interview --max-questions 3
 # Cost check
 inkwell fetch URL --dry-run
 
+# Transcript text only
+inkwell fetch URL --extract
+
+# Transcript file only, without an episode note directory
+inkwell fetch URL --extract --output-dir transcripts --plain
+
 # Force provider
 inkwell fetch URL --provider gemini
 
@@ -329,6 +336,8 @@ INKWELL_EXTRACTOR=gemini inkwell fetch URL
 ```
 
 `--json` and `--plain` are mutually exclusive. In both modes, stdout is reserved for the primary result and interactive progress output is sent to stderr.
+
+`--extract` is transcript-only for media workflows. It does not run templates, structured extraction, interview mode, or the episode note writer. Without `--output-dir`, transcript text is printed to stdout and progress goes to stderr. With `--output-dir`, Inkwell writes `.transcript.md` file(s) directly into that directory; combine with `--plain` to print the file path(s) to stdout.
 
 ---
 

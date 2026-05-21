@@ -33,5 +33,5 @@ This phase should continue to produce Inkwell-style structured knowledge notes. 
 
 - Related devlog: `./2026-05-21-extract-only-mode.md`
 - Related roadmap: `../../../2026-roadmap/03-universal-content-ingestion.md`
-- PR: TBD
+- PR: #93
 - Issue: TBD

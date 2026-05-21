@@ -47,6 +47,16 @@ inkwell list
 # Process latest episode
 inkwell fetch <feed-name> --latest
 
+# Process local media
+inkwell fetch ~/Downloads/interview.mp3
+
+# Process local text or stdin
+inkwell fetch ./notes.md
+pbpaste | inkwell fetch -
+
+# Transcript only
+inkwell fetch <url> --extract
+
 # Process with interview
 inkwell fetch <feed-name> --latest --interview
 
@@ -82,4 +92,6 @@ inkwell costs
 
 - [Troubleshooting Guide](../reference/troubleshooting.md) - Common issues and solutions
 - [CLI Reference](../reference/cli-commands.md) - All commands and options
+- [Supported Inputs](../reference/supported-inputs.md) - Current input matrix and planned formats
+- [Machine-Readable Output](../reference/machine-readable-output.md) - JSON/plain output for scripts
 - [GitHub Issues](https://github.com/chekos/inkwell-cli/issues) - Report bugs

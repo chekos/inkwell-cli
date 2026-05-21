@@ -223,7 +223,15 @@ tail -f ~/.local/state/inkwell/inkwell.log
 └── audio/          # Downloaded media/audio cache
 ```
 
-Clear cache:
+Inspect cache:
+
+```bash
+inkwell cache stats
+```
+
+`inkwell cache clear` clears cached transcripts only. Media/audio retention is controlled by `cache.media.enabled`, `cache.media.max_mb`, and `cache.media.ttl_days`. See [Cache Behavior](../reference/cache.md) for the full cache model.
+
+Remove all local cache files manually:
 
 ```bash
 rm -rf ~/.cache/inkwell/

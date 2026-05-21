@@ -67,8 +67,12 @@ nav:
   - Reference:
     - Overview: reference/index.md
     - CLI Commands: reference/cli-commands.md
+    - Supported Inputs: reference/supported-inputs.md
+    - Machine-Readable Output: reference/machine-readable-output.md
+    - Cache Behavior: reference/cache.md
     - Templates: reference/templates.md
     - Configuration Options: reference/config-options.md
+    - Transcription Attempt Policy: reference/transcription-attempt-policy.md
     - Troubleshooting: reference/troubleshooting.md
 
   - Building in Public:

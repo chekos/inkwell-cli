@@ -29,6 +29,8 @@ inkwell fetch ./notes.md
 pbpaste | inkwell fetch -
 ```
 
+See [Supported Inputs](../reference/supported-inputs.md) for the full input matrix and planned future formats.
+
 ### Process from Feed
 
 If you've added a feed, process by feed name:
@@ -98,7 +100,7 @@ Step 4/4: Writing markdown files...
 
 | Option | Short | Description | Default |
 |--------|-------|-------------|---------|
-| `--output` | `-o` | Output directory | `~/inkwell-notes` |
+| `--output-dir` | `-o` | Output directory | `~/inkwell-notes` |
 | `--count` | | Latest N episodes from a saved feed | |
 | `--templates` | `-t` | Comma-separated template list | Auto-select |
 | `--category` | `-c` | Episode category | Auto-detect |
@@ -213,6 +215,8 @@ inkwell fetch my-podcast --latest --extract --output-dir ~/transcripts --plain
 Use this when you want the clean media transcript first and want to decide later whether to run Inkwell's structured note templates or reflection flow.
 
 PDFs, web article extraction, slide decks, and OCR inputs are not part of local/stdin ingestion yet.
+
+For script-friendly `--json` and `--plain` output, see [Machine-Readable Output](../reference/machine-readable-output.md).
 
 ### Re-extract with Different Templates
 

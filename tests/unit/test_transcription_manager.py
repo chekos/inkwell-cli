@@ -5,10 +5,11 @@ dependency injection, ensuring config objects take precedence over individual pa
 """
 
 import warnings
+from unittest.mock import Mock, patch
 
 import pytest
 
-from inkwell.config.schema import TranscriptionConfig
+from inkwell.config.schema import MediaCacheConfig, TranscriptionConfig
 from inkwell.transcription.gemini import GeminiTranscriber
 from inkwell.transcription.manager import TranscriptionManager
 from inkwell.utils.costs import CostTracker
@@ -180,6 +181,28 @@ class TestTranscriptionManagerCostTracker:
 
         assert manager.cost_tracker is tracker
         assert manager.gemini_transcriber is not None
+
+
+class TestTranscriptionManagerMediaCache:
+    """Test media cache configuration wiring."""
+
+    def test_media_cache_configures_default_audio_downloader(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Media cache config is passed to the default AudioDownloader."""
+        monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+        media_cache = MediaCacheConfig(enabled=False, max_mb=4096, ttl_days=90)
+
+        with patch("inkwell.transcription.manager.AudioDownloader") as downloader_class:
+            downloader_class.return_value = Mock()
+            manager = TranscriptionManager(media_cache=media_cache)
+
+        assert manager.media_cache is media_cache
+        downloader_class.assert_called_once_with(
+            cache_enabled=False,
+            cache_max_mb=4096,
+            cache_ttl_days=90,
+        )
 
 
 class TestTranscriptionManagerEdgeCases:

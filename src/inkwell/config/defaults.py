@@ -22,6 +22,13 @@ interview_model: claude-sonnet-4-5
 
 youtube_check: true
 
+# Downloaded media/audio cache controls
+cache:
+  media:
+    enabled: true
+    max_mb: 2048
+    ttl_days: 30
+
 # Logging level (DEBUG, INFO, WARNING, ERROR)
 log_level: INFO
 

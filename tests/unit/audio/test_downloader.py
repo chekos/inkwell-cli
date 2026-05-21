@@ -1,5 +1,6 @@
 """Tests for audio downloader."""
 
+import os
 from pathlib import Path
 from unittest.mock import MagicMock, Mock, patch
 
@@ -155,6 +156,79 @@ class TestAudioDownloader:
         assert stats["size_bytes"] == 7
         assert stats["cache_format_version"] == AUDIO_CACHE_FORMAT_VERSION
         assert stats["extensions"] == {".m4a": 1, ".webm": 1}
+
+    def test_cache_disabled_does_not_create_cache_directory(
+        self, temp_dir: Path, tmp_path: Path
+    ) -> None:
+        """Disabled media cache avoids creating the cache directory."""
+        cache_dir = tmp_path / "disabled-cache"
+
+        downloader = AudioDownloader(
+            output_dir=temp_dir,
+            cache_dir=cache_dir,
+            cache_enabled=False,
+        )
+
+        assert downloader.cache_enabled is False
+        assert not cache_dir.exists()
+
+    def test_check_cache_expires_stale_file(self, downloader: AudioDownloader) -> None:
+        """Stale media cache files are treated as misses and removed."""
+        downloader.cache_ttl_days = 1
+        url = "https://youtube.com/watch?v=stale123"
+        cache_path = downloader._get_cache_path(url)
+        cache_path.write_bytes(b"stale")
+        os.utime(cache_path, (1, 1))
+
+        result = downloader._check_cache(url)
+
+        assert result is None
+        assert not cache_path.exists()
+
+    def test_enforce_cache_policy_removes_oldest_files(
+        self, temp_dir: Path, cache_dir: Path
+    ) -> None:
+        """Size policy removes oldest media files until the cache is under limit."""
+        downloader = AudioDownloader(
+            output_dir=temp_dir,
+            cache_dir=cache_dir,
+            cache_max_mb=1,
+        )
+        old_file = cache_dir / "old.m4a"
+        new_file = cache_dir / "new.m4a"
+        old_file.write_bytes(b"a" * 700_000)
+        new_file.write_bytes(b"b" * 700_000)
+        os.utime(old_file, (1, 1))
+        os.utime(new_file, (2, 2))
+
+        result = downloader.enforce_cache_policy()
+
+        assert result["size_files"] == 1
+        assert result["bytes_deleted"] == 700_000
+        assert not old_file.exists()
+        assert new_file.exists()
+
+    def test_enforce_cache_policy_keeps_protected_file(
+        self, temp_dir: Path, cache_dir: Path
+    ) -> None:
+        """Size policy does not evict the file about to be returned."""
+        downloader = AudioDownloader(
+            output_dir=temp_dir,
+            cache_dir=cache_dir,
+            cache_max_mb=1,
+        )
+        old_file = cache_dir / "old.m4a"
+        protected_file = cache_dir / "protected.m4a"
+        old_file.write_bytes(b"a" * 700_000)
+        protected_file.write_bytes(b"b" * 700_000)
+        os.utime(old_file, (1, 1))
+        os.utime(protected_file, (2, 2))
+
+        result = downloader.enforce_cache_policy(protected_path=protected_file)
+
+        assert result["size_files"] == 1
+        assert not old_file.exists()
+        assert protected_file.exists()
 
     @pytest.mark.asyncio
     async def test_download_success(
@@ -490,4 +564,35 @@ class TestAudioDownloader:
 
         # Should have downloaded fresh (even though cache existed)
         # yt-dlp SHOULD have been called
+        mock_ydl_class.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_download_cache_disabled_uses_output_directory(
+        self,
+        temp_dir: Path,
+        cache_dir: Path,
+        mock_ydl_class: Mock,
+        mock_ydl_instance: Mock,
+    ) -> None:
+        """Disabled media cache downloads to output_dir and ignores cached files."""
+        downloader = AudioDownloader(
+            output_dir=temp_dir,
+            cache_dir=cache_dir,
+            cache_enabled=False,
+        )
+        url = "https://youtube.com/watch?v=nocache123"
+        downloader._get_cache_path(url).write_bytes(b"existing-cache")
+        output_file = downloader._get_output_path(url)
+
+        def mock_download(download_url: str, download: bool) -> dict:
+            output_file.touch()
+            return {"title": "Test Video", "id": "test123", "duration": 300}
+
+        mock_ydl_instance.extract_info.side_effect = mock_download
+
+        with patch("inkwell.audio.downloader.YoutubeDL", mock_ydl_class):
+            result = await downloader.download(url)
+
+        assert result == output_file
+        assert result.parent == temp_dir
         mock_ydl_class.assert_called_once()

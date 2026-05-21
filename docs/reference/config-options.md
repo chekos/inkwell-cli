@@ -99,6 +99,36 @@ transcription:
 
 ---
 
+## Cache Settings
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `cache.media.enabled` | boolean | `true` | Cache downloaded media/audio files |
+| `cache.media.max_mb` | int | `2048` | Maximum media/audio cache size in MB |
+| `cache.media.ttl_days` | int | `30` | Maximum media/audio cache entry age in days |
+
+### cache.media
+
+Inkwell keeps downloaded media/audio files in the local cache so retries and fallback transcription do not need to download the same episode again. Retention is enforced when media downloads run.
+
+```yaml
+cache:
+  media:
+    enabled: true
+    max_mb: 2048
+    ttl_days: 30
+```
+
+To disable downloaded media caching:
+
+```yaml
+cache:
+  media:
+    enabled: false
+```
+
+---
+
 ## Extraction Settings
 
 | Key | Type | Default | Description |
@@ -229,6 +259,13 @@ transcription:
   api_key: "your-google-ai-key"
   model_name: gemini-2.5-flash
   youtube_check: true
+
+# Cache
+cache:
+  media:
+    enabled: true
+    max_mb: 2048
+    ttl_days: 30
 
 # Extraction
 max_episodes_per_run: 10

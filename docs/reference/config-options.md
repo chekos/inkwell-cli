@@ -111,6 +111,8 @@ transcription:
 
 Inkwell keeps downloaded media/audio files in the local cache so retries and fallback transcription do not need to download the same episode again. Retention is enforced when media downloads run.
 
+See [Cache Behavior](cache.md) for how transcript, extraction, and media/audio caches differ.
+
 ```yaml
 cache:
   media:

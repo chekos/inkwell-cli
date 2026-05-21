@@ -28,5 +28,5 @@ Open the Phase 2 PR and watch CI. If it stays green, merge it before starting Ph
 
 - Related devlog: `./2026-05-21-summarize-inspired-cli-foundation.md`
 - Related roadmap: `../../../2026-roadmap/09-multi-export-system.md`
-- PR: TBD
+- PR: #89
 - Issue: TBD

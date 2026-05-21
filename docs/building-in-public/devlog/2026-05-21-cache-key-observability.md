@@ -31,5 +31,5 @@ This phase should be a compatibility cleanup, not a cache eviction feature. Exis
 
 - Related devlog: `./2026-05-21-machine-readable-output.md`
 - Related roadmap: `../../../2026-roadmap/03-universal-content-ingestion.md`
-- PR: TBD
+- PR: #90
 - Issue: TBD

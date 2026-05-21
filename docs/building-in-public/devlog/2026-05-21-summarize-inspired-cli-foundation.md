@@ -29,5 +29,5 @@ Move to Phase 2: add machine-readable output modes for `fetch` and `transcribe`,
 - Related research: summarize CLI architecture analysis from task context
 - Related roadmap: `../../../2026-roadmap/03-universal-content-ingestion.md`
 - Related roadmap: `../../../2026-roadmap/09-multi-export-system.md`
-- PR: TBD
+- PR: #88
 - Issue: TBD

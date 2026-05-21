@@ -196,7 +196,7 @@ inkwell transcribe https://youtube.com/watch?v=xyz --json
 inkwell transcribe https://youtube.com/watch?v=xyz --plain
 ```
 
-`--json` and `--plain` are mutually exclusive. In both modes, stdout is reserved for the primary result so shell scripts can parse it safely.
+`--json` and `--plain` are mutually exclusive. In both modes, stdout is reserved for the primary result so shell scripts can parse it safely. See [Machine-Readable Output](machine-readable-output.md) for envelope examples and scripting notes.
 
 ---
 
@@ -213,8 +213,8 @@ inkwell cache <ACTION>
 | Action | Description |
 |--------|-------------|
 | `stats` | Show transcript, extraction, and media cache statistics |
-| `clear` | Clear cached transcripts |
-| `clear-expired` | Remove expired cached transcripts |
+| `clear` | Clear cached transcripts only |
+| `clear-expired` | Remove expired cached transcripts only |
 
 ### Examples
 
@@ -224,7 +224,7 @@ inkwell cache clear-expired
 inkwell cache clear
 ```
 
-`stats` is observational only. Downloaded media/audio retention is configured with `cache.media.enabled`, `cache.media.max_mb`, and `cache.media.ttl_days`.
+`stats` is observational only. `clear` and `clear-expired` currently operate on transcript cache entries. Downloaded media/audio retention is configured with `cache.media.enabled`, `cache.media.max_mb`, and `cache.media.ttl_days`; see [Cache Behavior](cache.md).
 
 ---
 
@@ -240,7 +240,7 @@ inkwell fetch <SOURCE> [OPTIONS]
 
 | Argument | Required | Description |
 |----------|----------|-------------|
-| `SOURCE` | Yes | Feed name, episode/media URL, local audio/video file, local `.txt`/`.md` file, or `-` for stdin text |
+| `SOURCE` | Yes | Feed name, episode/media URL, local audio/video file, local `.txt`/`.md` file, or `-` for stdin text. See [Supported Inputs](supported-inputs.md). |
 
 ### Options
 
@@ -344,7 +344,7 @@ inkwell fetch https://www.youtube.com/watch?v=abc123 --save-feed --feed-name som
 INKWELL_EXTRACTOR=gemini inkwell fetch URL
 ```
 
-`--json` and `--plain` are mutually exclusive. In both modes, stdout is reserved for the primary result and interactive progress output is sent to stderr.
+`--json` and `--plain` are mutually exclusive. In both modes, stdout is reserved for the primary result and interactive progress output is sent to stderr. See [Machine-Readable Output](machine-readable-output.md) for envelope examples and scripting notes.
 
 `--extract` is transcript-only for media workflows. It does not run templates, structured extraction, interview mode, or the episode note writer. Without `--output-dir`, transcript text is printed to stdout and progress goes to stderr. With `--output-dir`, Inkwell writes `.transcript.md` file(s) directly into that directory; combine with `--plain` to print the file path(s) to stdout.
 

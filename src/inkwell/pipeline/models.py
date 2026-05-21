@@ -33,6 +33,9 @@ class PipelineOptions:
     # Episode metadata (from RSS feed)
     episode_title: str | None = None
     podcast_name: str | None = None
+    # Already-clean source text (local .txt/.md files or stdin)
+    source_text: str | None = None
+    source_kind: str | None = None
     # Plugin overrides (from CLI flags or env vars)
     extractor: str | None = None
     transcriber: str | None = None

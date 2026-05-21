@@ -53,6 +53,28 @@ console = Console()
 # post-fetch save notices).
 err_console = Console(stderr=True)
 
+_LOCAL_TEXT_EXTENSIONS = {".txt", ".md", ".markdown"}
+_LOCAL_MEDIA_EXTENSIONS = {
+    ".aac",
+    ".aif",
+    ".aiff",
+    ".avi",
+    ".flac",
+    ".m4a",
+    ".m4v",
+    ".mkv",
+    ".mov",
+    ".mp3",
+    ".mp4",
+    ".mpeg",
+    ".mpg",
+    ".oga",
+    ".ogg",
+    ".opus",
+    ".wav",
+    ".webm",
+}
+
 
 def _register_subcommands() -> None:
     """Register subcommand apps (lazy import to avoid circular deps)."""
@@ -142,6 +164,33 @@ def _parse_and_validate_extra_templates(value: str | None) -> list[str]:
     templates = _dedupe_template_names(_parse_extra_templates(value))
     _validate_template_names(templates)
     return templates
+
+
+def _is_local_text_path(path: Path) -> bool:
+    """Return True for local text inputs supported in Phase 6."""
+    return path.suffix.lower() in _LOCAL_TEXT_EXTENSIONS
+
+
+def _is_local_media_path(path: Path) -> bool:
+    """Return True for local media inputs supported in Phase 6."""
+    return path.suffix.lower() in _LOCAL_MEDIA_EXTENSIONS
+
+
+def _read_text_source_file(path: Path) -> str:
+    """Read a local text/markdown source file with user-facing errors."""
+    try:
+        text = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as e:
+        raise ValidationError(
+            f"Local text file is not valid UTF-8: {path}",
+            suggestion="Save the file as UTF-8 text or markdown and try again.",
+        ) from e
+    except OSError as e:
+        raise ValidationError(f"Could not read local file: {path}") from e
+
+    if not text.strip():
+        raise ValidationError("Local text file is empty")
+    return text
 
 
 def _print_json_payload(payload: dict[str, Any]) -> None:
@@ -1378,6 +1427,10 @@ def fetch_command(
             feed_extra_templates: list[str] = []
             # Episode from RSS feed (if applicable)
             ep: Episode | None = None
+            source_text: str | None = None
+            source_kind: str | None = None
+            source_episode_title: str | None = None
+            source_podcast_name: str | None = None
             # Set when the argument resolves to a configured feed (and we fan
             # out into its episodes); stays None for direct-URL mode.
             selected_episodes: list[Episode] | None = None
@@ -1429,27 +1482,42 @@ def fetch_command(
                     # pre-empt it here — just fall back to "Unknown Podcast".
                     pre_resolved = None
 
-            if not is_url:
+            if input_source.kind == ContentSourceKind.LOCAL_FILE:
+                local_path = input_source.path or Path(input_source.value)
+                local_path = local_path.expanduser()
+                if _is_local_text_path(local_path):
+                    source_text = _read_text_source_file(local_path)
+                    source_kind = "local_text"
+                    source_episode_title = local_path.stem
+                    source_podcast_name = "Local Files"
+                    url = str(local_path)
+                elif _is_local_media_path(local_path):
+                    source_episode_title = local_path.stem
+                    source_podcast_name = "Local Files"
+                    url = str(local_path)
+                else:
+                    raise ValidationError(
+                        f"Unsupported local file type: {local_path.suffix or '<none>'}",
+                        suggestion=(
+                            "Use local audio/video, .txt, or .md files for now. "
+                            "PDF, article, slide, and OCR ingestion are planned later."
+                        ),
+                    )
+
+            elif input_source.kind == ContentSourceKind.STDIN:
+                source_text = sys.stdin.read()
+                if not source_text.strip():
+                    raise ValidationError("Stdin input is empty")
+                source_kind = "stdin"
+                source_episode_title = "stdin"
+                source_podcast_name = "Stdin"
+                url = "stdin://input"
+
+            elif not is_url:
                 # Treat as feed name - look up in configured feeds
                 try:
                     feed_config = manager.get_feed(url_or_feed)
                 except NotFoundError as e:
-                    if input_source.kind == ContentSourceKind.STDIN:
-                        raise ValidationError(
-                            "Stdin ingestion is recognized but not supported by fetch yet",
-                            suggestion=(
-                                "Use a saved feed or media URL for now. Stdin routing is planned "
-                                "for the local/stdin ingestion phase."
-                            ),
-                        ) from e
-                    if input_source.kind == ContentSourceKind.LOCAL_FILE:
-                        raise ValidationError(
-                            "Local file ingestion is recognized but not supported by fetch yet",
-                            suggestion=(
-                                "Use a saved feed or media URL for now. Local audio/video routing "
-                                "is planned for the local/stdin ingestion phase."
-                            ),
-                        ) from e
                     if input_source.kind == ContentSourceKind.UNKNOWN_URL:
                         raise ValidationError(
                             f"Unsupported URL input: {input_source.value}",
@@ -1551,53 +1619,61 @@ def fetch_command(
                 if ep is not None:
                     episode_title = ep.title
                     detected_podcast_name = ep.podcast_name or url_or_feed
+                elif source_episode_title is not None:
+                    episode_title = source_episode_title
+                    detected_podcast_name = source_podcast_name
                 elif pre_resolved is not None and pre_resolved.episode_title:
                     # Direct YouTube URL: when yt-dlp provides a video title,
                     # use it so direct-URL capture folders are readable.
                     episode_title = pre_resolved.episode_title
 
                 if extract_only:
-                    transcription_manager = TranscriptionManager(
-                        config=config.transcription,
-                        media_cache=config.cache.media,
-                    )
-
-                    extract_substeps = {
-                        "checking_cache": "Checking transcript cache...",
-                        "trying_youtube": "Trying YouTube transcript...",
-                        "downloading_audio": "Downloading audio...",
-                        "transcribing_gemini": "Transcribing with Gemini...",
-                        "transcribing_gemini_youtube": "Transcribing YouTube URL with Gemini...",
-                        "caching_result": "Caching transcript...",
-                    }
-
-                    with Progress(
-                        SpinnerColumn(),
-                        TextColumn("[progress.description]{task.description}"),
-                        console=status_console,
-                    ) as progress:
-                        task = progress.add_task("Extracting transcript...", total=None)
-
-                        def handle_extract_progress(step: str, _data: dict) -> None:
-                            progress.update(task, description=extract_substeps.get(step, step))
-
-                        transcript_result = await transcription_manager.transcribe(
-                            url,
-                            use_cache=True,
-                            auth_username=auth_username,
-                            auth_password=auth_password,
-                            progress_callback=handle_extract_progress,
-                            transcriber_override=transcriber,
-                        )
-                        progress.update(task, completed=True)
-
-                    if not transcript_result.success or transcript_result.transcript is None:
-                        raise InkwellError(
-                            "Transcript extraction failed",
-                            suggestion=transcript_result.error,
+                    if source_text is not None:
+                        transcript_text = source_text
+                    else:
+                        transcription_manager = TranscriptionManager(
+                            config=config.transcription,
+                            media_cache=config.cache.media,
                         )
 
-                    transcript_text = transcript_result.transcript.full_text
+                        extract_substeps = {
+                            "checking_cache": "Checking transcript cache...",
+                            "trying_youtube": "Trying YouTube transcript...",
+                            "downloading_audio": "Downloading audio...",
+                            "transcribing_gemini": "Transcribing with Gemini...",
+                            "transcribing_gemini_youtube": (
+                                "Transcribing YouTube URL with Gemini..."
+                            ),
+                            "caching_result": "Caching transcript...",
+                        }
+
+                        with Progress(
+                            SpinnerColumn(),
+                            TextColumn("[progress.description]{task.description}"),
+                            console=status_console,
+                        ) as progress:
+                            task = progress.add_task("Extracting transcript...", total=None)
+
+                            def handle_extract_progress(step: str, _data: dict) -> None:
+                                progress.update(task, description=extract_substeps.get(step, step))
+
+                            transcript_result = await transcription_manager.transcribe(
+                                url,
+                                use_cache=True,
+                                auth_username=auth_username,
+                                auth_password=auth_password,
+                                progress_callback=handle_extract_progress,
+                                transcriber_override=transcriber,
+                            )
+                            progress.update(task, completed=True)
+
+                        if not transcript_result.success or transcript_result.transcript is None:
+                            raise InkwellError(
+                                "Transcript extraction failed",
+                                suggestion=transcript_result.error,
+                            )
+
+                        transcript_text = transcript_result.transcript.full_text
 
                     if output_dir is not None:
                         output_dir.mkdir(parents=True, exist_ok=True)
@@ -1654,6 +1730,8 @@ def fetch_command(
                     auth_password=auth_password,
                     episode_title=episode_title,
                     podcast_name=podcast_name or detected_podcast_name,
+                    source_text=source_text,
+                    source_kind=source_kind,
                     extractor=extractor,
                     transcriber=transcriber,
                 )

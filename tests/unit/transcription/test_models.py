@@ -292,6 +292,13 @@ class TestTranscript:
         )
         assert cached.is_free is True
 
+        text = Transcript(
+            segments=[],
+            source="text",
+            episode_url="stdin://input",
+        )
+        assert text.is_free is True
+
         gemini = Transcript(
             segments=[],
             source="gemini",

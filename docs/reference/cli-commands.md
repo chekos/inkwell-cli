@@ -240,7 +240,7 @@ inkwell fetch <SOURCE> [OPTIONS]
 
 | Argument | Required | Description |
 |----------|----------|-------------|
-| `SOURCE` | Yes | Feed name or episode URL |
+| `SOURCE` | Yes | Feed name, episode/media URL, local audio/video file, local `.txt`/`.md` file, or `-` for stdin text |
 
 ### Options
 
@@ -276,6 +276,15 @@ inkwell fetch <SOURCE> [OPTIONS]
 ```bash
 # From URL
 inkwell fetch https://youtube.com/watch?v=xyz
+
+# From local audio/video
+inkwell fetch ~/Downloads/interview.mp3
+
+# From local text or markdown
+inkwell fetch ./notes.md
+
+# From stdin text
+pbpaste | inkwell fetch -
 
 # From URL with custom podcast name
 inkwell fetch https://youtube.com/watch?v=xyz --podcast-name "Python Tutorials"

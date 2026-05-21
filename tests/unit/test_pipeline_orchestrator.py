@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+import pytest
+
 from inkwell.config.schema import GlobalConfig
 from inkwell.pipeline.models import PipelineOptions
 from inkwell.pipeline.orchestrator import PipelineOrchestrator
@@ -58,3 +60,35 @@ def test_podcast_name_override_wins_over_inbox_default(tmp_path: Path) -> None:
 
     assert podcast_name == "My Override"
     assert episode_title == "episode 12"
+
+
+@pytest.mark.asyncio
+async def test_transcribe_source_text_bypasses_media_transcription(tmp_path: Path) -> None:
+    orchestrator = _orchestrator(tmp_path)
+
+    result = await orchestrator._transcribe(
+        "stdin://input",
+        source_text="Already clean source text",
+        source_kind="stdin",
+    )
+
+    assert result.success is True
+    assert result.transcript is not None
+    assert result.transcript.source == "text"
+    assert result.transcript.full_text == "Already clean source text"
+    assert result.attempts == ["stdin"]
+    assert result.cost_usd == 0.0
+
+
+def test_template_safe_episode_url_uses_placeholder_for_local_sources(tmp_path: Path) -> None:
+    orchestrator = _orchestrator(tmp_path)
+
+    assert orchestrator._template_safe_episode_url("/tmp/source.md") == (
+        "https://local.inkwell/source"
+    )
+    assert orchestrator._template_safe_episode_url("stdin://input") == (
+        "https://local.inkwell/source"
+    )
+    assert orchestrator._template_safe_episode_url("https://example.com/episode.mp3") == (
+        "https://example.com/episode.mp3"
+    )

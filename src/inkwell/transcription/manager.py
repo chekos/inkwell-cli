@@ -6,6 +6,7 @@ import os
 import warnings
 from collections.abc import Callable
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
@@ -280,6 +281,7 @@ class TranscriptionManager:
                 progress_callback(step, kwargs)
 
         override = transcriber_override or os.environ.get("INKWELL_TRANSCRIBER")
+        local_media_path = self._local_media_path(episode_url)
         if override:
             return await self._transcribe_with_override(
                 override,
@@ -287,6 +289,14 @@ class TranscriptionManager:
                 use_cache,
                 auth_username,
                 auth_password,
+                progress_callback,
+                local_media_path=local_media_path,
+            )
+
+        if local_media_path is not None:
+            return await self._transcribe_local_media(
+                local_media_path,
+                episode_url,
                 progress_callback,
             )
 
@@ -491,6 +501,82 @@ class TranscriptionManager:
         host = parsed.netloc.lower()
         return host in {"youtu.be", "youtube.com", "www.youtube.com", "m.youtube.com"}
 
+    def _local_media_path(self, value: str) -> Path | None:
+        """Return a local media path when transcription input is a file."""
+        path = Path(value).expanduser()
+        if path.is_file():
+            return path
+        return None
+
+    async def _transcribe_local_media(
+        self,
+        audio_path: Path,
+        episode_url: str,
+        progress_callback: Callable[[str, dict], None] | None,
+    ) -> TranscriptionResult:
+        """Transcribe an already-local audio/video file without downloading it."""
+        start_time = datetime.now(timezone.utc)
+        attempts = ["gemini"]
+
+        def _progress(step: str, **kwargs: object) -> None:
+            if progress_callback:
+                progress_callback(step, kwargs)
+
+        if self.gemini_transcriber is None:
+            duration = (datetime.now(timezone.utc) - start_time).total_seconds()
+            return TranscriptionResult(
+                success=False,
+                error=(
+                    "Transcription failed: Local media files require Gemini transcription, "
+                    "but the API key is not configured.\n\n"
+                    "Configure your Google AI API key:\n"
+                    "  inkwell config set transcription.api_key YOUR_API_KEY"
+                ),
+                attempts=attempts,
+                duration_seconds=duration,
+                cost_usd=0.0,
+                from_cache=False,
+            )
+
+        try:
+            _progress("transcribing_gemini", audio_path=str(audio_path))
+            transcript = await self.gemini_transcriber.transcribe(audio_path, episode_url)
+            total_cost = transcript.cost_usd or 0.0
+
+            try:
+                if total_cost and self.cost_tracker:
+                    transcript_tokens = len(transcript.full_text) // 4
+                    self.cost_tracker.add_cost(
+                        provider="gemini",
+                        model="gemini-2.5-flash",
+                        operation="transcription",
+                        input_tokens=transcript_tokens,
+                        output_tokens=transcript_tokens,
+                        episode_title=None,
+                    )
+            except Exception as e:
+                logger.warning(f"Failed to track transcription cost: {e}")
+
+            duration = (datetime.now(timezone.utc) - start_time).total_seconds()
+            return TranscriptionResult(
+                success=True,
+                transcript=transcript,
+                attempts=attempts,
+                duration_seconds=duration,
+                cost_usd=total_cost,
+                from_cache=False,
+            )
+        except Exception as e:
+            duration = (datetime.now(timezone.utc) - start_time).total_seconds()
+            return TranscriptionResult(
+                success=False,
+                error=f"Local media transcription failed: {e}",
+                attempts=attempts,
+                duration_seconds=duration,
+                cost_usd=0.0,
+                from_cache=False,
+            )
+
     async def _transcribe_with_override(
         self,
         transcriber_name: str,
@@ -499,6 +585,7 @@ class TranscriptionManager:
         auth_username: str | None,
         auth_password: str | None,
         progress_callback: Callable[[str, dict], None] | None,
+        local_media_path: Path | None = None,
     ) -> TranscriptionResult:
         """Transcribe using a specific plugin (environment variable override).
 
@@ -561,12 +648,15 @@ class TranscriptionManager:
                 transcript = await plugin.transcribe(request)
             # Gemini and other file-based plugins need audio download first
             else:
-                _progress("downloading_audio", url=episode_url)
-                audio_path = await self.audio_downloader.download(
-                    episode_url,
-                    username=auth_username,
-                    password=auth_password,
-                )
+                if local_media_path is not None:
+                    audio_path = local_media_path
+                else:
+                    _progress("downloading_audio", url=episode_url)
+                    audio_path = await self.audio_downloader.download(
+                        episode_url,
+                        username=auth_username,
+                        password=auth_password,
+                    )
                 _progress(f"transcribing_{transcriber_name}", audio_path=str(audio_path))
                 request = TranscriptionRequest(file_path=audio_path)
                 transcript = await plugin.transcribe(request)

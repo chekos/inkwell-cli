@@ -19,6 +19,7 @@ from inkwell.feeds.models import Episode
 from inkwell.interview import conduct_interview_from_output
 from inkwell.output import EpisodeMetadata, EpisodeOutput, OutputManager
 from inkwell.transcription import TranscriptionManager
+from inkwell.transcription.models import Transcript, TranscriptionResult, TranscriptSegment
 from inkwell.utils.api_keys import APIKeyError, get_validated_api_key
 from inkwell.utils.costs import CostTracker
 from inkwell.utils.datetime import now_utc
@@ -183,6 +184,8 @@ class PipelineOrchestrator:
 
         transcript_result = await self._transcribe(
             options.url,
+            source_text=options.source_text,
+            source_kind=options.source_kind,
             auth_username=options.auth_username,
             auth_password=options.auth_password,
             progress_callback=transcription_progress,
@@ -409,6 +412,8 @@ class PipelineOrchestrator:
     async def _transcribe(
         self,
         url: str,
+        source_text: str | None = None,
+        source_kind: str | None = None,
         auth_username: str | None = None,
         auth_password: str | None = None,
         progress_callback: Callable[[str, dict], None] | None = None,
@@ -418,6 +423,8 @@ class PipelineOrchestrator:
 
         Args:
             url: Episode URL
+            source_text: Already-clean text to extract from without media transcription
+            source_kind: Source label for already-clean text
             auth_username: Username for authenticated audio downloads (private feeds)
             auth_password: Password for authenticated audio downloads (private feeds)
             progress_callback: Optional callback for transcription sub-step progress
@@ -429,6 +436,27 @@ class PipelineOrchestrator:
         Raises:
             InkwellError: If transcription fails
         """
+        if source_text is not None:
+            text = source_text.strip()
+            if not text:
+                raise InkwellError("Source text is empty")
+
+            transcript = Transcript(
+                segments=[TranscriptSegment(text=text, start=0.0, duration=0.0)],
+                source="text",
+                language="und",
+                episode_url=url,
+                word_count=len(text.split()),
+            )
+            return TranscriptionResult(
+                success=True,
+                transcript=transcript,
+                attempts=[source_kind or "text"],
+                duration_seconds=0.0,
+                cost_usd=0.0,
+                from_cache=False,
+            )
+
         manager = TranscriptionManager(
             config=self.config.transcription,
             media_cache=self.config.cache.media,
@@ -479,7 +507,7 @@ class PipelineOrchestrator:
         # url is HttpUrl but Pydantic validates str at runtime
         episode = Episode(
             title=episode_title,
-            url=episode_url,  # type: ignore[arg-type]
+            url=self._template_safe_episode_url(episode_url),  # type: ignore[arg-type]
             published=now_utc(),
             description="",
             podcast_name=podcast_name,
@@ -493,6 +521,12 @@ class PipelineOrchestrator:
         )
 
         return selected_templates
+
+    def _template_safe_episode_url(self, episode_url: str) -> str:
+        """Return an HTTP URL placeholder for local/stdin template selection."""
+        if episode_url.startswith(("http://", "https://")):
+            return episode_url
+        return "https://local.inkwell/source"
 
     async def _extract_content(
         self,

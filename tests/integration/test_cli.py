@@ -1415,14 +1415,23 @@ class TestCLIFetchSaveFeed:
         assert result.exit_code != 0
         assert "Playlist" in result.stdout or "playlist" in result.stdout
 
-    def test_fetch_local_file_is_recognized_but_not_processed_yet(
-        self, tmp_path: Path, monkeypatch
-    ) -> None:
-        """Phase 1 recognizes local files without routing them through fetch yet."""
+    def test_fetch_local_media_file_routes_to_pipeline(self, tmp_path: Path, monkeypatch) -> None:
+        """Local audio/video files are accepted as media transcription inputs."""
         monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
 
         local_media = tmp_path / "episode.mp3"
         local_media.write_bytes(b"fake audio")
+        output_dir = tmp_path / "episode-dir"
+        output_dir.mkdir()
+        seen: dict[str, object] = {}
+
+        async def fake_process(_orchestrator, options, *_args, **_kwargs):
+            seen["url"] = options.url
+            seen["source_text"] = options.source_text
+            seen["episode_title"] = options.episode_title
+            return _sample_pipeline_result(output_dir)
+
+        monkeypatch.setattr("inkwell.pipeline.PipelineOrchestrator.process_episode", fake_process)
 
         result = runner.invoke(
             app,
@@ -1430,31 +1439,95 @@ class TestCLIFetchSaveFeed:
                 "fetch",
                 str(local_media),
                 "--dry-run",
+                "--output-dir",
+                str(tmp_path),
             ],
         )
 
-        assert result.exit_code != 0
-        assert "Local file ingestion is recognized" in result.output
-        assert "saved feed or media URL" in result.output
+        assert result.exit_code == 0, result.output
+        assert seen["url"] == str(local_media)
+        assert seen["source_text"] is None
+        assert seen["episode_title"] == "episode"
 
-    def test_fetch_stdin_is_recognized_but_not_processed_yet(
+    def test_fetch_local_text_file_routes_source_text_to_pipeline(
         self, tmp_path: Path, monkeypatch
     ) -> None:
-        """Phase 1 recognizes stdin without introducing text ingestion yet."""
+        """Local text/markdown files bypass transcription and feed extraction templates."""
         monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+
+        local_text = tmp_path / "notes.md"
+        local_text.write_text("# Notes\n\nImportant source text.", encoding="utf-8")
+        output_dir = tmp_path / "episode-dir"
+        output_dir.mkdir()
+        seen: dict[str, object] = {}
+
+        async def fake_process(_orchestrator, options, *_args, **_kwargs):
+            seen["url"] = options.url
+            seen["source_text"] = options.source_text
+            seen["source_kind"] = options.source_kind
+            seen["episode_title"] = options.episode_title
+            return _sample_pipeline_result(output_dir)
+
+        monkeypatch.setattr("inkwell.pipeline.PipelineOrchestrator.process_episode", fake_process)
 
         result = runner.invoke(
             app,
             [
                 "fetch",
-                "-",
+                str(local_text),
                 "--dry-run",
+                "--output-dir",
+                str(tmp_path),
             ],
         )
 
+        assert result.exit_code == 0, result.output
+        assert seen["url"] == str(local_text)
+        assert seen["source_text"] == "# Notes\n\nImportant source text."
+        assert seen["source_kind"] == "local_text"
+        assert seen["episode_title"] == "notes"
+
+    def test_fetch_stdin_routes_source_text_to_pipeline(self, tmp_path: Path, monkeypatch) -> None:
+        """Stdin text bypasses transcription and feeds extraction templates."""
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+
+        output_dir = tmp_path / "episode-dir"
+        output_dir.mkdir()
+        seen: dict[str, object] = {}
+
+        async def fake_process(_orchestrator, options, *_args, **_kwargs):
+            seen["url"] = options.url
+            seen["source_text"] = options.source_text
+            seen["source_kind"] = options.source_kind
+            seen["episode_title"] = options.episode_title
+            return _sample_pipeline_result(output_dir)
+
+        monkeypatch.setattr("inkwell.pipeline.PipelineOrchestrator.process_episode", fake_process)
+
+        result = runner.invoke(
+            app,
+            ["fetch", "-", "--dry-run", "--output-dir", str(tmp_path)],
+            input="Pasted source text",
+        )
+
+        assert result.exit_code == 0, result.output
+        assert seen["url"] == "stdin://input"
+        assert seen["source_text"] == "Pasted source text"
+        assert seen["source_kind"] == "stdin"
+        assert seen["episode_title"] == "stdin"
+
+    def test_fetch_unsupported_local_file_type_errors(self, tmp_path: Path, monkeypatch) -> None:
+        """PDF/article/OCR-style inputs remain out of scope for Phase 6."""
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+
+        local_pdf = tmp_path / "paper.pdf"
+        local_pdf.write_bytes(b"%PDF")
+
+        result = runner.invoke(app, ["fetch", str(local_pdf), "--dry-run"])
+
         assert result.exit_code != 0
-        assert "Stdin ingestion is recognized" in result.output
-        assert "saved feed or media URL" in result.output
+        assert "Unsupported local file type" in result.output
+        assert "PDF" in result.output
 
 
 class TestCLIFetchHintSuppression:

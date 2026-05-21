@@ -14,6 +14,21 @@ Process any YouTube video or podcast episode directly:
 inkwell fetch https://youtube.com/watch?v=xyz
 ```
 
+### Process from Local Files or Stdin
+
+Local audio/video routes through transcription. Local text/markdown and stdin are treated as already-clean source text for the extraction templates.
+
+```bash
+# Local audio/video
+inkwell fetch ~/Downloads/interview.mp3
+
+# Local text or markdown
+inkwell fetch ./notes.md
+
+# Pasted/stdin text
+pbpaste | inkwell fetch -
+```
+
 ### Process from Feed
 
 If you've added a feed, process by feed name:
@@ -196,6 +211,8 @@ inkwell fetch my-podcast --latest --extract --output-dir ~/transcripts --plain
 ```
 
 Use this when you want the clean media transcript first and want to decide later whether to run Inkwell's structured note templates or reflection flow.
+
+PDFs, web article extraction, slide decks, and OCR inputs are not part of local/stdin ingestion yet.
 
 ### Re-extract with Different Templates
 

@@ -391,6 +391,34 @@ class TestTranscriptionManager:
         mock_gemini.transcribe.assert_called_once()
 
     @pytest.mark.asyncio
+    async def test_transcribe_local_media_uses_gemini_without_download(
+        self,
+        tmp_path: Path,
+        manager: TranscriptionManager,
+        mock_cache: Mock,
+        mock_youtube: Mock,
+        mock_downloader: Mock,
+        mock_gemini: Mock,
+        sample_transcript: Transcript,
+    ) -> None:
+        """Local media files are passed directly to Gemini without yt-dlp."""
+        local_media = tmp_path / "episode.mp3"
+        local_media.write_bytes(b"fake audio")
+        gemini_transcript = sample_transcript.model_copy(update={"source": "gemini"})
+        mock_gemini.transcribe.return_value = gemini_transcript
+
+        result = await manager.transcribe(str(local_media))
+
+        assert result.success is True
+        assert result.transcript is not None
+        assert result.transcript.source == "gemini"
+        assert result.attempts == ["gemini"]
+        mock_cache.get.assert_not_called()
+        mock_youtube.can_transcribe.assert_not_called()
+        mock_downloader.download.assert_not_called()
+        mock_gemini.transcribe.assert_called_once_with(local_media, str(local_media))
+
+    @pytest.mark.asyncio
     async def test_download_403_is_not_reported_as_api_auth_failure(
         self,
         manager: TranscriptionManager,

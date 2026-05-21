@@ -27,6 +27,7 @@ from inkwell.feeds.youtube_resolver import (
     is_youtube_url,
     resolve_youtube_url,
 )
+from inkwell.ingestion import ContentSourceKind, InputResolver
 from inkwell.pipeline import PipelineOptions, PipelineOrchestrator
 from inkwell.transcription import CostEstimate, TranscriptionManager
 from inkwell.utils.datetime import now_utc
@@ -910,18 +911,15 @@ def fetch_command(
                     ),
                 )
 
-            # Normalize scheme-less URL-shaped inputs up-front so the
-            # --save-feed guard and the feed-name lookup both see the same
-            # URL. Feed names never contain both `.` and `/`, so this is
-            # unambiguous. Without this, `www.youtube.com/watch?v=X
-            # --save-feed` would be rejected as "not YouTube" even though
-            # the same input works in plain fetch mode.
-            if (
-                not url_or_feed.startswith(("http://", "https://"))
-                and "." in url_or_feed
-                and "/" in url_or_feed
-            ):
-                url_or_feed = f"https://{url_or_feed}"
+            input_source = InputResolver().resolve(url_or_feed)
+            if input_source.is_url and input_source.url:
+                # Normalize scheme-less URL-shaped inputs up-front so the
+                # --save-feed guard and the feed-name lookup both see the same
+                # URL. Feed names never contain both `.` and `/`, so this is
+                # unambiguous. Without this, `www.youtube.com/watch?v=X
+                # --save-feed` would be rejected as "not YouTube" even though
+                # the same input works in plain fetch mode.
+                url_or_feed = input_source.url
 
             # Resolve feed name to episode URL if needed
             url = url_or_feed
@@ -936,7 +934,7 @@ def fetch_command(
             # out into its episodes); stays None for direct-URL mode.
             selected_episodes: list[Episode] | None = None
 
-            is_url = url_or_feed.startswith(("http://", "https://"))
+            is_url = input_source.is_url
 
             if is_url and count is not None:
                 raise ValidationError(
@@ -987,7 +985,29 @@ def fetch_command(
                 # Treat as feed name - look up in configured feeds
                 try:
                     feed_config = manager.get_feed(url_or_feed)
-                except NotFoundError:
+                except NotFoundError as e:
+                    if input_source.kind == ContentSourceKind.STDIN:
+                        raise ValidationError(
+                            "Stdin ingestion is recognized but not supported by fetch yet",
+                            suggestion=(
+                                "Use a saved feed or media URL for now. Stdin routing is planned "
+                                "for the local/stdin ingestion phase."
+                            ),
+                        ) from e
+                    if input_source.kind == ContentSourceKind.LOCAL_FILE:
+                        raise ValidationError(
+                            "Local file ingestion is recognized but not supported by fetch yet",
+                            suggestion=(
+                                "Use a saved feed or media URL for now. Local audio/video routing "
+                                "is planned for the local/stdin ingestion phase."
+                            ),
+                        ) from e
+                    if input_source.kind == ContentSourceKind.UNKNOWN_URL:
+                        raise ValidationError(
+                            f"Unsupported URL input: {input_source.value}",
+                            suggestion="Use an http(s) media URL or a saved feed name.",
+                        ) from e
+
                     console.print(f"[red]✗[/red] Feed '{url_or_feed}' not found.")
                     console.print("  Use [cyan]inkwell list[/cyan] to see configured feeds.")
                     console.print("  Or provide a direct episode URL.")

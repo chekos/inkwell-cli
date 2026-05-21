@@ -430,7 +430,9 @@ class PipelineOrchestrator:
             InkwellError: If transcription fails
         """
         manager = TranscriptionManager(
-            config=self.config.transcription, cost_tracker=self.cost_tracker
+            config=self.config.transcription,
+            media_cache=self.config.cache.media,
+            cost_tracker=self.cost_tracker,
         )
         result = await manager.transcribe(
             url,

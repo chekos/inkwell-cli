@@ -224,7 +224,7 @@ inkwell cache clear-expired
 inkwell cache clear
 ```
 
-`stats` is observational only. Media cache retention controls are planned separately.
+`stats` is observational only. Downloaded media/audio retention is configured with `cache.media.enabled`, `cache.media.max_mb`, and `cache.media.ttl_days`.
 
 ---
 
@@ -475,6 +475,7 @@ inkwell config set <KEY> <VALUE>
 inkwell config set log_level DEBUG
 inkwell config set default_output_dir ~/Documents/podcasts
 inkwell config set transcription.api_key "your-key"
+inkwell config set cache.media.max_mb 4096
 ```
 
 ### inkwell config feed

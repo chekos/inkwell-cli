@@ -40,6 +40,7 @@ Output directory: ~/podcasts
 Log level: INFO
 YouTube check: ✓
 Transcription model: gemini-2.5-flash
+Media cache: enabled, 2048 MB, 30 days
 ```
 
 ---
@@ -58,6 +59,7 @@ inkwell config set <key> <value>
 inkwell config set log_level DEBUG
 inkwell config set default_output_dir ~/Documents/podcasts
 inkwell config set transcription.api_key "your-key"
+inkwell config set cache.media.max_mb 4096
 ```
 
 ### Via Editor
@@ -98,6 +100,14 @@ Opens `config.yaml` in your `$EDITOR` (defaults to `vi`).
 | `extraction.claude_api_key` | string | `""` | Optional Anthropic key for extraction |
 | `extraction.cache_days` | integer | `30` | Extraction cache duration |
 
+### Cache
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `cache.media.enabled` | boolean | `true` | Cache downloaded media/audio files |
+| `cache.media.max_mb` | integer | `2048` | Maximum media/audio cache size in MB |
+| `cache.media.ttl_days` | integer | `30` | Maximum media/audio cache entry age in days |
+
 ### Interview
 
 | Option | Type | Default | Description |
@@ -135,6 +145,13 @@ transcription:
   api_key: your-google-ai-key-here
   model_name: gemini-2.5-flash   # omit to use the generated config default
   youtube_check: true
+
+# Cache
+cache:
+  media:
+    enabled: true
+    max_mb: 2048
+    ttl_days: 30
 
 # Extraction
 extraction:
@@ -202,7 +219,8 @@ tail -f ~/.local/state/inkwell/inkwell.log
 ```
 ~/.cache/inkwell/
 ├── transcripts/    # Cached transcripts
-└── extractions/    # Cached extractions
+├── extractions/    # Cached extractions
+└── audio/          # Downloaded media/audio cache
 ```
 
 Clear cache:

@@ -613,6 +613,14 @@ def config_command(
             table.add_row("YouTube check", "✓" if config.transcription.youtube_check else "✗")
             table.add_row("Transcription model", config.transcription.model_name)
             table.add_row("Interview model", config.interview.model)
+            table.add_row(
+                "Media cache",
+                (
+                    f"enabled, {config.cache.media.max_mb} MB, {config.cache.media.ttl_days} days"
+                    if config.cache.media.enabled
+                    else "disabled"
+                ),
+            )
             table.add_row("", "")
 
             # API key status - simplified to show the two keys that matter
@@ -729,18 +737,30 @@ def config_command(
                     console.print("  • transcription.api_key")
                     console.print("  • extraction.gemini_api_key")
                     console.print("  • extraction.claude_api_key")
+                    console.print("  • cache.media.enabled")
                     sys.exit(1)
-            elif len(key_parts) == 2:
-                # Nested key (e.g., transcription.api_key)
-                parent_key, child_key = key_parts
+            elif len(key_parts) in {2, 3}:
+                # Nested key (e.g., transcription.api_key or cache.media.enabled)
+                parent_key, *child_path = key_parts
 
                 if not hasattr(config, parent_key):
                     console.print(f"[red]✗[/red] Unknown config section: {parent_key}")
-                    console.print("\nAvailable sections: transcription, extraction, interview")
+                    console.print(
+                        "\nAvailable sections: transcription, extraction, interview, cache"
+                    )
                     sys.exit(1)
 
                 parent_obj = getattr(config, parent_key)
 
+                for nested_key in child_path[:-1]:
+                    if not hasattr(parent_obj, nested_key):
+                        console.print(
+                            f"[red]✗[/red] Unknown key '{nested_key}' in section '{parent_key}'"
+                        )
+                        sys.exit(1)
+                    parent_obj = getattr(parent_obj, nested_key)
+
+                child_key = child_path[-1]
                 if not hasattr(parent_obj, child_key):
                     console.print(
                         f"[red]✗[/red] Unknown key '{child_key}' in section '{parent_key}'"
@@ -782,8 +802,8 @@ def config_command(
             else:
                 console.print(f"[red]✗[/red] Invalid key format: {key}")
                 console.print(
-                    "Use 'key' for top-level or 'section.key' for nested "
-                    "(e.g., transcription.api_key)"
+                    "Use 'key' for top-level or dot notation for nested values "
+                    "(e.g., transcription.api_key or cache.media.enabled)"
                 )
                 sys.exit(1)
 
@@ -879,7 +899,9 @@ def transcribe_command(
             transcribe_url = input_source.url or input_source.value
 
             manager = TranscriptionManager(
-                model_name=config.transcription_model, cost_confirmation_callback=confirm_cost
+                config=config.transcription,
+                media_cache=config.cache.media,
+                cost_confirmation_callback=confirm_cost,
             )
 
             with Progress(

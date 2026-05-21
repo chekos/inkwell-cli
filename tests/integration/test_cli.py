@@ -1539,6 +1539,16 @@ class TestCLIConfig:
         config_reloaded = manager.load_config()
         assert config_reloaded.log_level == "DEBUG"
 
+    def test_config_set_media_cache_nested_value(self, tmp_path: Path, monkeypatch) -> None:
+        """Config set supports three-level media cache values."""
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+        monkeypatch.setattr("inkwell.config.manager.get_config_dir", lambda: tmp_path)
+
+        result = runner.invoke(app, ["config", "set", "cache.media.max_mb", "4096"])
+
+        assert result.exit_code == 0, result.output
+        assert ConfigManager(config_dir=tmp_path).load_config().cache.media.max_mb == 4096
+
     def test_config_roundtrip(self, tmp_path: Path) -> None:
         """Test that config can be saved and loaded."""
         manager = ConfigManager(config_dir=tmp_path)

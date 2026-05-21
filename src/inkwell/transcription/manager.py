@@ -11,7 +11,7 @@ from urllib.parse import urlparse
 
 from inkwell.audio import AudioDownloader
 from inkwell.config.precedence import resolve_config_value
-from inkwell.config.schema import TranscriptionConfig
+from inkwell.config.schema import MediaCacheConfig, TranscriptionConfig
 
 # Import from specific submodules to avoid potential circular imports
 from inkwell.plugins.discovery import discover_plugins
@@ -48,6 +48,7 @@ class TranscriptionManager:
         cache: TranscriptCache | None = None,
         youtube_transcriber: YouTubeTranscriber | None = None,
         audio_downloader: AudioDownloader | None = None,
+        media_cache: MediaCacheConfig | None = None,
         gemini_transcriber: GeminiTranscriber | None = None,
         gemini_api_key: str | None = None,
         model_name: str | None = None,
@@ -62,6 +63,7 @@ class TranscriptionManager:
             cache: Transcript cache (default: new instance)
             youtube_transcriber: YouTube transcriber (default: new instance)
             audio_downloader: Audio downloader (default: new instance)
+            media_cache: Downloaded media/audio cache configuration
             gemini_transcriber: Gemini transcriber (default: new instance)
             gemini_api_key: Google AI API key (default: from env) [deprecated]
             model_name: Gemini model (default: gemini-2.5-flash) [deprecated]
@@ -87,7 +89,12 @@ class TranscriptionManager:
             )
 
         self.cache = cache or TranscriptCache()
-        self.audio_downloader = audio_downloader or AudioDownloader()
+        self.media_cache = media_cache or MediaCacheConfig()
+        self.audio_downloader = audio_downloader or AudioDownloader(
+            cache_enabled=self.media_cache.enabled,
+            cache_max_mb=self.media_cache.max_mb,
+            cache_ttl_days=self.media_cache.ttl_days,
+        )
         self.cost_tracker = cost_tracker
         self._use_plugin_registry = use_plugin_registry
 

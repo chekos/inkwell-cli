@@ -7,11 +7,13 @@ from pydantic import HttpUrl, ValidationError
 
 from inkwell.config.schema import (
     AuthConfig,
+    CacheConfig,
     ExtractionConfig,
     FeedConfig,
     Feeds,
     GlobalConfig,
     InterviewConfig,
+    MediaCacheConfig,
     TranscriptionConfig,
 )
 
@@ -111,6 +113,9 @@ class TestGlobalConfig:
         assert config.transcription.cost_threshold_usd == 1.0
         assert config.interview.model == "claude-sonnet-4-5"
         assert config.extraction.default_provider == "gemini"
+        assert config.cache.media.enabled is True
+        assert config.cache.media.max_mb == 2048
+        assert config.cache.media.ttl_days == 30
 
     def test_global_config_from_dict(self, sample_config_dict: dict) -> None:
         """Test GlobalConfig created from dictionary."""
@@ -414,6 +419,38 @@ class TestExtractionConfigValidation:
         with pytest.raises(ValidationError) as exc_info:
             ExtractionConfig(gemini_api_key="x" * 600)
         assert "at most 500 characters" in str(exc_info.value)
+
+
+class TestCacheConfigValidation:
+    """Tests for cache configuration validation."""
+
+    def test_media_cache_defaults(self) -> None:
+        """Media cache defaults are enabled and bounded."""
+        config = CacheConfig()
+
+        assert config.media.enabled is True
+        assert config.media.max_mb == 2048
+        assert config.media.ttl_days == 30
+
+    def test_media_cache_custom_values(self) -> None:
+        """Media cache accepts explicit bounded values."""
+        config = MediaCacheConfig(enabled=False, max_mb=4096, ttl_days=90)
+
+        assert config.enabled is False
+        assert config.max_mb == 4096
+        assert config.ttl_days == 90
+
+    def test_media_cache_rejects_invalid_size(self) -> None:
+        """Media cache size must be positive."""
+        with pytest.raises(ValidationError) as exc_info:
+            MediaCacheConfig(max_mb=0)
+        assert "greater than or equal to 1" in str(exc_info.value)
+
+    def test_media_cache_rejects_invalid_ttl(self) -> None:
+        """Media cache TTL must be positive."""
+        with pytest.raises(ValidationError) as exc_info:
+            MediaCacheConfig(ttl_days=0)
+        assert "greater than or equal to 1" in str(exc_info.value)
 
 
 class TestInterviewConfigValidation:

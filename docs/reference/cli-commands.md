@@ -156,6 +156,50 @@ inkwell rename old-name new-name --force
 
 ---
 
+## inkwell transcribe
+
+Transcribe a media URL without running structured extraction or writing an episode note directory.
+
+```bash
+inkwell transcribe <URL> [OPTIONS]
+```
+
+### Arguments
+
+| Argument | Required | Description |
+|----------|----------|-------------|
+| `URL` | Yes | Episode or media URL to transcribe |
+
+### Options
+
+| Option | Short | Type | Default | Description |
+|--------|-------|------|---------|-------------|
+| `--output` | `-o` | path | | Write transcript text to a file |
+| `--force` | `-f` | flag | false | Force re-transcription and bypass transcript cache |
+| `--skip-youtube` | | flag | false | Skip YouTube captions and use Gemini directly |
+| `--json` | | flag | false | Print a JSON envelope to stdout; progress, warnings, and hints go to stderr |
+| `--plain` | | flag | false | Print only transcript text to stdout; progress, warnings, and hints go to stderr |
+
+### Examples
+
+```bash
+# Human-readable transcript output
+inkwell transcribe https://youtube.com/watch?v=xyz
+
+# Write transcript text to a file
+inkwell transcribe https://example.com/episode.mp3 --output transcript.txt
+
+# Script-friendly JSON
+inkwell transcribe https://youtube.com/watch?v=xyz --json
+
+# Transcript text only
+inkwell transcribe https://youtube.com/watch?v=xyz --plain
+```
+
+`--json` and `--plain` are mutually exclusive. In both modes, stdout is reserved for the primary result so shell scripts can parse it safely.
+
+---
+
 ## inkwell fetch
 
 Process podcast episodes.
@@ -193,6 +237,8 @@ inkwell fetch <SOURCE> [OPTIONS]
 | `--resume-session` | | string | | Resume specific interview session by ID |
 | `--extractor` | | string | Auto | Force specific extraction plugin (e.g., claude, gemini) |
 | `--transcriber` | | string | Auto | Force specific transcription plugin (e.g., youtube, gemini) |
+| `--json` | | flag | false | Print a JSON envelope to stdout; progress, warnings, and hints go to stderr |
+| `--plain` | | flag | false | Print only generated output directory path(s) to stdout |
 | `--save-feed` | | flag | false | After a successful YouTube URL fetch, also save the channel as a feed. Auto-names the feed from channel metadata unless `--feed-name` is set. |
 | `--feed-name` | | string | auto | Feed name for `--save-feed`. Optional; derived from channel metadata if omitted. |
 
@@ -238,6 +284,12 @@ inkwell fetch URL --provider gemini
 # Force specific plugins
 inkwell fetch URL --extractor claude --transcriber youtube
 
+# Script-friendly JSON envelope
+inkwell fetch URL --json
+
+# Output directory path only
+inkwell fetch URL --plain
+
 # One-time YouTube video; save the channel for future fetches (auto-named)
 inkwell fetch https://www.youtube.com/watch?v=abc123 --save-feed
 
@@ -247,6 +299,8 @@ inkwell fetch https://www.youtube.com/watch?v=abc123 --save-feed --feed-name som
 # Using environment variable overrides
 INKWELL_EXTRACTOR=gemini inkwell fetch URL
 ```
+
+`--json` and `--plain` are mutually exclusive. In both modes, stdout is reserved for the primary result and interactive progress output is sent to stderr.
 
 ---
 

@@ -1825,6 +1825,28 @@ class TestCLICache:
         # Main goal is to ensure command is registered and parseable
         assert result.exit_code in (0, 1)
 
+    def test_cache_stats_shows_all_cache_sections(self, tmp_path: Path, monkeypatch) -> None:
+        """Cache stats reports transcript, extraction, and media sections."""
+        monkeypatch.setattr(
+            "inkwell.transcription.cache.user_cache_dir",
+            lambda *_args: str(tmp_path / "transcripts-root"),
+        )
+        monkeypatch.setattr(
+            "inkwell.extraction.cache.platformdirs.user_cache_dir",
+            lambda *_args: str(tmp_path / "extractions-root"),
+        )
+        monkeypatch.setattr(
+            "inkwell.audio.downloader.platformdirs.user_cache_dir",
+            lambda *_args: str(tmp_path / "media-root"),
+        )
+
+        result = runner.invoke(app, ["cache", "stats"])
+
+        assert result.exit_code == 0, result.output
+        assert "Transcript Cache Statistics" in result.stdout
+        assert "Extraction Cache Statistics" in result.stdout
+        assert "Media Cache Statistics" in result.stdout
+
     def test_cache_invalid_action(self) -> None:
         """Test cache command with invalid action."""
         result = runner.invoke(app, ["cache", "invalid-action"])

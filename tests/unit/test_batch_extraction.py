@@ -219,16 +219,28 @@ class TestBatchedExtraction:
             transcript = "Test transcript"
             metadata = {"episode_url": "https://example.com/ep1"}
 
-            # Pre-populate cache for all templates
-            await temp_cache.set("summary", "1.0", transcript, "Cached summary")
-            await temp_cache.set("quotes", "1.0", transcript, '{"quotes": ["Cached quote"]}')
-
             # Mock extractor (should NOT be called)
             mock_extract = AsyncMock()
             mock_extractor = Mock()
             mock_extractor.extract = mock_extract
             mock_extractor.estimate_cost = Mock(return_value=0.01)
             mock_extractor.__class__.__name__ = "GeminiExtractor"
+
+            # Pre-populate cache for all templates
+            await temp_cache.set(
+                "summary",
+                "1.0",
+                transcript,
+                "Cached summary",
+                **engine._cache_key_options(summary_template, mock_extractor),
+            )
+            await temp_cache.set(
+                "quotes",
+                "1.0",
+                transcript,
+                '{"quotes": ["Cached quote"]}',
+                **engine._cache_key_options(quotes_template, mock_extractor),
+            )
 
             with patch.object(engine, "_select_extractor", return_value=mock_extractor):
                 # Execute batch extraction

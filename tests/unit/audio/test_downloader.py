@@ -7,6 +7,7 @@ import pytest
 from yt_dlp.utils import DownloadError, ExtractorError
 
 from inkwell.audio import AudioDownloader, DownloadProgress
+from inkwell.audio.downloader import AUDIO_CACHE_FORMAT_VERSION
 from inkwell.utils.errors import APIError
 
 
@@ -130,6 +131,30 @@ class TestAudioDownloader:
         downloader = AudioDownloader()
 
         assert downloader.output_dir == Path.cwd() / "downloads"
+
+    def test_cache_stats_empty_missing_directory(self, tmp_path: Path) -> None:
+        """Cache stats can inspect a missing media cache directory."""
+        cache_dir = tmp_path / "missing-cache"
+
+        stats = AudioDownloader.cache_stats(cache_dir)
+
+        assert stats["total"] == 0
+        assert stats["size_bytes"] == 0
+        assert stats["cache_dir"] == str(cache_dir)
+        assert stats["cache_format_version"] == AUDIO_CACHE_FORMAT_VERSION
+        assert stats["extensions"] == {}
+
+    def test_cache_stats_counts_media_files(self, cache_dir: Path) -> None:
+        """Cache stats reports media file count, bytes, and extensions."""
+        (cache_dir / "one.m4a").write_bytes(b"abc")
+        (cache_dir / "two.webm").write_bytes(b"abcd")
+
+        stats = AudioDownloader.cache_stats(cache_dir)
+
+        assert stats["total"] == 2
+        assert stats["size_bytes"] == 7
+        assert stats["cache_format_version"] == AUDIO_CACHE_FORMAT_VERSION
+        assert stats["extensions"] == {".m4a": 1, ".webm": 1}
 
     @pytest.mark.asyncio
     async def test_download_success(

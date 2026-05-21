@@ -969,7 +969,12 @@ def cache_command(
         manager = TranscriptionManager()
 
         if action == "stats":
+            from inkwell.audio.downloader import AudioDownloader
+            from inkwell.extraction.cache import ExtractionCache
+
             stats = manager.cache_stats()
+            extraction_stats = asyncio.run(ExtractionCache().get_stats())
+            audio_stats = AudioDownloader.cache_stats()
 
             console.print("\n[bold]Transcript Cache Statistics[/bold]\n")
 
@@ -981,6 +986,7 @@ def cache_command(
             table.add_row("Valid", str(stats["valid"]))
             table.add_row("Expired", str(stats["expired"]))
             table.add_row("Size", f"{stats['size_bytes'] / 1024 / 1024:.2f} MB")
+            table.add_row("Format version", str(stats.get("cache_format_version", "unknown")))
             table.add_row("Cache directory", stats["cache_dir"])
 
             console.print(table)
@@ -989,6 +995,57 @@ def cache_command(
                 console.print("\n[bold]By Source:[/bold]")
                 for source, count in stats["sources"].items():
                     console.print(f"  • {source}: {count}")
+
+            console.print("\n[bold]Extraction Cache Statistics[/bold]\n")
+
+            extraction_table = Table(show_header=False, box=None)
+            extraction_table.add_column("Key", style="cyan")
+            extraction_table.add_column("Value", style="white")
+
+            extraction_table.add_row("Total entries", str(extraction_stats["total_entries"]))
+            extraction_table.add_row("Size", f"{extraction_stats['total_size_mb']:.2f} MB")
+            extraction_table.add_row(
+                "Oldest entry age",
+                f"{extraction_stats['oldest_entry_age_days']:.1f} days",
+            )
+            extraction_table.add_row(
+                "Format version",
+                str(extraction_stats.get("cache_format_version", "unknown")),
+            )
+            extraction_table.add_row("Cache directory", extraction_stats["cache_dir"])
+
+            console.print(extraction_table)
+
+            if extraction_stats["templates"]:
+                console.print("\n[bold]By Template:[/bold]")
+                for template_name, count in extraction_stats["templates"].items():
+                    console.print(f"  • {template_name}: {count}")
+
+            if extraction_stats["providers"]:
+                console.print("\n[bold]By Provider:[/bold]")
+                for provider_name, count in extraction_stats["providers"].items():
+                    console.print(f"  • {provider_name}: {count}")
+
+            console.print("\n[bold]Media Cache Statistics[/bold]\n")
+
+            media_table = Table(show_header=False, box=None)
+            media_table.add_column("Key", style="cyan")
+            media_table.add_column("Value", style="white")
+
+            media_table.add_row("Total files", str(audio_stats["total"]))
+            media_table.add_row("Size", f"{audio_stats['size_bytes'] / 1024 / 1024:.2f} MB")
+            media_table.add_row(
+                "Format version",
+                str(audio_stats.get("cache_format_version", "unknown")),
+            )
+            media_table.add_row("Cache directory", audio_stats["cache_dir"])
+
+            console.print(media_table)
+
+            if audio_stats["extensions"]:
+                console.print("\n[bold]By Extension:[/bold]")
+                for extension, count in audio_stats["extensions"].items():
+                    console.print(f"  • {extension}: {count}")
 
         elif action == "clear":
             confirm: bool = typer.confirm(

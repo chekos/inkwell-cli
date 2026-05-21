@@ -3,6 +3,8 @@
 Coordinates template selection, provider selection, caching, and result parsing.
 """
 
+import hashlib
+import json
 import logging
 import os
 import re
@@ -273,6 +275,103 @@ class ExtractionEngine:
             self._load_extraction_plugins()
         return self._registry
 
+    def _cache_key_options(
+        self,
+        template: ExtractionTemplate,
+        extractor: BaseExtractor | None = None,
+    ) -> dict[str, str]:
+        """Build stable extraction cache-key metadata for a template."""
+        provider = (
+            self._provider_name_for_extractor(extractor)
+            if extractor is not None
+            else self._cache_provider_for_template(template)
+        )
+        return {
+            "provider": provider,
+            "model": (
+                self._model_name_for_extractor(extractor)
+                if extractor is not None
+                else self._cache_model_for_provider(provider)
+            ),
+            "prompt_hash": self._template_prompt_hash(template),
+            "output_schema_version": self._output_schema_version(template),
+        }
+
+    def _provider_name_for_extractor(self, extractor: BaseExtractor) -> str:
+        """Return a provider identity for cache keys and result metadata."""
+        plugin_name = getattr(extractor, "NAME", None)
+        if isinstance(plugin_name, str) and plugin_name:
+            return plugin_name
+
+        class_name = extractor.__class__.__name__
+        if class_name == "ClaudeExtractor":
+            return "claude"
+        if class_name == "GeminiExtractor":
+            return "gemini"
+        return class_name.removesuffix("Extractor").lower() or "unknown"
+
+    def _model_name_for_extractor(self, extractor: BaseExtractor) -> str:
+        """Return a model identity for cache keys."""
+        model = getattr(extractor, "model", None) or getattr(extractor, "MODEL", None)
+        if isinstance(model, str) and model:
+            return model
+        return "unknown"
+
+    def _cache_provider_for_template(self, template: ExtractionTemplate) -> str:
+        """Mirror provider selection inputs without requiring plugin initialization."""
+        override = self._extractor_override or os.environ.get("INKWELL_EXTRACTOR")
+        if override:
+            return override
+
+        if template.model_preference:
+            return template.model_preference
+
+        if "quote" in template.name.lower():
+            return "claude"
+
+        if template.expected_format == "json" and template.output_schema:
+            required_fields = template.output_schema.get("required", [])
+            if len(required_fields) > 5:
+                return "claude"
+
+        return self.default_provider
+
+    def _cache_model_for_provider(self, provider: str) -> str:
+        """Return the default model identity used for cache-key metadata."""
+        default_models = {
+            "claude": "claude-3-5-sonnet-20241022",
+            "gemini": "gemini-3-pro-preview",
+        }
+        return default_models.get(provider, "unknown")
+
+    def _template_prompt_hash(self, template: ExtractionTemplate) -> str:
+        """Hash prompt/template inputs that affect extraction output."""
+        payload = {
+            "name": template.name,
+            "version": template.version,
+            "system_prompt": template.system_prompt,
+            "user_prompt_template": template.user_prompt_template,
+            "expected_format": template.expected_format,
+            "output_schema": template.output_schema,
+            "model_preference": template.model_preference,
+            "max_tokens": template.max_tokens,
+            "temperature": template.temperature,
+            "variables": [variable.model_dump(mode="json") for variable in template.variables],
+            "few_shot_examples": template.few_shot_examples,
+        }
+        content = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
+        return hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+    def _output_schema_version(self, template: ExtractionTemplate) -> str:
+        """Build an output schema identity for cache-key metadata."""
+        schema_payload = {
+            "expected_format": template.expected_format,
+            "output_schema": template.output_schema or {},
+        }
+        content = json.dumps(schema_payload, sort_keys=True, separators=(",", ":"), default=str)
+        schema_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
+        return f"{template.expected_format}:{schema_hash}"
+
     async def extract(
         self,
         template: ExtractionTemplate,
@@ -295,9 +394,15 @@ class ExtractionEngine:
             ExtractionError: If extraction fails
         """
         episode_url = metadata.get("episode_url", "")
+        policy_cache_key_options = self._cache_key_options(template)
 
         if use_cache:
-            cached = await self.cache.get(template.name, template.version, transcript)
+            cached = await self.cache.get(
+                template.name,
+                template.version,
+                transcript,
+                **policy_cache_key_options,
+            )
             if cached:
                 content = self._parse_output(cached, template)
                 return ExtractionResult(
@@ -312,7 +417,28 @@ class ExtractionEngine:
                 )
 
         extractor = self._select_extractor(template)
-        provider_name = "claude" if extractor.__class__.__name__ == "ClaudeExtractor" else "gemini"
+        provider_name = self._provider_name_for_extractor(extractor)
+        cache_key_options = self._cache_key_options(template, extractor)
+
+        if use_cache and cache_key_options != policy_cache_key_options:
+            cached = await self.cache.get(
+                template.name,
+                template.version,
+                transcript,
+                **cache_key_options,
+            )
+            if cached:
+                content = self._parse_output(cached, template)
+                return ExtractionResult(
+                    episode_url=episode_url,
+                    template_name=template.name,
+                    template_version=template.version,
+                    success=True,
+                    extracted_content=content,
+                    cost_usd=0.0,
+                    provider="cache",
+                    from_cache=True,
+                )
 
         # Estimate cost
         estimated_cost = extractor.estimate_cost(template, len(transcript))
@@ -324,7 +450,13 @@ class ExtractionEngine:
             content = self._parse_output(raw_output, template)
 
             if use_cache:
-                await self.cache.set(template.name, template.version, transcript, raw_output)
+                await self.cache.set(
+                    template.name,
+                    template.version,
+                    transcript,
+                    raw_output,
+                    **cache_key_options,
+                )
 
             if self.cost_tracker:
                 # Estimate token counts based on transcript length
@@ -492,11 +624,25 @@ class ExtractionEngine:
             template: ExtractionTemplate,
         ) -> tuple[ExtractionTemplate, str | None]:
             """Lookup single template in cache."""
+            policy_cache_key_options = self._cache_key_options(template)
             result = await self.cache.get(
                 template.name,
                 template.version,
                 transcript,
+                **policy_cache_key_options,
             )
+            if result is not None:
+                return (template, result)
+
+            extractor = self._select_extractor(template)
+            cache_key_options = self._cache_key_options(template, extractor)
+            if cache_key_options != policy_cache_key_options:
+                result = await self.cache.get(
+                    template.name,
+                    template.version,
+                    transcript,
+                    **cache_key_options,
+                )
             return (template, result)
 
         results = await asyncio.gather(*[lookup_one(t) for t in templates])
@@ -613,7 +759,14 @@ class ExtractionEngine:
                 result = batch_results.get(template.name)
                 if result and result.success and result.extracted_content:
                     raw_output = self._serialize_extracted_content(result.extracted_content)
-                    await self.cache.set(template.name, template.version, transcript, raw_output)
+                    extractor = self._select_extractor(template)
+                    await self.cache.set(
+                        template.name,
+                        template.version,
+                        transcript,
+                        raw_output,
+                        **self._cache_key_options(template, extractor),
+                    )
 
         # Combine cached and new results in original order and build summary
         all_results = []

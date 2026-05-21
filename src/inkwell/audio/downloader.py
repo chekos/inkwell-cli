@@ -16,6 +16,8 @@ from inkwell.utils.errors import APIError
 
 logger = logging.getLogger(__name__)
 
+AUDIO_CACHE_FORMAT_VERSION = 1
+
 
 class DownloadProgress(BaseModel):
     """Progress information for audio download."""
@@ -60,10 +62,50 @@ class AudioDownloader:
         self.output_dir = output_dir or Path.cwd() / "downloads"
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
-        self.cache_dir = cache_dir or Path(platformdirs.user_cache_dir("inkwell")) / "audio"
+        self.cache_dir = cache_dir or self.default_cache_dir()
         self.cache_dir.mkdir(parents=True, exist_ok=True)
 
         self.progress_callback = progress_callback
+
+    @staticmethod
+    def default_cache_dir() -> Path:
+        """Return the default audio/media cache directory."""
+        return Path(platformdirs.user_cache_dir("inkwell")) / "audio"
+
+    @classmethod
+    def cache_stats(cls, cache_dir: Path | None = None) -> dict[str, Any]:
+        """Get audio/media cache statistics without enforcing retention policy."""
+        resolved_cache_dir = cache_dir or cls.default_cache_dir()
+
+        if not resolved_cache_dir.exists():
+            return {
+                "total": 0,
+                "size_bytes": 0,
+                "cache_dir": str(resolved_cache_dir),
+                "cache_format_version": AUDIO_CACHE_FORMAT_VERSION,
+                "extensions": {},
+            }
+
+        cache_files = [path for path in resolved_cache_dir.iterdir() if path.is_file()]
+        total_size = 0
+        extensions: dict[str, int] = {}
+
+        for cache_file in cache_files:
+            try:
+                stat_result = cache_file.stat()
+            except OSError:
+                continue
+            total_size += stat_result.st_size
+            extension = cache_file.suffix.lower() or "<none>"
+            extensions[extension] = extensions.get(extension, 0) + 1
+
+        return {
+            "total": len(cache_files),
+            "size_bytes": total_size,
+            "cache_dir": str(resolved_cache_dir),
+            "cache_format_version": AUDIO_CACHE_FORMAT_VERSION,
+            "extensions": extensions,
+        }
 
     def _get_cache_path(self, url: str) -> Path:
         """Get cached audio file path for a URL.

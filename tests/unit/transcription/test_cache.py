@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from inkwell.transcription import Transcript, TranscriptCache, TranscriptSegment
+from inkwell.transcription.cache import TRANSCRIPT_CACHE_FORMAT_VERSION
 
 
 class TestTranscriptCache:
@@ -180,6 +181,7 @@ class TestTranscriptCache:
 
         assert "cached_at" in data
         assert "value" in data
+        assert data["value"]["cache_format_version"] == TRANSCRIPT_CACHE_FORMAT_VERSION
         assert "episode_url" in data["value"]
         assert "transcript" in data["value"]
         assert data["value"]["episode_url"] == url
@@ -329,6 +331,9 @@ class TestTranscriptCache:
         assert stats["size_bytes"] > 0
         assert stats["sources"]["youtube"] == 2  # Original source preserved
         assert stats["sources"]["gemini"] == 1
+        assert stats["cache_format_version"] == TRANSCRIPT_CACHE_FORMAT_VERSION
+        assert stats["format_versions"][str(TRANSCRIPT_CACHE_FORMAT_VERSION)] == 2
+        assert stats["format_versions"]["legacy"] == 1
 
     @pytest.mark.asyncio
     async def test_stats_with_corrupted(self, cache: TranscriptCache, temp_cache_dir: Path) -> None:

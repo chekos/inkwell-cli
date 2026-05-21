@@ -1,12 +1,13 @@
 """Unit tests for extraction cache."""
 
+import hashlib
 import json
 import time
 from pathlib import Path
 
 import pytest
 
-from inkwell.extraction.cache import ExtractionCache
+from inkwell.extraction.cache import EXTRACTION_CACHE_FORMAT_VERSION, ExtractionCache
 
 
 @pytest.fixture
@@ -159,14 +160,36 @@ class TestExtractionCache:
         """Test stats with cached entries."""
         cache = ExtractionCache(cache_dir=temp_cache_dir)
 
-        await cache.set("summary", "1.0", "transcript1", "result1")
-        await cache.set("quotes", "1.0", "transcript2", "result2")
+        await cache.set(
+            "summary",
+            "1.0",
+            "transcript1",
+            "result1",
+            provider="gemini",
+            model="gemini-3-pro-preview",
+            prompt_hash="prompt-a",
+            output_schema_version="markdown:schema-a",
+        )
+        await cache.set(
+            "quotes",
+            "1.0",
+            "transcript2",
+            "result2",
+            provider="claude",
+            model="claude-3-5-sonnet-20241022",
+            prompt_hash="prompt-b",
+            output_schema_version="json:schema-b",
+        )
 
         stats = await cache.get_stats()
         assert stats["total_entries"] == 2
         # Size in MB may be very small, but should be non-negative
         assert stats["total_size_mb"] >= 0
         assert stats["oldest_entry_age_days"] >= 0
+        assert stats["cache_format_version"] == EXTRACTION_CACHE_FORMAT_VERSION
+        assert stats["format_versions"][str(EXTRACTION_CACHE_FORMAT_VERSION)] == 2
+        assert stats["templates"] == {"summary": 1, "quotes": 1}
+        assert stats["providers"] == {"gemini": 1, "claude": 1}
 
     @pytest.mark.asyncio
     async def test_corrupted_cache_file_ignored(self, temp_cache_dir: Path) -> None:
@@ -246,7 +269,16 @@ class TestExtractionCache:
         """Test that cache files have correct structure."""
         cache = ExtractionCache(cache_dir=temp_cache_dir)
 
-        await cache.set("summary", "1.0", "transcript", "result")
+        await cache.set(
+            "summary",
+            "1.0",
+            "transcript",
+            "result",
+            provider="gemini",
+            model="gemini-3-pro-preview",
+            prompt_hash="prompt-hash",
+            output_schema_version="markdown:schema-hash",
+        )
 
         cache_files = list(temp_cache_dir.glob("*.json"))
         assert len(cache_files) == 1
@@ -256,13 +288,97 @@ class TestExtractionCache:
 
         assert "cached_at" in data
         assert "value" in data
+        assert data["value"]["cache_format_version"] == EXTRACTION_CACHE_FORMAT_VERSION
         assert "timestamp" in data["value"]
         assert "template_name" in data["value"]
         assert "template_version" in data["value"]
         assert "result" in data["value"]
+        assert data["value"]["provider"] == "gemini"
+        assert data["value"]["model"] == "gemini-3-pro-preview"
+        assert data["value"]["prompt_hash"] == "prompt-hash"
+        assert data["value"]["output_schema_version"] == "markdown:schema-hash"
+        assert "transcript_hash" in data["value"]
+        assert "key_components" in data["value"]
         assert data["value"]["template_name"] == "summary"
         assert data["value"]["template_version"] == "1.0"
         assert data["value"]["result"] == "result"
+
+    @pytest.mark.asyncio
+    async def test_cache_key_includes_versioned_metadata(self, temp_cache_dir: Path) -> None:
+        """Provider/model/prompt/schema inputs participate in cache keys."""
+        cache = ExtractionCache(cache_dir=temp_cache_dir)
+
+        base_key = cache._make_key(
+            "summary",
+            "1.0",
+            "transcript",
+            provider="gemini",
+            model="gemini-3-pro-preview",
+            prompt_hash="prompt-a",
+            output_schema_version="markdown:schema-a",
+        )
+
+        assert base_key != cache._make_key(
+            "summary",
+            "1.0",
+            "transcript",
+            provider="claude",
+            model="claude-3-5-sonnet-20241022",
+            prompt_hash="prompt-a",
+            output_schema_version="markdown:schema-a",
+        )
+        assert base_key != cache._make_key(
+            "summary",
+            "1.0",
+            "transcript",
+            provider="gemini",
+            model="gemini-3-pro-preview",
+            prompt_hash="prompt-b",
+            output_schema_version="markdown:schema-a",
+        )
+        assert base_key != cache._make_key(
+            "summary",
+            "1.0",
+            "transcript",
+            provider="gemini",
+            model="gemini-3-pro-preview",
+            prompt_hash="prompt-a",
+            output_schema_version="json:schema-b",
+        )
+
+    @pytest.mark.asyncio
+    async def test_legacy_cache_key_is_safe_miss(self, temp_cache_dir: Path) -> None:
+        """Old key filenames are left alone and treated as misses."""
+        cache = ExtractionCache(cache_dir=temp_cache_dir)
+
+        legacy_key = hashlib.sha256(b"summary:1.0:transcript").hexdigest()
+        legacy_file = temp_cache_dir / f"{legacy_key}.json"
+        legacy_file.write_text(
+            json.dumps(
+                {
+                    "cached_at": "2026-05-21T00:00:00+00:00",
+                    "value": {
+                        "result": "legacy result",
+                        "timestamp": time.time(),
+                        "template_name": "summary",
+                        "template_version": "1.0",
+                    },
+                }
+            )
+        )
+
+        result = await cache.get(
+            "summary",
+            "1.0",
+            "transcript",
+            provider="gemini",
+            model="gemini-3-pro-preview",
+            prompt_hash="prompt-a",
+            output_schema_version="markdown:schema-a",
+        )
+
+        assert result is None
+        assert legacy_file.exists()
 
     @pytest.mark.asyncio
     async def test_concurrent_access(self, temp_cache_dir: Path) -> None:

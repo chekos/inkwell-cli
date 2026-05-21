@@ -200,6 +200,34 @@ inkwell transcribe https://youtube.com/watch?v=xyz --plain
 
 ---
 
+## inkwell cache
+
+Inspect and manage local caches.
+
+```bash
+inkwell cache <ACTION>
+```
+
+### Actions
+
+| Action | Description |
+|--------|-------------|
+| `stats` | Show transcript, extraction, and media cache statistics |
+| `clear` | Clear cached transcripts |
+| `clear-expired` | Remove expired cached transcripts |
+
+### Examples
+
+```bash
+inkwell cache stats
+inkwell cache clear-expired
+inkwell cache clear
+```
+
+`stats` is observational only. Media cache retention controls are planned separately.
+
+---
+
 ## inkwell fetch
 
 Process podcast episodes.

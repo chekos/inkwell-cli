@@ -65,6 +65,7 @@ Unlike ADRs which must be brief, research docs can be comprehensive. However, th
 - [Transcription APIs Comparison](./transcription-apis-comparison.md) - Comparing YouTube, Gemini, Whisper APIs
 - [Transcript Caching Strategy](./transcript-caching-strategy.md) - Caching patterns for API responses
 - [yt-dlp Audio Extraction](./yt-dlp-audio-extraction.md) - Audio download and format conversion
+- [summarize CLI Architecture Analysis](./summarize-cli-architecture-analysis.md) - Lessons from steipete/summarize for universal ingestion, cache design, model routing, and output modes
 
 ### Interview & Extraction
 - [Claude Agent SDK Integration](./claude-agent-sdk-integration.md) - Building interactive interviews

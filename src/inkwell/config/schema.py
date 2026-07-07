@@ -78,6 +78,33 @@ class ExtractionConfig(BaseModel):
     )
 
 
+class MediaCacheConfig(BaseModel):
+    """Downloaded media/audio cache configuration."""
+
+    enabled: bool = Field(
+        default=True,
+        description="Whether downloaded media/audio files should be cached",
+    )
+    max_mb: int = Field(
+        default=2048,
+        ge=1,
+        le=102400,
+        description="Maximum media/audio cache size in megabytes",
+    )
+    ttl_days: int = Field(
+        default=30,
+        ge=1,
+        le=3650,
+        description="Maximum media/audio cache entry age in days",
+    )
+
+
+class CacheConfig(BaseModel):
+    """Local cache configuration."""
+
+    media: MediaCacheConfig = Field(default_factory=MediaCacheConfig)
+
+
 class PluginConfig(BaseModel):
     """Configuration for a single plugin.
 
@@ -196,6 +223,7 @@ class GlobalConfig(BaseModel):
     transcription: TranscriptionConfig = Field(default_factory=TranscriptionConfig)
     extraction: ExtractionConfig = Field(default_factory=ExtractionConfig)
     interview: InterviewConfig = Field(default_factory=InterviewConfig)
+    cache: CacheConfig = Field(default_factory=CacheConfig)
 
     # Plugin configurations (keyed by plugin name)
     plugins: dict[str, PluginConfig] = Field(

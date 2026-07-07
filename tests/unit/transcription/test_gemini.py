@@ -341,6 +341,96 @@ class TestGeminiTranscriber:
         with pytest.raises(APIError, match="empty transcript"):
             await transcriber.transcribe(audio_file)
 
+    @pytest.mark.asyncio
+    async def test_transcribe_youtube_url(
+        self, transcriber: GeminiTranscriber, mock_genai: Mock
+    ) -> None:
+        """Test direct Gemini transcription for public YouTube URLs."""
+        url = "https://youtu.be/9mNkIoAsMSs"
+        mock_response = MagicMock()
+        mock_response.text = (
+            "SUMMARY: Este video habla sobre tecnologia.\n\n"
+            "[00:00] Host: Hola a todos.\n"
+            "[00:05] Guest: Gracias por invitarme."
+        )
+        transcriber.client.models.generate_content.return_value = mock_response
+
+        with patch.object(transcriber, "_get_youtube_duration_seconds", return_value=300):
+            transcript = await transcriber.transcribe_youtube_url(url)
+
+        assert transcript.source == "gemini"
+        assert transcript.episode_url == url
+        assert transcript.cost_usd == 0.0
+        assert len(transcript.segments) == 2
+        transcriber.client.files.upload.assert_not_called()
+
+        call_kwargs = transcriber.client.models.generate_content.call_args.kwargs
+        contents = call_kwargs["contents"]
+        assert contents.parts[0].file_data.file_uri == "https://www.youtube.com/watch?v=9mNkIoAsMSs"
+
+    @pytest.mark.asyncio
+    async def test_transcribe_youtube_url_chunked(
+        self, transcriber: GeminiTranscriber, mock_genai: Mock
+    ) -> None:
+        """Test long YouTube URLs are clipped into bounded Gemini requests."""
+        first_response = MagicMock()
+        first_response.text = "SUMMARY: Primera parte.\n\n[00:00] Host: Inicio."
+        second_response = MagicMock()
+        second_response.text = "SUMMARY: Segunda parte.\n\n[00:00] Host: Continua."
+        third_response = MagicMock()
+        third_response.text = "SUMMARY: Tercera parte.\n\n[00:00] Host: Sigue."
+        fourth_response = MagicMock()
+        fourth_response.text = "SUMMARY: Cuarta parte.\n\n[00:00] Host: Termina."
+        transcriber.client.models.generate_content.side_effect = [
+            first_response,
+            second_response,
+            third_response,
+            fourth_response,
+        ]
+
+        with patch.object(transcriber, "_get_youtube_duration_seconds", return_value=1200):
+            transcript = await transcriber.transcribe_youtube_url("https://youtu.be/9mNkIoAsMSs")
+
+        assert len(transcript.segments) == 4
+        assert transcript.segments[0].start == 0
+        assert transcript.segments[1].start == 300
+        assert transcriber.client.models.generate_content.call_count == 4
+        first_call = transcriber.client.models.generate_content.call_args_list[0]
+        first_part = first_call.kwargs["contents"].parts[0]
+        assert first_part.video_metadata.start_offset == "0s"
+        assert first_part.video_metadata.end_offset == "300s"
+
+    @pytest.mark.asyncio
+    async def test_transcribe_youtube_url_stops_at_no_speech_with_unknown_duration(
+        self, transcriber: GeminiTranscriber, mock_genai: Mock
+    ) -> None:
+        """Test unknown-duration YouTube clipping stops when Gemini reports no speech."""
+        first_response = MagicMock()
+        first_response.text = "SUMMARY: Primera parte.\n\n[00:00] Host: Inicio."
+        second_response = MagicMock()
+        second_response.text = "NO_SPEECH"
+        transcriber.client.models.generate_content.side_effect = [
+            first_response,
+            second_response,
+        ]
+
+        with patch.object(transcriber, "_get_youtube_duration_seconds", return_value=None):
+            transcript = await transcriber.transcribe_youtube_url("https://youtu.be/9mNkIoAsMSs")
+
+        assert len(transcript.segments) == 1
+        assert transcriber.client.models.generate_content.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_transcribe_youtube_url_api_error(
+        self, transcriber: GeminiTranscriber, mock_genai: Mock
+    ) -> None:
+        """Test direct YouTube URL transcription wraps API errors."""
+        transcriber.client.models.generate_content.side_effect = Exception("API error")
+
+        with patch.object(transcriber, "_get_youtube_duration_seconds", return_value=300):
+            with pytest.raises(APIError, match="Failed to transcribe YouTube URL"):
+                await transcriber.transcribe_youtube_url("https://youtu.be/test")
+
 
 class TestGeminiTranscriberWithSegments:
     """Test GeminiTranscriberWithSegments class."""

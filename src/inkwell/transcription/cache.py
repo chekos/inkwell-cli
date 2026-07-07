@@ -13,7 +13,9 @@ from platformdirs import user_cache_dir
 from inkwell.transcription.models import Transcript
 from inkwell.utils.cache import CacheError, FileCache
 
-__all__ = ["TranscriptCache", "CacheError"]
+TRANSCRIPT_CACHE_FORMAT_VERSION = 1
+
+__all__ = ["TRANSCRIPT_CACHE_FORMAT_VERSION", "TranscriptCache", "CacheError"]
 
 
 class TranscriptCache:
@@ -74,6 +76,7 @@ class TranscriptCache:
             Dictionary with transcript data and metadata
         """
         return {
+            "cache_format_version": TRANSCRIPT_CACHE_FORMAT_VERSION,
             "transcript": transcript.model_dump(mode="json"),
             "episode_url": transcript.episode_url,
         }
@@ -200,6 +203,8 @@ class TranscriptCache:
                 "valid": 0,
                 "size_bytes": 0,
                 "sources": {},
+                "cache_format_version": TRANSCRIPT_CACHE_FORMAT_VERSION,
+                "format_versions": {},
                 "cache_dir": str(self.cache_dir),
             }
 
@@ -220,11 +225,13 @@ class TranscriptCache:
                 # (data["value"]["transcript"])
                 value_data = data.get("value", data)  # Fallback for old format
                 source = value_data.get("transcript", {}).get("source", "unknown")
+                format_version = value_data.get("cache_format_version", "legacy")
 
                 return {
                     "size": file_size,
                     "expired": is_expired,
                     "source": source,
+                    "format_version": str(format_version),
                 }
 
             except (json.JSONDecodeError, KeyError, ValueError, OSError):
@@ -239,6 +246,7 @@ class TranscriptCache:
         expired = 0
         total_size = 0
         sources: dict[str, int] = {}
+        format_versions: dict[str, int] = {}
 
         for result in results:
             if result:
@@ -247,6 +255,8 @@ class TranscriptCache:
                     expired += 1
                 source = result["source"]
                 sources[source] = sources.get(source, 0) + 1
+                format_version = result["format_version"]
+                format_versions[format_version] = format_versions.get(format_version, 0) + 1
 
         return {
             "total": total,
@@ -254,5 +264,7 @@ class TranscriptCache:
             "valid": total - expired,
             "size_bytes": total_size,
             "sources": sources,
+            "cache_format_version": TRANSCRIPT_CACHE_FORMAT_VERSION,
+            "format_versions": format_versions,
             "cache_dir": str(self.cache_dir),
         }

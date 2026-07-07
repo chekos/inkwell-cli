@@ -186,7 +186,7 @@ class TestGeminiPluginIntegration:
 
         caps = GeminiTranscriber.CAPABILITIES
         assert caps["supports_file"] is True
-        assert caps["supports_url"] is False
+        assert caps["supports_url"] is True
         assert caps["requires_internet"] is True
         assert "mp3" in caps["formats"]
         assert "wav" in caps["formats"]

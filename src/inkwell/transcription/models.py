@@ -63,7 +63,7 @@ class Transcript(BaseModel):
     segments: list[TranscriptSegment] = Field(
         default_factory=list, description="List of transcript segments with timing"
     )
-    source: Literal["youtube", "gemini", "cached"] = Field(
+    source: Literal["youtube", "gemini", "cached", "text"] = Field(
         ..., description="Source of the transcript"
     )
     language: str = Field(default="en", description="Language code (ISO 639-1)")
@@ -126,7 +126,7 @@ class Transcript(BaseModel):
     @property
     def is_free(self) -> bool:
         """Check if this transcript was free (YouTube) or cost money (Gemini)."""
-        return self.source in ("youtube", "cached")
+        return self.source in ("youtube", "cached", "text")
 
     def get_segment_at_time(self, time_seconds: float) -> TranscriptSegment | None:
         """Get segment containing a specific timestamp.

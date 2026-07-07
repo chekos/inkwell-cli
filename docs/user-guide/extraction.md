@@ -153,9 +153,9 @@ Extractions are cached to save time and money.
 
 ### How It Works
 
-- Cache key = transcript hash + template version
+- Cache key includes transcript hash, template name/version, provider, model, prompt hash, output schema version, and cache format version
 - Default cache duration: 30 days
-- Cache location: `~/.cache/inkwell/`
+- Cache location: `~/.cache/inkwell/extractions/`
 
 ### Cache Behavior
 
@@ -164,6 +164,9 @@ Extractions are cached to save time and money.
 | Same transcript, same template | Cache hit ($0) |
 | Same transcript, different template | New extraction |
 | Template version updated | Cache invalidated |
+| Prompt, provider, model, or output schema changed | Cache invalidated |
+
+See [Cache Behavior](../reference/cache.md) for transcript, extraction, and media/audio cache details.
 
 ### Skip Cache
 

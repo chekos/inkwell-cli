@@ -26,7 +26,7 @@ That's it! Your structured notes are now in `~/inkwell-notes/`.
 ## Features
 
 ### Automatic Transcription
-Inkwell first checks for free YouTube transcripts. If unavailable, it uses Google's Gemini for accurate audio transcription.
+Inkwell first checks for free YouTube transcripts. For public YouTube videos where cloud workers are blocked from captions or downloads, it can ask Gemini to process bounded clips directly from the public video URL. For other sources, it downloads audio and uses Gemini as the final transcription fallback.
 
 ### AI-Powered Extraction
 Extract what matters from each episode:
@@ -66,6 +66,33 @@ Each processed episode creates a folder with structured markdown:
 ├── tools-mentioned.md  # Software and resources
 └── my-notes.md         # Your insights (with --interview)
 ```
+
+---
+
+## How It Works
+
+Inkwell runs a four-stage pipeline every time you call `inkwell fetch`:
+
+```mermaid
+graph LR
+    A([RSS Feed / YouTube URL]) --> B[Feed Manager]
+    B --> C[Pipeline Orchestrator]
+
+    C --> D{Transcription Manager}
+    D -->|"YouTube captions"| T[Transcript]
+    D -->|"Public YouTube URL via Gemini"| T
+    D -->|"Downloaded audio via Gemini"| T
+
+    T --> E[Extraction Engine]
+    F[Template System\nsummary · quotes · concepts] --> E
+    E --> G[Output Manager]
+
+    G --> H([Markdown Notes\n+ Obsidian frontmatter])
+    G -->|"--interview"| I[Interview Mode]
+    I --> H
+```
+
+See [Processing Episodes](user-guide/processing.md) for a step-by-step walkthrough of each stage.
 
 ---
 

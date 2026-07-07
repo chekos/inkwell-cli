@@ -156,6 +156,78 @@ inkwell rename old-name new-name --force
 
 ---
 
+## inkwell transcribe
+
+Transcribe a media URL without running structured extraction or writing an episode note directory.
+
+```bash
+inkwell transcribe <URL> [OPTIONS]
+```
+
+### Arguments
+
+| Argument | Required | Description |
+|----------|----------|-------------|
+| `URL` | Yes | Episode or media URL to transcribe |
+
+### Options
+
+| Option | Short | Type | Default | Description |
+|--------|-------|------|---------|-------------|
+| `--output` | `-o` | path | | Write transcript text to a file |
+| `--force` | `-f` | flag | false | Force re-transcription and bypass transcript cache |
+| `--skip-youtube` | | flag | false | Skip YouTube captions and use Gemini directly |
+| `--json` | | flag | false | Print a JSON envelope to stdout; progress, warnings, and hints go to stderr |
+| `--plain` | | flag | false | Print only transcript text to stdout; progress, warnings, and hints go to stderr |
+
+### Examples
+
+```bash
+# Human-readable transcript output
+inkwell transcribe https://youtube.com/watch?v=xyz
+
+# Write transcript text to a file
+inkwell transcribe https://example.com/episode.mp3 --output transcript.txt
+
+# Script-friendly JSON
+inkwell transcribe https://youtube.com/watch?v=xyz --json
+
+# Transcript text only
+inkwell transcribe https://youtube.com/watch?v=xyz --plain
+```
+
+`--json` and `--plain` are mutually exclusive. In both modes, stdout is reserved for the primary result so shell scripts can parse it safely. See [Machine-Readable Output](machine-readable-output.md) for envelope examples and scripting notes.
+
+---
+
+## inkwell cache
+
+Inspect and manage local caches.
+
+```bash
+inkwell cache <ACTION>
+```
+
+### Actions
+
+| Action | Description |
+|--------|-------------|
+| `stats` | Show transcript, extraction, and media cache statistics |
+| `clear` | Clear cached transcripts only |
+| `clear-expired` | Remove expired cached transcripts only |
+
+### Examples
+
+```bash
+inkwell cache stats
+inkwell cache clear-expired
+inkwell cache clear
+```
+
+`stats` is observational only. `clear` and `clear-expired` currently operate on transcript cache entries. Downloaded media/audio retention is configured with `cache.media.enabled`, `cache.media.max_mb`, and `cache.media.ttl_days`; see [Cache Behavior](cache.md).
+
+---
+
 ## inkwell fetch
 
 Process podcast episodes.
@@ -168,7 +240,7 @@ inkwell fetch <SOURCE> [OPTIONS]
 
 | Argument | Required | Description |
 |----------|----------|-------------|
-| `SOURCE` | Yes | Feed name or episode URL |
+| `SOURCE` | Yes | Feed name, episode/media URL, local audio/video file, local `.txt`/`.md` file, or `-` for stdin text. See [Supported Inputs](supported-inputs.md). |
 
 ### Options
 
@@ -184,6 +256,7 @@ inkwell fetch <SOURCE> [OPTIONS]
 | `--provider` | `-p` | string | Auto | LLM provider (gemini, claude, auto) |
 | `--skip-cache` | | flag | false | Skip extraction cache |
 | `--dry-run` | | flag | false | Show cost estimate only |
+| `--extract` | | flag | false | Emit transcript text only; skip structured extraction, interview, and note output |
 | `--overwrite` | | flag | false | Overwrite existing directory |
 | `--interview` | | flag | false | Enable interview mode |
 | `--interview-template` | | string | Config | Interview template (reflective, analytical, creative) |
@@ -193,6 +266,8 @@ inkwell fetch <SOURCE> [OPTIONS]
 | `--resume-session` | | string | | Resume specific interview session by ID |
 | `--extractor` | | string | Auto | Force specific extraction plugin (e.g., claude, gemini) |
 | `--transcriber` | | string | Auto | Force specific transcription plugin (e.g., youtube, gemini) |
+| `--json` | | flag | false | Print a JSON envelope to stdout; progress, warnings, and hints go to stderr |
+| `--plain` | | flag | false | Print only generated output directory path(s) to stdout |
 | `--save-feed` | | flag | false | After a successful YouTube URL fetch, also save the channel as a feed. Auto-names the feed from channel metadata unless `--feed-name` is set. |
 | `--feed-name` | | string | auto | Feed name for `--save-feed`. Optional; derived from channel metadata if omitted. |
 
@@ -201,6 +276,15 @@ inkwell fetch <SOURCE> [OPTIONS]
 ```bash
 # From URL
 inkwell fetch https://youtube.com/watch?v=xyz
+
+# From local audio/video
+inkwell fetch ~/Downloads/interview.mp3
+
+# From local text or markdown
+inkwell fetch ./notes.md
+
+# From stdin text
+pbpaste | inkwell fetch -
 
 # From URL with custom podcast name
 inkwell fetch https://youtube.com/watch?v=xyz --podcast-name "Python Tutorials"
@@ -232,11 +316,23 @@ inkwell fetch URL --interview --max-questions 3
 # Cost check
 inkwell fetch URL --dry-run
 
+# Transcript text only
+inkwell fetch URL --extract
+
+# Transcript file only, without an episode note directory
+inkwell fetch URL --extract --output-dir transcripts --plain
+
 # Force provider
 inkwell fetch URL --provider gemini
 
 # Force specific plugins
 inkwell fetch URL --extractor claude --transcriber youtube
+
+# Script-friendly JSON envelope
+inkwell fetch URL --json
+
+# Output directory path only
+inkwell fetch URL --plain
 
 # One-time YouTube video; save the channel for future fetches (auto-named)
 inkwell fetch https://www.youtube.com/watch?v=abc123 --save-feed
@@ -247,6 +343,10 @@ inkwell fetch https://www.youtube.com/watch?v=abc123 --save-feed --feed-name som
 # Using environment variable overrides
 INKWELL_EXTRACTOR=gemini inkwell fetch URL
 ```
+
+`--json` and `--plain` are mutually exclusive. In both modes, stdout is reserved for the primary result and interactive progress output is sent to stderr. See [Machine-Readable Output](machine-readable-output.md) for envelope examples and scripting notes.
+
+`--extract` is transcript-only for media workflows. It does not run templates, structured extraction, interview mode, or the episode note writer. Without `--output-dir`, transcript text is printed to stdout and progress goes to stderr. With `--output-dir`, Inkwell writes `.transcript.md` file(s) directly into that directory; combine with `--plain` to print the file path(s) to stdout.
 
 ---
 
@@ -393,6 +493,7 @@ inkwell config set <KEY> <VALUE>
 inkwell config set log_level DEBUG
 inkwell config set default_output_dir ~/Documents/podcasts
 inkwell config set transcription.api_key "your-key"
+inkwell config set cache.media.max_mb 4096
 ```
 
 ### inkwell config feed

@@ -1,0 +1,11 @@
+<h2>Sign in to Inkwell</h2>
+
+<p>Open this link to finish signing in:</p>
+
+<p>
+  <a href="{{ .RedirectTo }}/auth/confirm?token_hash={{ .TokenHash }}&type=email&next=/app">
+    Sign in to Inkwell
+  </a>
+</p>
+
+<p>If you did not request this email, you can ignore it.</p>

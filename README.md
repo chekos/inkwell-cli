@@ -14,19 +14,21 @@ Transform podcast episodes into structured, searchable markdown notes for Obsidi
 
 ## Status
 
-**Current release: v0.20.0**
-
-Inkwell is beta software with the core podcast-to-markdown pipeline implemented and released on PyPI. The project has automated CI, branch protection, PyPI Trusted Publishing, MkDocs documentation, and a large regression suite.
+Inkwell is beta software with the core podcast-to-markdown pipeline implemented and released on PyPI. The PyPI badge above reflects the current published release. The project has automated CI, branch protection, PyPI Trusted Publishing, MkDocs documentation, and a large regression suite.
 
 Current health baseline:
 - Podcast feed management with RSS and YouTube channel URL support
-- Multi-tier transcription: cache → YouTube transcripts → Gemini
+- Conservative input resolution for feeds, URLs, local files, stdin, direct media, and YouTube
+- Multi-tier transcription: cache → YouTube transcripts → Gemini YouTube URL/audio fallback
+- Transcript-only extraction for media workflows
+- Local audio/video ingestion plus local text/markdown and stdin extraction
 - Template-based LLM extraction with Claude/Gemini providers
 - Interactive interview mode
 - Obsidian-friendly markdown with frontmatter, wikilinks, and tags
+- JSON/plain output modes for scripting `fetch` and `transcribe`
 - Plugin architecture for extraction, transcription, and output providers
-- Cost tracking, retry logic, and structured errors
-- 1,200+ tests with a measured 75%+ coverage gate
+- Cost tracking, cache observability, bounded media cache controls, retry logic, and structured errors
+- 1,300+ tests with a measured 75%+ coverage gate
 
 ## Quick Start
 
@@ -36,6 +38,10 @@ Current health baseline:
 # Install as a CLI tool
 uv tool install inkwell-cli
 ```
+
+Inkwell is distributed as the `inkwell-cli` package on PyPI. `uv tool install`
+is the recommended install path; Docker images and a Homebrew formula are not
+currently provided.
 
 ### API Keys
 
@@ -66,14 +72,33 @@ inkwell fetch syntax --latest
 
 That's it! You now have a structured markdown directory ready for Obsidian.
 
+You can also start from one-off media, local files, or stdin:
+
+```bash
+# Process a YouTube or direct media URL
+inkwell fetch https://youtube.com/watch?v=xyz
+inkwell fetch https://example.com/episode.mp3
+
+# Process local audio/video
+inkwell fetch ~/Downloads/interview.mp3
+
+# Process local text/markdown or pasted text
+inkwell fetch ./notes.md
+pbpaste | inkwell fetch -
+
+# Get transcript text only
+inkwell fetch https://youtube.com/watch?v=xyz --extract
+```
+
 ## Features
 
 ### 🎙️ Smart Transcription
 
 **Multi-tier transcription** that optimizes for cost and quality:
 1. **Cache (Free)**: Check local cache first (30-day TTL)
-2. **YouTube (Free)**: Extract existing transcripts from YouTube videos
-3. **Gemini (Paid)**: Download audio and transcribe as fallback (~$0.115/episode)
+2. **YouTube (Free)**: Extract existing captions/transcripts from YouTube videos, including non-English captions when English is unavailable
+3. **Gemini YouTube URL (Preview)**: For public YouTube videos where cloud workers are blocked from captions or downloads, ask Gemini to process bounded clips directly from the public video URL
+4. **Gemini Audio (Paid)**: Download audio and transcribe as the final fallback for non-YouTube sources or sources where URL-based video input is not available
 
 **Result**: Most episodes cost $0.005-0.012 (YouTube + extraction)
 
@@ -125,6 +150,7 @@ inkwell costs --days 1
 
 **Typical Costs**:
 - YouTube + Gemini extraction: $0.005-0.012
+- Public YouTube URL fallback + Gemini extraction: currently similar to YouTube + extraction while Gemini's YouTube URL input is in preview; pricing and limits may change
 - Gemini transcription + extraction: $0.115-0.175
 - **Recommendation**: Use YouTube when available (saves 95%)
 
@@ -257,18 +283,55 @@ inkwell costs --operation transcription
 inkwell costs --clear
 ```
 
+### Local Files, Stdin, And Transcript-Only Output
+
+```bash
+# Local audio/video routes through transcription
+inkwell fetch ~/Downloads/interview.mp3
+
+# Local text/markdown routes directly to extraction templates
+inkwell fetch ./conference-notes.md --templates summary,key-concepts
+
+# Stdin works the same way for already-clean source text
+pbpaste | inkwell fetch -
+
+# Transcript only, no structured extraction or note directory
+inkwell fetch https://youtube.com/watch?v=xyz --extract
+
+# Write transcript-only files and print their paths
+inkwell fetch syntax --latest --extract --output-dir ~/transcripts --plain
+```
+
+PDF, cleaned web article extraction, slides, and OCR are planned later and are not part of the current local/stdin ingestion path.
+
+### Machine-Readable Output
+
+```bash
+# JSON envelope to stdout; progress and warnings to stderr
+inkwell fetch syntax --latest --json > result.json 2> progress.log
+inkwell transcribe https://youtube.com/watch?v=xyz --json > transcript.json
+
+# Terse stdout for shell scripts
+inkwell fetch https://youtube.com/watch?v=xyz --plain
+inkwell transcribe https://youtube.com/watch?v=xyz --plain
+```
+
+See the [machine-readable output reference](./docs/reference/machine-readable-output.md) for envelope examples and the stdout/stderr contract.
+
 ### Cache Management
 
 ```bash
 # View cache stats
 inkwell cache stats
 
-# Clear all cache
+# Clear cached transcripts
 inkwell cache clear
 
-# Clear expired only
+# Clear expired cached transcripts
 inkwell cache clear-expired
 ```
+
+`inkwell cache stats` reports transcript, extraction, and media/audio caches. `clear` and `clear-expired` currently operate on transcript cache entries; media/audio retention is controlled by `cache.media.*`.
 
 ## Output Structure
 
@@ -321,6 +384,8 @@ Inkwell uses XDG Base Directory specifications:
 - **Feeds**: `~/.config/inkwell/feeds.yaml`
 - **Costs**: `~/.config/inkwell/costs.json`
 - **Cache**: `~/.cache/inkwell/transcripts/`
+- **Extraction Cache**: `~/.cache/inkwell/extractions/`
+- **Media Cache**: `~/.cache/inkwell/audio/`
 - **Logs**: `~/.local/state/inkwell/inkwell.log`
 
 ### Configuration Options
@@ -330,28 +395,36 @@ Edit `~/.config/inkwell/config.yaml`:
 ```yaml
 version: "1"
 log_level: INFO
-default_output_dir: ./output
-default_provider: gemini  # or "claude"
-youtube_check: true
+default_output_dir: ~/inkwell-notes
 max_episodes_per_run: 10
 
-# Optional API keys (or use environment variables)
-gemini_api_key: ""
-anthropic_api_key: ""
+transcription:
+  api_key: ""  # or use GOOGLE_API_KEY
+  model_name: gemini-2.5-flash
+  youtube_check: true
+
+cache:
+  media:
+    enabled: true
+    max_mb: 2048
+    ttl_days: 30
+
+extraction:
+  default_provider: gemini  # or "claude"
+  gemini_api_key: ""        # optional; falls back to transcription.api_key
+  claude_api_key: ""        # or use ANTHROPIC_API_KEY
 
 # Templates to enable
-templates_enabled:
+default_templates:
   - summary
   - quotes
   - key-concepts
-  - tools-mentioned
-  - books-mentioned
-  - people-mentioned
 
 # Obsidian features
-wikilinks_enabled: true
-tags_enabled: true
-dataview_frontmatter: true
+obsidian:
+  wikilinks: true
+  tags: true
+  dataview: true
 ```
 
 ### Editing Configuration
@@ -384,9 +457,15 @@ nano ~/.config/inkwell/config.yaml
 
 ### High-Level Pipeline
 
-```
-RSS Feed → Parse Episodes → Check YouTube → Download Audio
-       → Transcribe (YouTube or Gemini)
+```text
+Feed / URL / local file / stdin → Resolve source
+       → [saved feed] Parse episodes
+       → [text/stdin] Treat as source text
+       → [media] Check transcript cache
+       → [YouTube] Check YouTube captions
+       → [YouTube only] Gemini public URL fallback
+       → [Final fallback] Download or read media
+       → Transcribe (YouTube captions or Gemini)
        → Extract Content (Template-based LLM)
        → Generate Wikilinks & Tags
        → [Optional] Interactive Interview
@@ -402,7 +481,9 @@ RSS Feed → Parse Episodes → Check YouTube → Download Audio
 
 2. **Transcription** (`src/inkwell/transcription/`)
    - YouTube transcript extraction (free)
-   - Gemini API fallback (paid)
+   - Gemini public YouTube URL fallback for cloud-IP blocking
+   - Gemini audio fallback (paid)
+   - Explicit attempt policy for fallback ordering
    - 30-day cache with TTL
 
 3. **Extraction** (`src/inkwell/extraction/`)
@@ -430,6 +511,11 @@ RSS Feed → Parse Episodes → Check YouTube → Download Audio
    - Automatic retry for transient failures
    - Graceful degradation
 
+8. **Input Resolution** (`src/inkwell/ingestion/`)
+   - Conservative source classification
+   - Saved feed, URL, local file, stdin, direct media, and YouTube source kinds
+   - Foundation for future universal ingestion work
+
 ### Project Structure
 
 ```
@@ -438,6 +524,7 @@ inkwell-cli/
 │   ├── cli.py               # CLI entry point
 │   ├── config/              # Configuration management
 │   ├── feeds/               # RSS parsing
+│   ├── ingestion/           # Input source classification
 │   ├── transcription/       # Transcription system
 │   ├── audio/               # Audio download
 │   ├── extraction/          # LLM extraction (Phase 3)
@@ -573,6 +660,9 @@ Manual workflow runs publish to TestPyPI only, which keeps release rehearsals sa
 - Custom templates and prompts
 - Batch processing automation
 - Export formats (PDF, HTML)
+- Cleaned web/article extraction
+- PDF, slides, and OCR ingestion
+- Token-aware model routing
 - Web dashboard for management
 - Mobile app integration
 - Community template marketplace

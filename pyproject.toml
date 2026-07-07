@@ -69,6 +69,10 @@ dev = [
     "types-pyyaml",
     "respx>=0.20.0",
 ]
+worker = [
+    "fastapi>=0.136.1",
+    "modal>=1.4.2",
+]
 
 [project.scripts]
 inkwell = "inkwell.cli:app"
@@ -104,7 +108,7 @@ inkwell = ["templates/**/*.yaml"]
 [tool.ruff]
 line-length = 100
 target-version = "py310"
-src = ["src"]
+src = ["src", "workers"]
 extend-exclude = [
     "docs/building-in-public/research/*.py",  # Research examples, not production code
 ]

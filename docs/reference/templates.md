@@ -262,8 +262,11 @@ version: 2
 When a template is updated:
 
 1. Version number increases
-2. Cache is invalidated for that template
-3. New extractions use updated prompt
+2. Prompt/template hash changes
+3. Cache is invalidated for that template/provider/model/schema combination
+4. New extractions use updated prompt
+
+Extraction cache keys also include transcript hash, provider, model, prompt hash, output schema version, and cache format version. See [Cache Behavior](cache.md).
 
 ---
 

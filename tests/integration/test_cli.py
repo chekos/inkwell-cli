@@ -1,5 +1,6 @@
 """Integration tests for CLI commands."""
 
+import json
 import os
 from pathlib import Path
 
@@ -16,6 +17,95 @@ os.environ["NO_COLOR"] = "1"
 os.environ["TERM"] = "dumb"
 
 runner = CliRunner()
+
+
+def _sample_transcription_result(*, from_cache: bool = True):
+    """Build a small successful transcription result for CLI tests."""
+    from inkwell.transcription.models import (
+        Transcript,
+        TranscriptionResult,
+        TranscriptSegment,
+    )
+
+    return TranscriptionResult(
+        success=True,
+        transcript=Transcript(
+            segments=[
+                TranscriptSegment(text="Hello world", start=0.0, duration=1.0),
+            ],
+            source="youtube",
+            language="en",
+            episode_url="https://example.com/episode.mp3",
+        ),
+        attempts=["youtube"],
+        duration_seconds=0.25,
+        cost_usd=0.0,
+        from_cache=from_cache,
+    )
+
+
+def _sample_pipeline_result(output_dir: Path):
+    """Build a small successful pipeline result for CLI tests."""
+    from inkwell.extraction.models import (
+        ExtractedContent,
+        ExtractionResult,
+        ExtractionSummary,
+    )
+    from inkwell.output.models import EpisodeMetadata, EpisodeOutput, OutputFile
+    from inkwell.pipeline.models import PipelineResult
+
+    output = EpisodeOutput(
+        metadata=EpisodeMetadata(
+            podcast_name="Example Show",
+            episode_title="A Good Episode",
+            episode_url="https://example.com/episode.mp3",
+            transcription_source="youtube",
+            templates_applied=["summary"],
+            templates_versions={"summary": "1.0"},
+            transcription_cost_usd=0.0,
+            extraction_cost_usd=0.02,
+            total_cost_usd=0.02,
+        ),
+        output_dir=output_dir,
+    )
+    output.add_file(
+        OutputFile(
+            filename="summary.md",
+            template_name="summary",
+            content="# Summary\n\nA useful note.",
+        )
+    )
+
+    extraction_result = ExtractionResult(
+        episode_url="https://example.com/episode.mp3",
+        template_name="summary",
+        template_version="1.0",
+        success=True,
+        extracted_content=ExtractedContent(
+            template_name="summary",
+            content="A useful note.",
+        ),
+        duration_seconds=0.4,
+        cost_usd=0.02,
+        provider="gemini",
+        from_cache=False,
+    )
+
+    return PipelineResult(
+        episode_output=output,
+        transcript_result=_sample_transcription_result(),
+        extraction_results=[extraction_result],
+        extraction_summary=ExtractionSummary(
+            total=1,
+            successful=1,
+            failed=0,
+            cached=0,
+            attempts=[],
+        ),
+        interview_result=None,
+        extraction_cost_usd=0.02,
+        interview_cost_usd=0.0,
+    )
 
 
 class TestCLIVersion:
@@ -278,6 +368,236 @@ class TestShouldShowSaveFeedHint:
             url="https://www.youtube.com/feeds/videos.xml?channel_id=UC",
             input_was_url=False,
         )
+
+
+class TestCLIFetchMachineOutput:
+    """Tests for `inkwell fetch` machine-readable output modes."""
+
+    def test_fetch_json_stdout_is_parseable_and_progress_goes_to_stderr(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """`--json` keeps the result envelope on stdout and Rich output on stderr."""
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+
+        output_dir = tmp_path / "episode-dir"
+        output_dir.mkdir()
+
+        async def fake_process(*_args, **_kwargs):
+            return _sample_pipeline_result(output_dir)
+
+        monkeypatch.setattr("inkwell.pipeline.PipelineOrchestrator.process_episode", fake_process)
+
+        result = runner.invoke(
+            app,
+            [
+                "fetch",
+                "https://example.com/episode.mp3",
+                "--json",
+                "--output-dir",
+                str(tmp_path),
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        payload = json.loads(result.stdout)
+        assert payload["command"] == "fetch"
+        assert payload["input"]["kind"] == "direct_media"
+        assert payload["output_directory"] == str(tmp_path)
+        assert payload["summary"]["succeeded"] == 1
+        assert payload["files"][0]["filename"] == "summary.md"
+        assert payload["templates"][0]["name"] == "summary"
+        assert payload["cache_hits"] == {"extractions": 0, "transcripts": 1}
+
+        item = payload["results"][0]
+        assert item["output"]["directory"] == str(output_dir)
+        assert item["output"]["files"][0]["filename"] == "summary.md"
+        assert item["templates"][0]["name"] == "summary"
+        assert item["transcription"]["source"] == "youtube"
+        assert item["transcription"]["attempts"] == ["youtube"]
+        assert item["transcription"]["from_cache"] is True
+        assert item["cache_hits"] == {"extractions": 0, "transcript": True}
+        assert item["costs"]["total_usd"] == 0.02
+
+        assert "Inkwell Extraction Pipeline" not in result.stdout
+        assert "Inkwell Extraction Pipeline" in result.stderr
+
+    def test_fetch_plain_stdout_is_only_output_directory_path(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """`--plain` is intentionally terse for shell pipelines."""
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+
+        output_dir = tmp_path / "episode-dir"
+        output_dir.mkdir()
+
+        async def fake_process(*_args, **_kwargs):
+            return _sample_pipeline_result(output_dir)
+
+        monkeypatch.setattr("inkwell.pipeline.PipelineOrchestrator.process_episode", fake_process)
+
+        result = runner.invoke(
+            app,
+            [
+                "fetch",
+                "https://example.com/episode.mp3",
+                "--plain",
+                "--output-dir",
+                str(tmp_path),
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert result.stdout == f"{output_dir}\n"
+        assert "Complete" not in result.stdout
+        assert "Complete" in result.stderr
+
+    def test_fetch_rejects_json_and_plain_together(self, tmp_path: Path, monkeypatch) -> None:
+        """A command cannot have two primary stdout formats."""
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+
+        result = runner.invoke(
+            app,
+            [
+                "fetch",
+                "https://example.com/episode.mp3",
+                "--json",
+                "--plain",
+                "--output-dir",
+                str(tmp_path),
+            ],
+        )
+
+        assert result.exit_code != 0
+        assert "--json and --plain are mutually exclusive" in result.stderr
+        assert result.stdout == ""
+
+
+class TestCLIFetchExtractOnly:
+    """Tests for `inkwell fetch --extract` transcript-only mode."""
+
+    def test_fetch_extract_outputs_transcript_to_stdout_and_skips_pipeline(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """Transcript-only mode does not run structured extraction or write notes."""
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+        seen: dict[str, object] = {}
+
+        async def fake_transcribe(_manager, episode_url: str, **kwargs):
+            seen["url"] = episode_url
+            seen["kwargs"] = kwargs
+            return _sample_transcription_result()
+
+        async def fail_process(*_args, **_kwargs):
+            raise AssertionError("Pipeline should not run in --extract mode")
+
+        monkeypatch.setattr("inkwell.cli.TranscriptionManager.transcribe", fake_transcribe)
+        monkeypatch.setattr("inkwell.pipeline.PipelineOrchestrator.process_episode", fail_process)
+
+        result = runner.invoke(
+            app,
+            ["fetch", "https://example.com/great-talk.mp3", "--extract"],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert result.stdout == "Hello world\n"
+        assert "Inkwell Extraction Pipeline" not in result.stdout
+        assert "Inkwell Extraction Pipeline" not in result.stderr
+        assert seen["url"] == "https://example.com/great-talk.mp3"
+
+    def test_fetch_extract_writes_transcript_file_when_output_dir_requested(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """An explicit output directory writes transcript-only files, not note folders."""
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+        output_dir = tmp_path / "transcripts"
+
+        async def fake_transcribe(*_args, **_kwargs):
+            return _sample_transcription_result()
+
+        monkeypatch.setattr("inkwell.cli.TranscriptionManager.transcribe", fake_transcribe)
+
+        result = runner.invoke(
+            app,
+            [
+                "fetch",
+                "https://example.com/great-talk.mp3",
+                "--extract",
+                "--output-dir",
+                str(output_dir),
+                "--plain",
+            ],
+        )
+
+        expected_path = output_dir / "great-talk.transcript.md"
+        assert result.exit_code == 0, result.output
+        assert result.stdout == f"{expected_path}\n"
+        assert expected_path.read_text(encoding="utf-8") == "Hello world"
+        assert not (output_dir / "summary.md").exists()
+
+    def test_fetch_extract_preserves_saved_feed_latest_selection(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """Extract-only mode still uses saved feed episode selection."""
+        from types import SimpleNamespace
+
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+
+        manager = ConfigManager(config_dir=tmp_path)
+        from inkwell.config.schema import FeedConfig as _FeedConfig
+
+        manager.add_feed(
+            "saved-show",
+            _FeedConfig(url="https://example.com/feed.rss"),  # type: ignore[arg-type]
+        )
+
+        async def fake_fetch_feed(*_args, **_kwargs):
+            return SimpleNamespace(entries=[object()])
+
+        def fake_get_latest_episode(*_args, **_kwargs):
+            return SimpleNamespace(
+                title="Latest Talk",
+                url="https://example.com/latest-talk.mp3",
+                podcast_name="Saved Show",
+            )
+
+        seen_urls: list[str] = []
+
+        async def fake_transcribe(_manager, episode_url: str, **_kwargs):
+            seen_urls.append(episode_url)
+            return _sample_transcription_result()
+
+        monkeypatch.setattr("inkwell.feeds.parser.RSSParser.fetch_feed", fake_fetch_feed)
+        monkeypatch.setattr(
+            "inkwell.feeds.parser.RSSParser.get_latest_episode",
+            fake_get_latest_episode,
+        )
+        monkeypatch.setattr("inkwell.cli.TranscriptionManager.transcribe", fake_transcribe)
+
+        result = runner.invoke(app, ["fetch", "saved-show", "--latest", "--extract"])
+
+        assert result.exit_code == 0, result.output
+        assert result.stdout == "Hello world\n"
+        assert seen_urls == ["https://example.com/latest-talk.mp3"]
+
+    def test_fetch_extract_rejects_structured_extraction_options(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """Options that imply structured notes are rejected instead of ignored."""
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+
+        result = runner.invoke(
+            app,
+            [
+                "fetch",
+                "https://example.com/great-talk.mp3",
+                "--extract",
+                "--interview",
+            ],
+        )
+
+        assert result.exit_code != 0
+        assert "--extract cannot be combined with --interview" in result.stderr
+        assert result.stdout == ""
 
 
 class TestCLIFetchSaveFeed:
@@ -1095,6 +1415,120 @@ class TestCLIFetchSaveFeed:
         assert result.exit_code != 0
         assert "Playlist" in result.stdout or "playlist" in result.stdout
 
+    def test_fetch_local_media_file_routes_to_pipeline(self, tmp_path: Path, monkeypatch) -> None:
+        """Local audio/video files are accepted as media transcription inputs."""
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+
+        local_media = tmp_path / "episode.mp3"
+        local_media.write_bytes(b"fake audio")
+        output_dir = tmp_path / "episode-dir"
+        output_dir.mkdir()
+        seen: dict[str, object] = {}
+
+        async def fake_process(_orchestrator, options, *_args, **_kwargs):
+            seen["url"] = options.url
+            seen["source_text"] = options.source_text
+            seen["episode_title"] = options.episode_title
+            return _sample_pipeline_result(output_dir)
+
+        monkeypatch.setattr("inkwell.pipeline.PipelineOrchestrator.process_episode", fake_process)
+
+        result = runner.invoke(
+            app,
+            [
+                "fetch",
+                str(local_media),
+                "--dry-run",
+                "--output-dir",
+                str(tmp_path),
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert seen["url"] == str(local_media)
+        assert seen["source_text"] is None
+        assert seen["episode_title"] == "episode"
+
+    def test_fetch_local_text_file_routes_source_text_to_pipeline(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """Local text/markdown files bypass transcription and feed extraction templates."""
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+
+        local_text = tmp_path / "notes.md"
+        local_text.write_text("# Notes\n\nImportant source text.", encoding="utf-8")
+        output_dir = tmp_path / "episode-dir"
+        output_dir.mkdir()
+        seen: dict[str, object] = {}
+
+        async def fake_process(_orchestrator, options, *_args, **_kwargs):
+            seen["url"] = options.url
+            seen["source_text"] = options.source_text
+            seen["source_kind"] = options.source_kind
+            seen["episode_title"] = options.episode_title
+            return _sample_pipeline_result(output_dir)
+
+        monkeypatch.setattr("inkwell.pipeline.PipelineOrchestrator.process_episode", fake_process)
+
+        result = runner.invoke(
+            app,
+            [
+                "fetch",
+                str(local_text),
+                "--dry-run",
+                "--output-dir",
+                str(tmp_path),
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert seen["url"] == str(local_text)
+        assert seen["source_text"] == "# Notes\n\nImportant source text."
+        assert seen["source_kind"] == "local_text"
+        assert seen["episode_title"] == "notes"
+
+    def test_fetch_stdin_routes_source_text_to_pipeline(self, tmp_path: Path, monkeypatch) -> None:
+        """Stdin text bypasses transcription and feeds extraction templates."""
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+
+        output_dir = tmp_path / "episode-dir"
+        output_dir.mkdir()
+        seen: dict[str, object] = {}
+
+        async def fake_process(_orchestrator, options, *_args, **_kwargs):
+            seen["url"] = options.url
+            seen["source_text"] = options.source_text
+            seen["source_kind"] = options.source_kind
+            seen["episode_title"] = options.episode_title
+            return _sample_pipeline_result(output_dir)
+
+        monkeypatch.setattr("inkwell.pipeline.PipelineOrchestrator.process_episode", fake_process)
+
+        result = runner.invoke(
+            app,
+            ["fetch", "-", "--dry-run", "--output-dir", str(tmp_path)],
+            input="Pasted source text",
+        )
+
+        assert result.exit_code == 0, result.output
+        assert seen["url"] == "stdin://input"
+        assert seen["source_text"] == "Pasted source text"
+        assert seen["source_kind"] == "stdin"
+        assert seen["episode_title"] == "stdin"
+
+    def test_fetch_unsupported_local_file_type_errors(self, tmp_path: Path, monkeypatch) -> None:
+        """PDF/article/OCR-style inputs remain out of scope for Phase 6."""
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+
+        local_pdf = tmp_path / "paper.pdf"
+        local_pdf.write_bytes(b"%PDF")
+
+        result = runner.invoke(app, ["fetch", str(local_pdf), "--dry-run"])
+
+        assert result.exit_code != 0
+        assert "Unsupported local file type" in result.output
+        assert "PDF" in result.output
+
 
 class TestCLIFetchHintSuppression:
     """The --save-feed hint must not fire when the fetch itself failed."""
@@ -1306,6 +1740,16 @@ class TestCLIConfig:
         config_reloaded = manager.load_config()
         assert config_reloaded.log_level == "DEBUG"
 
+    def test_config_set_media_cache_nested_value(self, tmp_path: Path, monkeypatch) -> None:
+        """Config set supports three-level media cache values."""
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+        monkeypatch.setattr("inkwell.config.manager.get_config_dir", lambda: tmp_path)
+
+        result = runner.invoke(app, ["config", "set", "cache.media.max_mb", "4096"])
+
+        assert result.exit_code == 0, result.output
+        assert ConfigManager(config_dir=tmp_path).load_config().cache.media.max_mb == 4096
+
     def test_config_roundtrip(self, tmp_path: Path) -> None:
         """Test that config can be saved and loaded."""
         manager = ConfigManager(config_dir=tmp_path)
@@ -1451,6 +1895,110 @@ class TestCLITranscribe:
         assert "--output" in result.stdout
         assert "--force" in result.stdout
         assert "--skip-youtube" in result.stdout
+        assert "--json" in result.stdout
+        assert "--plain" in result.stdout
+
+    def test_transcribe_json_stdout_is_parseable_and_progress_goes_to_stderr(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """`--json` emits only the envelope on stdout."""
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+
+        seen: dict[str, object] = {}
+
+        class FakeTranscriptionManager:
+            def __init__(self, *_args, **_kwargs) -> None:
+                pass
+
+            async def transcribe(
+                self,
+                url: str,
+                *,
+                use_cache: bool,
+                skip_youtube: bool,
+            ):
+                seen["url"] = url
+                seen["use_cache"] = use_cache
+                seen["skip_youtube"] = skip_youtube
+                return _sample_transcription_result()
+
+        monkeypatch.setattr("inkwell.cli.TranscriptionManager", FakeTranscriptionManager)
+
+        result = runner.invoke(
+            app,
+            [
+                "transcribe",
+                "https://youtube.com/watch?v=abc",
+                "--json",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        payload = json.loads(result.stdout)
+        assert payload["command"] == "transcribe"
+        assert payload["input"]["kind"] == "youtube"
+        assert payload["transcript"] == "Hello world"
+        assert payload["files"] == []
+        assert payload["templates"] == []
+        assert payload["transcription"]["attempts"] == ["youtube"]
+        assert payload["transcription"]["from_cache"] is True
+        assert payload["cache_hits"] == {"extractions": 0, "transcript": True}
+        assert payload["costs"]["total_usd"] == 0.0
+        assert seen == {
+            "url": "https://youtube.com/watch?v=abc",
+            "use_cache": True,
+            "skip_youtube": False,
+        }
+
+        assert "Transcription complete" not in result.stdout
+        assert "Transcription complete" in result.stderr
+
+    def test_transcribe_plain_stdout_is_only_transcript_text(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """`--plain` emits the transcript body without Rich framing."""
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+
+        class FakeTranscriptionManager:
+            def __init__(self, *_args, **_kwargs) -> None:
+                pass
+
+            async def transcribe(self, *_args, **_kwargs):
+                return _sample_transcription_result()
+
+        monkeypatch.setattr("inkwell.cli.TranscriptionManager", FakeTranscriptionManager)
+
+        result = runner.invoke(
+            app,
+            [
+                "transcribe",
+                "https://youtube.com/watch?v=abc",
+                "--plain",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert result.stdout == "Hello world\n"
+        assert "Source:" not in result.stdout
+        assert "Source:" in result.stderr
+
+    def test_transcribe_rejects_json_and_plain_together(self, tmp_path: Path, monkeypatch) -> None:
+        """A command cannot have two primary stdout formats."""
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+
+        result = runner.invoke(
+            app,
+            [
+                "transcribe",
+                "https://youtube.com/watch?v=abc",
+                "--json",
+                "--plain",
+            ],
+        )
+
+        assert result.exit_code != 0
+        assert "--json and --plain are mutually exclusive" in result.stderr
+        assert result.stdout == ""
 
     def test_transcribe_missing_url(self) -> None:
         """Test transcribe command without URL argument."""
@@ -1487,6 +2035,28 @@ class TestCLICache:
         # May succeed (0) or fail gracefully depending on cache state
         # Main goal is to ensure command is registered and parseable
         assert result.exit_code in (0, 1)
+
+    def test_cache_stats_shows_all_cache_sections(self, tmp_path: Path, monkeypatch) -> None:
+        """Cache stats reports transcript, extraction, and media sections."""
+        monkeypatch.setattr(
+            "inkwell.transcription.cache.user_cache_dir",
+            lambda *_args: str(tmp_path / "transcripts-root"),
+        )
+        monkeypatch.setattr(
+            "inkwell.extraction.cache.platformdirs.user_cache_dir",
+            lambda *_args: str(tmp_path / "extractions-root"),
+        )
+        monkeypatch.setattr(
+            "inkwell.audio.downloader.platformdirs.user_cache_dir",
+            lambda *_args: str(tmp_path / "media-root"),
+        )
+
+        result = runner.invoke(app, ["cache", "stats"])
+
+        assert result.exit_code == 0, result.output
+        assert "Transcript Cache Statistics" in result.stdout
+        assert "Extraction Cache Statistics" in result.stdout
+        assert "Media Cache Statistics" in result.stdout
 
     def test_cache_invalid_action(self) -> None:
         """Test cache command with invalid action."""

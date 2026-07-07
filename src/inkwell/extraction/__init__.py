@@ -7,7 +7,11 @@ Note: ExtractionEngine uses lazy import to avoid circular dependency with
 inkwell.plugins.types.extraction (which imports BaseExtractor from this package).
 """
 
-from .cache import ExtractionCache
+from .cache import (
+    EXTRACTION_CACHE_FORMAT_VERSION,
+    EXTRACTION_OUTPUT_SCHEMA_VERSION,
+    ExtractionCache,
+)
 from .models import (
     ExtractedContent,
     ExtractionResult,
@@ -21,6 +25,8 @@ __all__ = [
     "ExtractedContent",
     "ExtractionResult",
     "ExtractionCache",
+    "EXTRACTION_CACHE_FORMAT_VERSION",
+    "EXTRACTION_OUTPUT_SCHEMA_VERSION",
     "ExtractionEngine",
 ]
 

@@ -18,6 +18,9 @@ Process your first podcast episode in under 5 minutes.
 inkwell config set transcription.api_key "your-google-ai-api-key"
 ```
 
+The same key is used for Gemini extraction unless you set
+`extraction.gemini_api_key` separately.
+
 Or use an environment variable:
 
 ```bash
@@ -34,10 +37,14 @@ You can process any YouTube video or podcast episode directly:
 inkwell fetch https://youtube.com/watch?v=your-video-id
 ```
 
+Inkwell shows live pipeline progress as it works, then a summary when done:
+
+![inkwell fetch terminal output showing four pipeline stages completing successfully](../assets/inkwell-fetch.svg)
+
 **What happens:**
 
 1. Inkwell checks for a free YouTube transcript
-2. If unavailable, it transcribes using Gemini
+2. If unavailable, it transcribes using the configured Gemini model
 3. AI extracts key information (summary, quotes, concepts)
 4. Markdown files are created in your output directory
 

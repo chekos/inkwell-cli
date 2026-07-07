@@ -178,9 +178,15 @@ inkwell fetch correct-name --latest
    ```
    Reason: No transcript available
    ```
-   Solution: Gemini fallback should trigger automatically. Ensure API key is set.
+   Solution: Gemini fallback should trigger automatically. Ensure `GOOGLE_API_KEY` or `transcription.api_key` is set.
 
-3. **Audio download failed:**
+3. **YouTube blocks cloud downloads:**
+   ```
+   Reason: Sign in to confirm you're not a bot
+   ```
+   Solution: For public YouTube URLs, Inkwell should try Gemini's URL fallback before audio download. Retry once, then check worker or CLI logs for `Transcribing YouTube URL clip`.
+
+4. **Audio download failed:**
    ```
    Reason: Failed to download audio
    ```

@@ -35,15 +35,12 @@ inkwell config show
 Output:
 
 ```
-╭─────────────────────────────────────────────╮
-│            Configuration                     │
-├─────────────────────────────────────────────┤
-│ version: "1"                                 │
-│ log_level: INFO                              │
-│ default_output_dir: ~/podcasts               │
-│ youtube_check: true                          │
-│ max_episodes_per_run: 10                     │
-╰─────────────────────────────────────────────╯
+Config file: ~/.config/inkwell/config.yaml
+Output directory: ~/podcasts
+Log level: INFO
+YouTube check: ✓
+Transcription model: gemini-2.5-flash
+Media cache: enabled, 2048 MB, 30 days
 ```
 
 ---
@@ -62,6 +59,7 @@ inkwell config set <key> <value>
 inkwell config set log_level DEBUG
 inkwell config set default_output_dir ~/Documents/podcasts
 inkwell config set transcription.api_key "your-key"
+inkwell config set cache.media.max_mb 4096
 ```
 
 ### Via Editor
@@ -90,7 +88,7 @@ Opens `config.yaml` in your `$EDITOR` (defaults to `vi`).
 |--------|------|---------|-------------|
 | `transcription.api_key` | string | `""` | Google AI API key |
 | `transcription.model_name` | string | `gemini-2.5-flash` | Gemini model for audio transcription |
-| `youtube_check` | boolean | `true` | Check YouTube for transcripts first |
+| `transcription.youtube_check` | boolean | `true` | Check YouTube for transcripts first |
 
 ### Extraction
 
@@ -98,7 +96,17 @@ Opens `config.yaml` in your `$EDITOR` (defaults to `vi`).
 |--------|------|---------|-------------|
 | `max_episodes_per_run` | integer | `10` | Max episodes per batch |
 | `extraction.default_provider` | string | `gemini` | Default LLM provider |
+| `extraction.gemini_api_key` | string | `""` | Optional Google AI key for extraction |
+| `extraction.claude_api_key` | string | `""` | Optional Anthropic key for extraction |
 | `extraction.cache_days` | integer | `30` | Extraction cache duration |
+
+### Cache
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `cache.media.enabled` | boolean | `true` | Cache downloaded media/audio files |
+| `cache.media.max_mb` | integer | `2048` | Maximum media/audio cache size in MB |
+| `cache.media.ttl_days` | integer | `30` | Maximum media/audio cache entry age in days |
 
 ### Interview
 
@@ -135,12 +143,21 @@ default_output_dir: ~/ObsidianVault/podcasts
 # Transcription
 transcription:
   api_key: your-google-ai-key-here
-  model_name: gemini-2.5-flash   # omit to use the default
-youtube_check: true
+  model_name: gemini-2.5-flash   # omit to use the generated config default
+  youtube_check: true
+
+# Cache
+cache:
+  media:
+    enabled: true
+    max_mb: 2048
+    ttl_days: 30
 
 # Extraction
 extraction:
   default_provider: gemini
+  gemini_api_key: ""  # optional; falls back to transcription.api_key
+  claude_api_key: ""  # optional; can also use ANTHROPIC_API_KEY
   cache_days: 30
 max_episodes_per_run: 10
 
@@ -173,7 +190,7 @@ Environment variables provide fallback values when the corresponding config key 
 
 | Variable | Fallback for |
 |----------|-------------|
-| `GOOGLE_API_KEY` | `transcription.api_key` |
+| `GOOGLE_API_KEY` | `transcription.api_key` and Gemini extraction |
 | `ANTHROPIC_API_KEY` | Anthropic API key for interview |
 | `INKWELL_CONFIG_DIR` | Config directory location |
 | `INKWELL_OUTPUT_DIR` | `default_output_dir` |
@@ -202,10 +219,19 @@ tail -f ~/.local/state/inkwell/inkwell.log
 ```
 ~/.cache/inkwell/
 ├── transcripts/    # Cached transcripts
-└── extractions/    # Cached extractions
+├── extractions/    # Cached extractions
+└── audio/          # Downloaded media/audio cache
 ```
 
-Clear cache:
+Inspect cache:
+
+```bash
+inkwell cache stats
+```
+
+`inkwell cache clear` clears cached transcripts only. Media/audio retention is controlled by `cache.media.enabled`, `cache.media.max_mb`, and `cache.media.ttl_days`. See [Cache Behavior](../reference/cache.md) for the full cache model.
+
+Remove all local cache files manually:
 
 ```bash
 rm -rf ~/.cache/inkwell/

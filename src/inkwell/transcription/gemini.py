@@ -6,6 +6,7 @@ import os
 from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
+from urllib.parse import parse_qs, urlparse
 
 from google import genai
 from google.genai import types
@@ -38,6 +39,12 @@ ALLOWED_GEMINI_MODELS = {
     "gemini-1.5-flash",
     "gemini-1.5-pro",
 }
+
+YOUTUBE_URL_CHUNK_SECONDS = 300
+YOUTUBE_URL_SINGLE_PASS_MAX_SECONDS = 900
+YOUTUBE_URL_MAX_SECONDS = 3600
+YOUTUBE_URL_REQUEST_TIMEOUT_MS = 120_000
+YOUTUBE_URL_MAX_OUTPUT_TOKENS = 8192
 
 
 class CostEstimate(BaseModel):
@@ -82,13 +89,13 @@ class GeminiTranscriber(TranscriptionPlugin):
     MODEL: ClassVar[str] = "gemini-3-flash-preview"
 
     # Transcription-specific metadata
-    HANDLES_URLS: ClassVar[list[str]] = []  # Gemini handles files, not URLs
+    HANDLES_URLS: ClassVar[list[str]] = ["youtube.com", "youtu.be"]
     CAPABILITIES: ClassVar[dict[str, Any]] = {
         "formats": ["mp3", "m4a", "wav", "aac", "ogg", "flac"],
         "max_duration_hours": None,  # Handles long audio via chunking
         "requires_internet": True,
         "supports_file": True,
-        "supports_url": False,
+        "supports_url": True,
         "supports_bytes": False,
     }
 
@@ -377,6 +384,43 @@ class GeminiTranscriber(TranscriptionPlugin):
                 f"Error: {e}"
             ) from e
 
+    async def transcribe_youtube_url(self, youtube_url: str) -> Transcript:
+        """Transcribe a public YouTube URL directly with Gemini video input.
+
+        This avoids server-side audio downloads, which YouTube often blocks from
+        cloud worker IP ranges.
+        """
+        try:
+            normalized_url = self._normalize_youtube_url_for_gemini(youtube_url)
+            duration_seconds = await asyncio.to_thread(
+                self._get_youtube_duration_seconds,
+                normalized_url,
+            )
+
+            if duration_seconds and duration_seconds <= YOUTUBE_URL_SINGLE_PASS_MAX_SECONDS:
+                response = await asyncio.to_thread(
+                    self._transcribe_youtube_url_sync,
+                    normalized_url,
+                )
+                transcript = self._parse_response(response, Path("youtube-url"), youtube_url)
+            else:
+                transcript = await self._transcribe_youtube_url_chunked(
+                    normalized_url,
+                    youtube_url,
+                    duration_seconds,
+                )
+
+            # Gemini's YouTube URL input is currently preview/no-charge, but keep
+            # the field explicit so downstream cost accounting stays predictable.
+            transcript.cost_usd = 0.0
+            return transcript
+        except Exception as e:
+            raise APIError(
+                "Failed to transcribe YouTube URL with Gemini. "
+                "This may be due to API errors, video access restrictions, or model limits. "
+                f"Error: {e}"
+            ) from e
+
     async def _transcribe_chunked(
         self, audio_path: Path, episode_url: str | None = None
     ) -> Transcript:
@@ -607,6 +651,199 @@ class GeminiTranscriber(TranscriptionPlugin):
             )
 
         return response
+
+    async def _transcribe_youtube_url_chunked(
+        self,
+        normalized_url: str,
+        original_url: str,
+        duration_seconds: int | None,
+    ) -> Transcript:
+        """Transcribe long YouTube URLs in bounded clips."""
+        max_duration = min(duration_seconds or YOUTUBE_URL_MAX_SECONDS, YOUTUBE_URL_MAX_SECONDS)
+        chunk_transcripts: list[Transcript] = []
+        total_chunks = (max_duration + YOUTUBE_URL_CHUNK_SECONDS - 1) // YOUTUBE_URL_CHUNK_SECONDS
+
+        for chunk_index, start_offset in enumerate(
+            range(0, max_duration, YOUTUBE_URL_CHUNK_SECONDS),
+            start=1,
+        ):
+            end_offset = min(start_offset + YOUTUBE_URL_CHUNK_SECONDS, max_duration)
+            logger.info(
+                "Transcribing YouTube URL clip %s/%s (%ss-%ss) with Gemini",
+                chunk_index,
+                total_chunks,
+                start_offset,
+                end_offset,
+            )
+            try:
+                response = await asyncio.to_thread(
+                    self._transcribe_youtube_url_sync,
+                    normalized_url,
+                    start_offset,
+                    end_offset,
+                )
+            except Exception:
+                if duration_seconds is None and start_offset > 0:
+                    break
+                raise
+
+            response_text = (response.text or "").strip()
+            if response_text.upper().startswith("NO_SPEECH"):
+                logger.info(
+                    "Gemini reported no speech for YouTube URL clip %ss-%ss",
+                    start_offset,
+                    end_offset,
+                )
+                if duration_seconds is None and start_offset > 0:
+                    break
+                continue
+
+            chunk = self._parse_response(response, Path("youtube-url"), original_url)
+            for segment in chunk.segments:
+                segment.start += start_offset
+            chunk_transcripts.append(chunk)
+            logger.info(
+                "Gemini YouTube URL clip %s/%s produced %s segments",
+                chunk_index,
+                total_chunks,
+                len(chunk.segments),
+            )
+
+        segments = [
+            segment
+            for chunk in chunk_transcripts
+            for segment in chunk.segments
+            if segment.text.strip()
+        ]
+        if not segments:
+            raise APIError("Gemini returned empty YouTube transcript")
+
+        segments.sort(key=lambda segment: segment.start)
+        for i in range(len(segments) - 1):
+            segments[i].duration = max(0.0, segments[i + 1].start - segments[i].start)
+
+        summaries = [chunk.summary for chunk in chunk_transcripts if chunk.summary]
+
+        return Transcript(
+            segments=segments,
+            source="gemini",
+            language="en",
+            episode_url=original_url,
+            summary=" ".join(summaries) if summaries else None,
+        )
+
+    def _transcribe_youtube_url_sync(
+        self,
+        youtube_url: str,
+        start_offset: int | None = None,
+        end_offset: int | None = None,
+    ) -> types.GenerateContentResponse:
+        """Synchronous Gemini transcription for a public YouTube URL."""
+        limiter = get_rate_limiter("gemini")
+        limiter.acquire()
+        model_name = (
+            "gemini-2.5-flash" if self.model_name.startswith("gemini-3") else self.model_name
+        )
+
+        clip_text = ""
+        if start_offset is not None and end_offset is not None:
+            clip_text = (
+                f"This request covers the clip from {start_offset}s to {end_offset}s. "
+                "Use timestamps relative to the start of this clip.\n"
+            )
+
+        prompt = (
+            clip_text + "Create a concise timestamped transcript-style record of the spoken audio "
+            "from this public YouTube video.\n\n"
+            "IMPORTANT FORMAT REQUIREMENTS:\n"
+            "1. Start with a brief summary paragraph (2-3 sentences) on its own line, "
+            "prefixed with 'SUMMARY:'\n"
+            "2. Then capture the substantive spoken content with timestamps. Be dense and factual; "
+            "do not attempt a word-for-word transcript.\n"
+            "3. Use this exact format for each segment:\n"
+            "   [MM:SS] Speaker Name: What they said...\n"
+            "4. Use HH:MM:SS for videos over 1 hour\n"
+            "5. Keep the transcript in the original spoken language\n"
+            "6. Identify speakers by name when possible, "
+            "otherwise use 'Speaker 1', 'Speaker 2', etc.\n"
+            "7. Preserve memorable quotes verbatim where possible, and include all "
+            "major claims, examples, tools, people, books, and recommendations.\n\n"
+            "8. If this clip contains no spoken content, output exactly: NO_SPEECH\n\n"
+            "Example output:\n"
+            "SUMMARY: This video discusses AI developments "
+            "and their impact on software engineering.\n\n"
+            "[00:00] Host: Welcome to the show. Today we're talking about...\n"
+            "[00:15] Guest: Thanks for having me. I've been working on...\n"
+        )
+
+        video_part_kwargs: dict[str, Any] = {
+            "file_data": types.FileData(file_uri=youtube_url),
+        }
+        if start_offset is not None and end_offset is not None:
+            video_part_kwargs["video_metadata"] = types.VideoMetadata(
+                start_offset=f"{start_offset}s",
+                end_offset=f"{end_offset}s",
+            )
+
+        response = self.client.models.generate_content(
+            model=model_name,
+            contents=types.Content(
+                parts=[
+                    types.Part(**video_part_kwargs),
+                    types.Part(text=prompt),
+                ]
+            ),
+            config=types.GenerateContentConfig(
+                http_options=types.HttpOptions(timeout=YOUTUBE_URL_REQUEST_TIMEOUT_MS),
+                media_resolution=types.MediaResolution.MEDIA_RESOLUTION_LOW,
+                response_mime_type="text/plain",
+                temperature=0,
+                max_output_tokens=YOUTUBE_URL_MAX_OUTPUT_TOKENS,
+            ),
+        )
+
+        if (
+            response.candidates
+            and response.candidates[0].finish_reason
+            and response.candidates[0].finish_reason.name == "MAX_TOKENS"
+        ):
+            logger.warning("YouTube URL transcript may be incomplete - output hit token limit.")
+
+        return response
+
+    def _get_youtube_duration_seconds(self, youtube_url: str) -> int | None:
+        """Best-effort YouTube duration lookup without downloading media."""
+        try:
+            from yt_dlp import YoutubeDL  # type: ignore[import-untyped]
+
+            with YoutubeDL({"quiet": True, "no_warnings": True, "skip_download": True}) as ydl:
+                info = ydl.extract_info(youtube_url, download=False)
+            if not info:
+                return None
+            duration = info.get("duration")
+            return int(duration) if duration else None
+        except Exception as e:
+            logger.warning("Could not determine YouTube duration for Gemini clipping: %s", e)
+            return None
+
+    def _normalize_youtube_url_for_gemini(self, youtube_url: str) -> str:
+        """Normalize YouTube URLs to the canonical watch URL shape Gemini documents."""
+        parsed = urlparse(youtube_url)
+        host = parsed.netloc.lower()
+        video_id: str | None = None
+
+        if host == "youtu.be":
+            video_id = parsed.path.strip("/").split("/")[0] or None
+        elif host in {"youtube.com", "www.youtube.com", "m.youtube.com"}:
+            if parsed.path == "/watch":
+                video_id = parse_qs(parsed.query).get("v", [None])[0]
+            elif parsed.path.startswith(("/shorts/", "/live/")):
+                video_id = parsed.path.strip("/").split("/", 1)[1].split("/")[0]
+
+        if not video_id:
+            return youtube_url
+
+        return f"https://www.youtube.com/watch?v={video_id}"
 
     def _parse_response(
         self, response: types.GenerateContentResponse, audio_path: Path, episode_url: str | None

@@ -43,11 +43,11 @@ default_output_dir: $HOME/notes/podcasts
 |-----|------|---------|-------------|
 | `transcription.api_key` | string | `""` | Google AI API key |
 | `transcription.model_name` | string | `gemini-2.5-flash` | Gemini model for transcription |
-| `youtube_check` | boolean | `true` | Check YouTube for transcripts first |
+| `transcription.youtube_check` | boolean | `true` | Check YouTube for transcripts first |
 
 ### transcription.api_key
 
-Your Google AI API key for Gemini transcription.
+Your Google AI API key for Gemini transcription. It is used for audio transcription and for the public YouTube URL fallback when YouTube blocks caption or media download requests from a cloud worker.
 
 ```yaml
 transcription:
@@ -60,9 +60,9 @@ transcription:
 
 ### transcription.model_name
 
-The Gemini model used when audio transcription is required (i.e. no free YouTube transcript is available).
+The Gemini model used when Gemini transcription is required. For public YouTube URLs, Inkwell may use Gemini's video URL input before falling back to server-side audio download.
 
-Default (matches the generated config template):
+Generated config default:
 
 ```yaml
 transcription:
@@ -77,14 +77,56 @@ transcription:
 ```
 
 The model name must start with `gemini-`. When in doubt, omit this key and let the default apply.
+Generated config files may still contain the legacy top-level
+`transcription_model` key with the same default. Prefer
+`transcription.model_name` for new edits.
 
-### youtube_check
+### transcription.youtube_check
 
-When `true`, Inkwell checks for free YouTube transcripts before using Gemini.
+When `true`, Inkwell checks for free YouTube transcripts before using Gemini. If captions are unavailable or blocked for a public YouTube URL, Inkwell can still try Gemini's public URL input before attempting a server-side audio download.
 
 ```yaml
-youtube_check: true  # Recommended: saves money
-youtube_check: false # Always use Gemini transcription
+transcription:
+  youtube_check: true  # Recommended: saves money
+```
+
+To force Gemini transcription without checking YouTube first:
+
+```yaml
+transcription:
+  youtube_check: false # Always use Gemini transcription
+```
+
+---
+
+## Cache Settings
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `cache.media.enabled` | boolean | `true` | Cache downloaded media/audio files |
+| `cache.media.max_mb` | int | `2048` | Maximum media/audio cache size in MB |
+| `cache.media.ttl_days` | int | `30` | Maximum media/audio cache entry age in days |
+
+### cache.media
+
+Inkwell keeps downloaded media/audio files in the local cache so retries and fallback transcription do not need to download the same episode again. Retention is enforced when media downloads run.
+
+See [Cache Behavior](cache.md) for how transcript, extraction, and media/audio caches differ.
+
+```yaml
+cache:
+  media:
+    enabled: true
+    max_mb: 2048
+    ttl_days: 30
+```
+
+To disable downloaded media caching:
+
+```yaml
+cache:
+  media:
+    enabled: false
 ```
 
 ---
@@ -95,6 +137,8 @@ youtube_check: false # Always use Gemini transcription
 |-----|------|---------|-------------|
 | `max_episodes_per_run` | int | `10` | Maximum episodes per batch |
 | `extraction.default_provider` | enum | `gemini` | Default LLM provider |
+| `extraction.gemini_api_key` | string | `""` | Optional Google AI key for extraction |
+| `extraction.claude_api_key` | string | `""` | Optional Anthropic key for extraction |
 | `extraction.cache_days` | int | `30` | Cache duration in days |
 
 ### extraction.default_provider
@@ -104,6 +148,12 @@ Valid values: `gemini`, `claude`
 ```yaml
 extraction:
   default_provider: gemini  # Cost-effective (recommended)
+```
+
+To use Claude for extraction:
+
+```yaml
+extraction:
   default_provider: claude  # Higher quality, 40x more expensive
 ```
 
@@ -209,12 +259,22 @@ default_output_dir: ~/ObsidianVault/podcasts
 # Transcription
 transcription:
   api_key: "your-google-ai-key"
-youtube_check: true
+  model_name: gemini-2.5-flash
+  youtube_check: true
+
+# Cache
+cache:
+  media:
+    enabled: true
+    max_mb: 2048
+    ttl_days: 30
 
 # Extraction
 max_episodes_per_run: 10
 extraction:
   default_provider: gemini
+  gemini_api_key: ""  # optional; falls back to transcription.api_key
+  claude_api_key: ""  # optional; can also use ANTHROPIC_API_KEY
   cache_days: 30
 
 # Interview

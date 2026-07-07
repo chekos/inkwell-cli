@@ -1,11 +1,13 @@
 """CLI entry point for Inkwell."""
 
 import asyncio
+import json
 import logging
 import os
 import sys
 from datetime import timedelta
 from pathlib import Path
+from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 import typer
@@ -27,8 +29,9 @@ from inkwell.feeds.youtube_resolver import (
     is_youtube_url,
     resolve_youtube_url,
 )
-from inkwell.pipeline import PipelineOptions, PipelineOrchestrator
-from inkwell.transcription import CostEstimate, TranscriptionManager
+from inkwell.ingestion import ContentSource, ContentSourceKind, InputResolver
+from inkwell.pipeline import PipelineOptions, PipelineOrchestrator, PipelineResult
+from inkwell.transcription import CostEstimate, TranscriptionManager, TranscriptionResult
 from inkwell.utils.datetime import now_utc
 from inkwell.utils.errors import (
     ConfigError,
@@ -37,6 +40,7 @@ from inkwell.utils.errors import (
     ValidationError,
 )
 from inkwell.utils.progress import PipelineProgress
+from inkwell.utils.url_metadata import derive_readable_title_from_url
 
 app = typer.Typer(
     name="inkwell",
@@ -48,6 +52,28 @@ console = Console()
 # the structured result (the summary table) from operational chatter (hints,
 # post-fetch save notices).
 err_console = Console(stderr=True)
+
+_LOCAL_TEXT_EXTENSIONS = {".txt", ".md", ".markdown"}
+_LOCAL_MEDIA_EXTENSIONS = {
+    ".aac",
+    ".aif",
+    ".aiff",
+    ".avi",
+    ".flac",
+    ".m4a",
+    ".m4v",
+    ".mkv",
+    ".mov",
+    ".mp3",
+    ".mp4",
+    ".mpeg",
+    ".mpg",
+    ".oga",
+    ".ogg",
+    ".opus",
+    ".wav",
+    ".webm",
+}
 
 
 def _register_subcommands() -> None:
@@ -138,6 +164,327 @@ def _parse_and_validate_extra_templates(value: str | None) -> list[str]:
     templates = _dedupe_template_names(_parse_extra_templates(value))
     _validate_template_names(templates)
     return templates
+
+
+def _is_local_text_path(path: Path) -> bool:
+    """Return True for local text inputs supported in Phase 6."""
+    return path.suffix.lower() in _LOCAL_TEXT_EXTENSIONS
+
+
+def _is_local_media_path(path: Path) -> bool:
+    """Return True for local media inputs supported in Phase 6."""
+    return path.suffix.lower() in _LOCAL_MEDIA_EXTENSIONS
+
+
+def _read_text_source_file(path: Path) -> str:
+    """Read a local text/markdown source file with user-facing errors."""
+    try:
+        text = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as e:
+        raise ValidationError(
+            f"Local text file is not valid UTF-8: {path}",
+            suggestion="Save the file as UTF-8 text or markdown and try again.",
+        ) from e
+    except OSError as e:
+        raise ValidationError(f"Could not read local file: {path}") from e
+
+    if not text.strip():
+        raise ValidationError("Local text file is empty")
+    return text
+
+
+def _print_json_payload(payload: dict[str, Any]) -> None:
+    """Print a JSON payload to stdout with stable formatting."""
+    print(json.dumps(payload, indent=2, sort_keys=True))
+
+
+def _validate_machine_output_options(*, json_output: bool, plain: bool) -> None:
+    """Ensure only one machine-readable output mode is active."""
+    if json_output and plain:
+        raise ValidationError(
+            "--json and --plain are mutually exclusive",
+            suggestion="Choose one output mode.",
+        )
+
+
+def _source_input_payload(source: ContentSource, normalized_value: str | None = None) -> dict:
+    """Build the shared input portion of machine-readable CLI responses."""
+    return {
+        "raw": source.raw_input,
+        "normalized": normalized_value or source.value,
+        "kind": source.kind.value,
+    }
+
+
+def _transcription_payload(result: TranscriptionResult) -> dict[str, Any]:
+    """Build the transcription portion of a machine-readable response."""
+    transcript = result.transcript
+    word_count = 0
+    language = None
+    source = None
+    media_duration_seconds = None
+    if transcript is not None:
+        word_count = transcript.word_count or len(transcript.full_text.split())
+        language = transcript.language
+        source = transcript.source
+        media_duration_seconds = transcript.duration_seconds
+
+    return {
+        "source": source,
+        "attempts": result.attempts,
+        "duration_seconds": result.duration_seconds,
+        "media_duration_seconds": media_duration_seconds,
+        "from_cache": result.from_cache,
+        "language": language,
+        "word_count": word_count,
+        "cost_usd": result.cost_usd,
+    }
+
+
+def _transcribe_json_payload(
+    *,
+    source: ContentSource,
+    result: TranscriptionResult,
+    output: Path | None,
+) -> dict[str, Any]:
+    """Build the JSON envelope for `inkwell transcribe --json`."""
+    transcript = result.transcript
+    files = []
+    if output is not None:
+        files.append(
+            {
+                "filename": output.name,
+                "template": None,
+                "path": str(output),
+                "size_bytes": output.stat().st_size if output.exists() else None,
+            }
+        )
+
+    return {
+        "schema_version": 1,
+        "command": "transcribe",
+        "status": "success" if result.success else "error",
+        "input": _source_input_payload(source),
+        "output_directory": None,
+        "output": {
+            "path": str(output) if output else None,
+        },
+        "files": files,
+        "templates": [],
+        "transcription": _transcription_payload(result),
+        "cache_hits": {
+            "transcript": result.from_cache,
+            "extractions": 0,
+        },
+        "transcript": transcript.full_text if transcript else None,
+        "costs": {
+            "transcription_usd": result.cost_usd,
+            "total_usd": result.cost_usd,
+        },
+        "error": result.error,
+    }
+
+
+def _fetch_result_payload(result: PipelineResult) -> dict[str, Any]:
+    """Build one fetch result entry for machine-readable responses."""
+    episode_output = result.episode_output
+    transcript_result = result.transcript_result
+    metadata = episode_output.metadata
+    output_dir = episode_output.directory
+
+    files = [
+        {
+            "filename": output_file.filename,
+            "template": output_file.template_name,
+            "path": str(output_dir / output_file.filename),
+            "size_bytes": output_file.size_bytes,
+        }
+        for output_file in episode_output.output_files
+    ]
+
+    extraction_templates = [
+        {
+            "name": extraction_result.template_name,
+            "version": extraction_result.template_version,
+            "success": extraction_result.success,
+            "provider": extraction_result.provider,
+            "from_cache": extraction_result.from_cache,
+            "cost_usd": extraction_result.cost_usd,
+            "error": extraction_result.error,
+        }
+        for extraction_result in result.extraction_results
+    ]
+
+    return {
+        "status": "success",
+        "episode": {
+            "podcast_name": metadata.podcast_name,
+            "episode_title": metadata.episode_title,
+            "episode_url": metadata.episode_url,
+        },
+        "output": {
+            "directory": str(output_dir),
+            "files": files,
+        },
+        "templates": extraction_templates,
+        "transcription": _transcription_payload(transcript_result),
+        "extraction": {
+            "total": result.extraction_summary.total,
+            "successful": result.extraction_summary.successful,
+            "failed": result.extraction_summary.failed,
+            "cached": result.extraction_summary.cached,
+        },
+        "cache_hits": {
+            "transcript": transcript_result.from_cache,
+            "extractions": result.extraction_summary.cached,
+        },
+        "costs": {
+            "transcription_usd": transcript_result.cost_usd,
+            "extraction_usd": result.extraction_cost_usd,
+            "interview_usd": result.interview_cost_usd,
+            "total_usd": transcript_result.cost_usd + result.total_cost_usd,
+        },
+        "interview": {
+            "completed": result.interview_result is not None,
+            "cost_usd": result.interview_cost_usd,
+        },
+    }
+
+
+def _fetch_json_payload(
+    *,
+    source: ContentSource,
+    normalized_input: str,
+    output_dir: Path,
+    latest: bool,
+    count: int | None,
+    episode: str | None,
+    results: list[PipelineResult],
+) -> dict[str, Any]:
+    """Build the JSON envelope for `inkwell fetch --json`."""
+    result_payloads = [_fetch_result_payload(result) for result in results]
+    files = [file for item in result_payloads for file in item["output"]["files"]]
+    templates = [template for item in result_payloads for template in item["templates"]]
+    return {
+        "schema_version": 1,
+        "command": "fetch",
+        "status": "success",
+        "input": {
+            **_source_input_payload(source, normalized_input),
+            "selector": {
+                "latest": latest,
+                "count": count,
+                "episode": episode,
+            },
+        },
+        "output_directory": str(output_dir),
+        "summary": {
+            "requested": len(results),
+            "succeeded": len(result_payloads),
+            "failed": 0,
+            "total_cost_usd": sum(item["costs"]["total_usd"] for item in result_payloads),
+        },
+        "files": files,
+        "templates": templates,
+        "cache_hits": {
+            "transcripts": sum(1 for item in result_payloads if item["cache_hits"]["transcript"]),
+            "extractions": sum(item["cache_hits"]["extractions"] for item in result_payloads),
+        },
+        "results": result_payloads,
+        "errors": [],
+        "warnings": [],
+    }
+
+
+def _validate_extract_only_options(
+    *,
+    json_output: bool,
+    dry_run: bool,
+    interview: bool,
+    interview_template: str | None,
+    interview_format: str | None,
+    max_questions: int | None,
+    no_resume: bool,
+    resume_session: str | None,
+    podcast_name: str | None,
+    templates: str | None,
+    category: str | None,
+    provider: str | None,
+    extractor: str | None,
+    skip_cache: bool,
+    save_feed: bool,
+) -> None:
+    """Reject fetch options that do not apply to transcript-only extraction."""
+    conflicts = []
+    if json_output:
+        conflicts.append("--json")
+    if dry_run:
+        conflicts.append("--dry-run")
+    if interview:
+        conflicts.append("--interview")
+    if interview_template:
+        conflicts.append("--interview-template")
+    if interview_format:
+        conflicts.append("--interview-format")
+    if max_questions is not None:
+        conflicts.append("--max-questions")
+    if no_resume:
+        conflicts.append("--no-resume")
+    if resume_session:
+        conflicts.append("--resume-session")
+    if podcast_name:
+        conflicts.append("--podcast-name")
+    if templates:
+        conflicts.append("--templates")
+    if category:
+        conflicts.append("--category")
+    if provider:
+        conflicts.append("--provider")
+    if extractor:
+        conflicts.append("--extractor")
+    if skip_cache:
+        conflicts.append("--skip-cache")
+    if save_feed:
+        conflicts.append("--save-feed")
+
+    if conflicts:
+        raise ValidationError(
+            f"--extract cannot be combined with {', '.join(conflicts)}",
+            suggestion=(
+                "Use regular 'inkwell fetch' for structured extraction, or run "
+                "'inkwell fetch SOURCE --extract' for transcript-only output."
+            ),
+        )
+
+
+def _extract_transcript_output_path(
+    *,
+    output_dir: Path,
+    title: str | None,
+    url: str,
+    used_filenames: set[str],
+    overwrite: bool,
+) -> Path:
+    """Choose an output path for a transcript-only extraction file."""
+    readable_title = title or derive_readable_title_from_url(url) or "transcript"
+    base_name = _slugify(readable_title) or "transcript"
+    filename = f"{base_name}.transcript.md"
+    path = output_dir / filename
+
+    if filename not in used_filenames and path.exists() and not overwrite:
+        raise FileExistsError(f"Transcript already exists: {path} (use --overwrite to replace it)")
+
+    suffix = 2
+    while filename in used_filenames:
+        filename = f"{base_name}-{suffix}.transcript.md"
+        path = output_dir / filename
+        suffix += 1
+
+    if path.exists() and not overwrite:
+        raise FileExistsError(f"Transcript already exists: {path} (use --overwrite to replace it)")
+
+    used_filenames.add(filename)
+    return path
 
 
 def _derive_feed_name(resolved: ResolvedFeed, existing: set[str]) -> str:
@@ -407,6 +754,14 @@ def config_command(
             table.add_row("YouTube check", "✓" if config.transcription.youtube_check else "✗")
             table.add_row("Transcription model", config.transcription.model_name)
             table.add_row("Interview model", config.interview.model)
+            table.add_row(
+                "Media cache",
+                (
+                    f"enabled, {config.cache.media.max_mb} MB, {config.cache.media.ttl_days} days"
+                    if config.cache.media.enabled
+                    else "disabled"
+                ),
+            )
             table.add_row("", "")
 
             # API key status - simplified to show the two keys that matter
@@ -523,18 +878,30 @@ def config_command(
                     console.print("  • transcription.api_key")
                     console.print("  • extraction.gemini_api_key")
                     console.print("  • extraction.claude_api_key")
+                    console.print("  • cache.media.enabled")
                     sys.exit(1)
-            elif len(key_parts) == 2:
-                # Nested key (e.g., transcription.api_key)
-                parent_key, child_key = key_parts
+            elif len(key_parts) in {2, 3}:
+                # Nested key (e.g., transcription.api_key or cache.media.enabled)
+                parent_key, *child_path = key_parts
 
                 if not hasattr(config, parent_key):
                     console.print(f"[red]✗[/red] Unknown config section: {parent_key}")
-                    console.print("\nAvailable sections: transcription, extraction, interview")
+                    console.print(
+                        "\nAvailable sections: transcription, extraction, interview, cache"
+                    )
                     sys.exit(1)
 
                 parent_obj = getattr(config, parent_key)
 
+                for nested_key in child_path[:-1]:
+                    if not hasattr(parent_obj, nested_key):
+                        console.print(
+                            f"[red]✗[/red] Unknown key '{nested_key}' in section '{parent_key}'"
+                        )
+                        sys.exit(1)
+                    parent_obj = getattr(parent_obj, nested_key)
+
+                child_key = child_path[-1]
                 if not hasattr(parent_obj, child_key):
                     console.print(
                         f"[red]✗[/red] Unknown key '{child_key}' in section '{parent_key}'"
@@ -576,8 +943,8 @@ def config_command(
             else:
                 console.print(f"[red]✗[/red] Invalid key format: {key}")
                 console.print(
-                    "Use 'key' for top-level or 'section.key' for nested "
-                    "(e.g., transcription.api_key)"
+                    "Use 'key' for top-level or dot notation for nested values "
+                    "(e.g., transcription.api_key or cache.media.enabled)"
                 )
                 sys.exit(1)
 
@@ -626,6 +993,16 @@ def transcribe_command(
     skip_youtube: bool = typer.Option(
         False, "--skip-youtube", help="Skip YouTube, use Gemini directly"
     ),
+    json_output: bool = typer.Option(
+        False,
+        "--json",
+        help="Print a JSON envelope to stdout; progress and warnings go to stderr.",
+    ),
+    plain: bool = typer.Option(
+        False,
+        "--plain",
+        help="Print only transcript text to stdout; progress and warnings go to stderr.",
+    ),
 ) -> None:
     """Transcribe a podcast episode.
 
@@ -641,55 +1018,63 @@ def transcribe_command(
 
         inkwell transcribe https://youtube.com/watch?v=xyz --force
     """
+    machine_output = json_output or plain
+    status_console = err_console if machine_output else console
 
     def confirm_cost(estimate: CostEstimate) -> bool:
         """Confirm Gemini transcription cost with user."""
-        console.print(
+        status_console.print(
             f"\n[yellow]⚠[/yellow] Gemini transcription will cost approximately "
             f"[bold]{estimate.formatted_cost}[/bold]"
         )
-        console.print(f"[dim]File size: {estimate.file_size_mb:.1f} MB[/dim]")
-        return typer.confirm("Proceed with transcription?")
+        status_console.print(f"[dim]File size: {estimate.file_size_mb:.1f} MB[/dim]")
+        return typer.confirm("Proceed with transcription?", err=machine_output)
 
     async def run_transcription() -> None:
         try:
+            _validate_machine_output_options(json_output=json_output, plain=plain)
+
             config_manager = ConfigManager()
             config = config_manager.load_config()
+            input_source = InputResolver().resolve(url)
+            transcribe_url = input_source.url or input_source.value
 
             manager = TranscriptionManager(
-                model_name=config.transcription_model, cost_confirmation_callback=confirm_cost
+                config=config.transcription,
+                media_cache=config.cache.media,
+                cost_confirmation_callback=confirm_cost,
             )
 
             with Progress(
                 SpinnerColumn(),
                 TextColumn("[progress.description]{task.description}"),
-                console=console,
+                console=status_console,
             ) as progress:
                 task = progress.add_task("Transcribing...", total=None)
 
                 result = await manager.transcribe(
-                    url, use_cache=not force, skip_youtube=skip_youtube
+                    transcribe_url, use_cache=not force, skip_youtube=skip_youtube
                 )
 
                 progress.update(task, completed=True)
 
             if not result.success:
-                console.print(f"[red]✗[/red] Transcription failed: {result.error}")
+                status_console.print(f"[red]✗[/red] Transcription failed: {result.error}")
                 sys.exit(1)
 
             assert result.transcript is not None
 
             # Display metadata
-            console.print("\n[green]✓[/green] Transcription complete")
-            console.print(f"[dim]Source: {result.transcript.source}[/dim]")
-            console.print(f"[dim]Language: {result.transcript.language}[/dim]")
-            console.print(f"[dim]Duration: {result.duration_seconds:.1f}s[/dim]")
+            status_console.print("\n[green]✓[/green] Transcription complete")
+            status_console.print(f"[dim]Source: {result.transcript.source}[/dim]")
+            status_console.print(f"[dim]Language: {result.transcript.language}[/dim]")
+            status_console.print(f"[dim]Duration: {result.duration_seconds:.1f}s[/dim]")
 
             if result.cost_usd > 0:
-                console.print(f"[dim]Cost: ${result.cost_usd:.4f}[/dim]")
+                status_console.print(f"[dim]Cost: ${result.cost_usd:.4f}[/dim]")
 
             if result.from_cache:
-                console.print("[dim]✓ Retrieved from cache[/dim]")
+                status_console.print("[dim]✓ Retrieved from cache[/dim]")
 
             transcript_text = result.transcript.full_text
 
@@ -697,17 +1082,31 @@ def transcribe_command(
             if output:
                 output.parent.mkdir(parents=True, exist_ok=True)
                 output.write_text(transcript_text)
-                console.print(f"\n[cyan]→[/cyan] Saved to {output}")
-            else:
+                status_console.print(f"\n[cyan]→[/cyan] Saved to {output}")
+
+            if json_output:
+                _print_json_payload(
+                    _transcribe_json_payload(
+                        source=input_source,
+                        result=result,
+                        output=output,
+                    )
+                )
+            elif plain:
+                print(transcript_text)
+            elif not output:
                 console.print("\n" + "=" * 80)
                 console.print(transcript_text)
                 console.print("=" * 80)
 
         except KeyboardInterrupt:
-            console.print("\n[yellow]Cancelled by user[/yellow]")
+            status_console.print("\n[yellow]Cancelled by user[/yellow]")
             sys.exit(130)
+        except InkwellError as e:
+            status_console.print(f"[red]✗[/red] Error: {e}")
+            sys.exit(1)
         except Exception as e:
-            console.print(f"[red]✗[/red] Error: {e}")
+            status_console.print(f"[red]✗[/red] Error: {e}")
             sys.exit(1)
 
     asyncio.run(run_transcription())
@@ -733,7 +1132,12 @@ def cache_command(
         manager = TranscriptionManager()
 
         if action == "stats":
+            from inkwell.audio.downloader import AudioDownloader
+            from inkwell.extraction.cache import ExtractionCache
+
             stats = manager.cache_stats()
+            extraction_stats = asyncio.run(ExtractionCache().get_stats())
+            audio_stats = AudioDownloader.cache_stats()
 
             console.print("\n[bold]Transcript Cache Statistics[/bold]\n")
 
@@ -745,6 +1149,7 @@ def cache_command(
             table.add_row("Valid", str(stats["valid"]))
             table.add_row("Expired", str(stats["expired"]))
             table.add_row("Size", f"{stats['size_bytes'] / 1024 / 1024:.2f} MB")
+            table.add_row("Format version", str(stats.get("cache_format_version", "unknown")))
             table.add_row("Cache directory", stats["cache_dir"])
 
             console.print(table)
@@ -753,6 +1158,57 @@ def cache_command(
                 console.print("\n[bold]By Source:[/bold]")
                 for source, count in stats["sources"].items():
                     console.print(f"  • {source}: {count}")
+
+            console.print("\n[bold]Extraction Cache Statistics[/bold]\n")
+
+            extraction_table = Table(show_header=False, box=None)
+            extraction_table.add_column("Key", style="cyan")
+            extraction_table.add_column("Value", style="white")
+
+            extraction_table.add_row("Total entries", str(extraction_stats["total_entries"]))
+            extraction_table.add_row("Size", f"{extraction_stats['total_size_mb']:.2f} MB")
+            extraction_table.add_row(
+                "Oldest entry age",
+                f"{extraction_stats['oldest_entry_age_days']:.1f} days",
+            )
+            extraction_table.add_row(
+                "Format version",
+                str(extraction_stats.get("cache_format_version", "unknown")),
+            )
+            extraction_table.add_row("Cache directory", extraction_stats["cache_dir"])
+
+            console.print(extraction_table)
+
+            if extraction_stats["templates"]:
+                console.print("\n[bold]By Template:[/bold]")
+                for template_name, count in extraction_stats["templates"].items():
+                    console.print(f"  • {template_name}: {count}")
+
+            if extraction_stats["providers"]:
+                console.print("\n[bold]By Provider:[/bold]")
+                for provider_name, count in extraction_stats["providers"].items():
+                    console.print(f"  • {provider_name}: {count}")
+
+            console.print("\n[bold]Media Cache Statistics[/bold]\n")
+
+            media_table = Table(show_header=False, box=None)
+            media_table.add_column("Key", style="cyan")
+            media_table.add_column("Value", style="white")
+
+            media_table.add_row("Total files", str(audio_stats["total"]))
+            media_table.add_row("Size", f"{audio_stats['size_bytes'] / 1024 / 1024:.2f} MB")
+            media_table.add_row(
+                "Format version",
+                str(audio_stats.get("cache_format_version", "unknown")),
+            )
+            media_table.add_row("Cache directory", audio_stats["cache_dir"])
+
+            console.print(media_table)
+
+            if audio_stats["extensions"]:
+                console.print("\n[bold]By Extension:[/bold]")
+                for extension, count in audio_stats["extensions"].items():
+                    console.print(f"  • {extension}: {count}")
 
         elif action == "clear":
             confirm: bool = typer.confirm(
@@ -815,6 +1271,11 @@ def fetch_command(
     ),
     skip_cache: bool = typer.Option(False, "--skip-cache", help="Skip extraction cache"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Show cost estimate without extracting"),
+    extract_only: bool = typer.Option(
+        False,
+        "--extract",
+        help="Emit transcript text only; skip structured extraction, interview, and note output.",
+    ),
     overwrite: bool = typer.Option(
         False, "--overwrite", help="Overwrite existing episode directory"
     ),
@@ -851,6 +1312,16 @@ def fetch_command(
         "--transcriber",
         help="Force specific transcription plugin (e.g., youtube, gemini)",
         envvar="INKWELL_TRANSCRIBER",
+    ),
+    json_output: bool = typer.Option(
+        False,
+        "--json",
+        help="Print a JSON envelope to stdout; progress and warnings go to stderr.",
+    ),
+    plain: bool = typer.Option(
+        False,
+        "--plain",
+        help="Print only generated output directory path(s) to stdout.",
     ),
     save_feed: bool = typer.Option(
         False,
@@ -894,9 +1365,36 @@ def fetch_command(
 
     async def run_fetch() -> None:
         nonlocal url_or_feed
+        machine_output = json_output or plain or extract_only
+        status_console = err_console if machine_output else console
+        processed_results = []
+        extract_transcripts: list[str] = []
+        extract_output_paths: list[Path] = []
+        extract_used_filenames: set[str] = set()
         try:
+            _validate_machine_output_options(json_output=json_output, plain=plain)
+            if extract_only:
+                _validate_extract_only_options(
+                    json_output=json_output,
+                    dry_run=dry_run,
+                    interview=interview,
+                    interview_template=interview_template,
+                    interview_format=interview_format,
+                    max_questions=max_questions,
+                    no_resume=no_resume,
+                    resume_session=resume_session,
+                    podcast_name=podcast_name,
+                    templates=templates,
+                    category=category,
+                    provider=provider,
+                    extractor=extractor,
+                    skip_cache=skip_cache,
+                    save_feed=save_feed,
+                )
+
             manager = ConfigManager()
             config = manager.load_config()
+            base_output_dir = output_dir or config.default_output_dir
 
             # --feed-name is metadata for --save-feed; it has no meaning
             # on its own and silently ignoring it would mislead scripts into
@@ -910,18 +1408,15 @@ def fetch_command(
                     ),
                 )
 
-            # Normalize scheme-less URL-shaped inputs up-front so the
-            # --save-feed guard and the feed-name lookup both see the same
-            # URL. Feed names never contain both `.` and `/`, so this is
-            # unambiguous. Without this, `www.youtube.com/watch?v=X
-            # --save-feed` would be rejected as "not YouTube" even though
-            # the same input works in plain fetch mode.
-            if (
-                not url_or_feed.startswith(("http://", "https://"))
-                and "." in url_or_feed
-                and "/" in url_or_feed
-            ):
-                url_or_feed = f"https://{url_or_feed}"
+            input_source = InputResolver().resolve(url_or_feed)
+            if input_source.is_url and input_source.url:
+                # Normalize scheme-less URL-shaped inputs up-front so the
+                # --save-feed guard and the feed-name lookup both see the same
+                # URL. Feed names never contain both `.` and `/`, so this is
+                # unambiguous. Without this, `www.youtube.com/watch?v=X
+                # --save-feed` would be rejected as "not YouTube" even though
+                # the same input works in plain fetch mode.
+                url_or_feed = input_source.url
 
             # Resolve feed name to episode URL if needed
             url = url_or_feed
@@ -932,11 +1427,15 @@ def fetch_command(
             feed_extra_templates: list[str] = []
             # Episode from RSS feed (if applicable)
             ep: Episode | None = None
+            source_text: str | None = None
+            source_kind: str | None = None
+            source_episode_title: str | None = None
+            source_podcast_name: str | None = None
             # Set when the argument resolves to a configured feed (and we fan
             # out into its episodes); stays None for direct-URL mode.
             selected_episodes: list[Episode] | None = None
 
-            is_url = url_or_feed.startswith(("http://", "https://"))
+            is_url = input_source.is_url
 
             if is_url and count is not None:
                 raise ValidationError(
@@ -983,14 +1482,51 @@ def fetch_command(
                     # pre-empt it here — just fall back to "Unknown Podcast".
                     pre_resolved = None
 
-            if not is_url:
+            if input_source.kind == ContentSourceKind.LOCAL_FILE:
+                local_path = input_source.path or Path(input_source.value)
+                local_path = local_path.expanduser()
+                if _is_local_text_path(local_path):
+                    source_text = _read_text_source_file(local_path)
+                    source_kind = "local_text"
+                    source_episode_title = local_path.stem
+                    source_podcast_name = "Local Files"
+                    url = str(local_path)
+                elif _is_local_media_path(local_path):
+                    source_episode_title = local_path.stem
+                    source_podcast_name = "Local Files"
+                    url = str(local_path)
+                else:
+                    raise ValidationError(
+                        f"Unsupported local file type: {local_path.suffix or '<none>'}",
+                        suggestion=(
+                            "Use local audio/video, .txt, or .md files for now. "
+                            "PDF, article, slide, and OCR ingestion are planned later."
+                        ),
+                    )
+
+            elif input_source.kind == ContentSourceKind.STDIN:
+                source_text = sys.stdin.read()
+                if not source_text.strip():
+                    raise ValidationError("Stdin input is empty")
+                source_kind = "stdin"
+                source_episode_title = "stdin"
+                source_podcast_name = "Stdin"
+                url = "stdin://input"
+
+            elif not is_url:
                 # Treat as feed name - look up in configured feeds
                 try:
                     feed_config = manager.get_feed(url_or_feed)
-                except NotFoundError:
-                    console.print(f"[red]✗[/red] Feed '{url_or_feed}' not found.")
-                    console.print("  Use [cyan]inkwell list[/cyan] to see configured feeds.")
-                    console.print("  Or provide a direct episode URL.")
+                except NotFoundError as e:
+                    if input_source.kind == ContentSourceKind.UNKNOWN_URL:
+                        raise ValidationError(
+                            f"Unsupported URL input: {input_source.value}",
+                            suggestion="Use an http(s) media URL or a saved feed name.",
+                        ) from e
+
+                    status_console.print(f"[red]✗[/red] Feed '{url_or_feed}' not found.")
+                    status_console.print("  Use [cyan]inkwell list[/cyan] to see configured feeds.")
+                    status_console.print("  Or provide a direct episode URL.")
                     sys.exit(1)
                 else:
                     selection_modes = (
@@ -1010,31 +1546,33 @@ def fetch_command(
 
                     # Found the feed - need --latest, --episode, or --count flag
                     if selection_modes == 0:
-                        console.print(
+                        status_console.print(
                             f"[red]✗[/red] Feed '{url_or_feed}' requires "
                             "--latest, --episode, or --count flag."
                         )
-                        console.print("\nUsage:")
-                        console.print(f"  inkwell fetch {url_or_feed} --latest")
-                        console.print(f"  inkwell fetch {url_or_feed} --count 5")
-                        console.print(f'  inkwell fetch {url_or_feed} --episode "keyword"')
+                        status_console.print("\nUsage:")
+                        status_console.print(f"  inkwell fetch {url_or_feed} --latest")
+                        status_console.print(f"  inkwell fetch {url_or_feed} --count 5")
+                        status_console.print(f'  inkwell fetch {url_or_feed} --episode "keyword"')
                         sys.exit(1)
 
                     # Fetch and parse the RSS feed
-                    console.print(f"[bold]Fetching feed:[/bold] {url_or_feed}")
+                    status_console.print(f"[bold]Fetching feed:[/bold] {url_or_feed}")
                     parser = RSSParser()
 
-                    with console.status("[bold]Parsing RSS feed...[/bold]"):
+                    with status_console.status("[bold]Parsing RSS feed...[/bold]"):
                         feed = await parser.fetch_feed(str(feed_config.url), feed_config.auth)
 
                     if latest:
                         selected_episodes = [parser.get_latest_episode(feed, url_or_feed)]
-                        console.print(
+                        status_console.print(
                             f"[green]✓[/green] Latest episode: {selected_episodes[0].title}"
                         )
                     elif count is not None:
                         selected_episodes = parser.get_latest_episodes(feed, url_or_feed, count)
-                        console.print(f"[green]✓[/green] Found {len(selected_episodes)} episodes")
+                        status_console.print(
+                            f"[green]✓[/green] Found {len(selected_episodes)} episodes"
+                        )
                     else:
                         # episode is guaranteed to be set when not using --latest
                         assert episode is not None, "Episode selector required"
@@ -1042,11 +1580,11 @@ def fetch_command(
                             feed, episode, url_or_feed
                         )
                         if len(selected_episodes) == 1:
-                            console.print(
+                            status_console.print(
                                 f"[green]✓[/green] Found episode: {selected_episodes[0].title}"
                             )
                         else:
-                            console.print(
+                            status_console.print(
                                 f"[green]✓[/green] Found {len(selected_episodes)} episodes"
                             )
 
@@ -1070,7 +1608,7 @@ def fetch_command(
                 if ep is not None:
                     url = str(ep.url)
                     if len(episodes_to_process) > 1:
-                        console.print(f"\n[bold cyan]Processing:[/bold cyan] {ep.title}")
+                        status_console.print(f"\n[bold cyan]Processing:[/bold cyan] {ep.title}")
 
                 # Determine if interview will be included for progress display
                 will_interview = interview or config.interview.auto_start
@@ -1081,13 +1619,81 @@ def fetch_command(
                 if ep is not None:
                     episode_title = ep.title
                     detected_podcast_name = ep.podcast_name or url_or_feed
+                elif source_episode_title is not None:
+                    episode_title = source_episode_title
+                    detected_podcast_name = source_podcast_name
                 elif pre_resolved is not None and pre_resolved.episode_title:
                     # Direct YouTube URL: when yt-dlp provides a video title,
                     # use it so direct-URL capture folders are readable.
                     episode_title = pre_resolved.episode_title
 
+                if extract_only:
+                    if source_text is not None:
+                        transcript_text = source_text
+                    else:
+                        transcription_manager = TranscriptionManager(
+                            config=config.transcription,
+                            media_cache=config.cache.media,
+                        )
+
+                        extract_substeps = {
+                            "checking_cache": "Checking transcript cache...",
+                            "trying_youtube": "Trying YouTube transcript...",
+                            "downloading_audio": "Downloading audio...",
+                            "transcribing_gemini": "Transcribing with Gemini...",
+                            "transcribing_gemini_youtube": (
+                                "Transcribing YouTube URL with Gemini..."
+                            ),
+                            "caching_result": "Caching transcript...",
+                        }
+
+                        with Progress(
+                            SpinnerColumn(),
+                            TextColumn("[progress.description]{task.description}"),
+                            console=status_console,
+                        ) as progress:
+                            task = progress.add_task("Extracting transcript...", total=None)
+
+                            def handle_extract_progress(step: str, _data: dict) -> None:
+                                progress.update(task, description=extract_substeps.get(step, step))
+
+                            transcript_result = await transcription_manager.transcribe(
+                                url,
+                                use_cache=True,
+                                auth_username=auth_username,
+                                auth_password=auth_password,
+                                progress_callback=handle_extract_progress,
+                                transcriber_override=transcriber,
+                            )
+                            progress.update(task, completed=True)
+
+                        if not transcript_result.success or transcript_result.transcript is None:
+                            raise InkwellError(
+                                "Transcript extraction failed",
+                                suggestion=transcript_result.error,
+                            )
+
+                        transcript_text = transcript_result.transcript.full_text
+
+                    if output_dir is not None:
+                        output_dir.mkdir(parents=True, exist_ok=True)
+                        transcript_path = _extract_transcript_output_path(
+                            output_dir=output_dir,
+                            title=episode_title,
+                            url=url,
+                            used_filenames=extract_used_filenames,
+                            overwrite=overwrite,
+                        )
+                        transcript_path.write_text(transcript_text, encoding="utf-8")
+                        extract_output_paths.append(transcript_path)
+                        status_console.print(f"[green]✓[/green] Wrote {transcript_path}")
+                    else:
+                        extract_transcripts.append(transcript_text)
+
+                    continue
+
                 # Compute effective output directory
-                effective_output_dir = output_dir or config.default_output_dir
+                effective_output_dir = base_output_dir
 
                 # Note: No longer skipping existing episodes here.
                 # The orchestrator handles incremental mode: if the episode directory exists
@@ -1095,8 +1701,8 @@ def fetch_command(
                 # missing or have updated versions.
 
                 # Show output directory upfront
-                console.print("[bold cyan]Inkwell Extraction Pipeline[/bold cyan]")
-                console.print(f"[dim]Output: {effective_output_dir}[/dim]\n")
+                status_console.print("[bold cyan]Inkwell Extraction Pipeline[/bold cyan]")
+                status_console.print(f"[dim]Output: {effective_output_dir}[/dim]\n")
                 template_names = (
                     [t.strip() for t in templates.split(",") if t.strip()] if templates else []
                 )
@@ -1124,6 +1730,8 @@ def fetch_command(
                     auth_password=auth_password,
                     episode_title=episode_title,
                     podcast_name=podcast_name or detected_podcast_name,
+                    source_text=source_text,
+                    source_kind=source_kind,
                     extractor=extractor,
                     transcriber=transcriber,
                 )
@@ -1131,7 +1739,7 @@ def fetch_command(
                 orchestrator = PipelineOrchestrator(config)
 
                 pipeline_progress = PipelineProgress(
-                    console=console,
+                    console=status_console,
                     include_interview=will_interview,
                 )
 
@@ -1147,8 +1755,6 @@ def fetch_command(
                 completion_details: dict[str, object] = {}
 
                 # Progress callback for pipeline stages
-                from typing import Any
-
                 def handle_progress(step_name: str, step_data: dict[str, Any]) -> None:
                     nonlocal completion_details
 
@@ -1244,7 +1850,7 @@ def fetch_command(
                         logging.getLogger(logger_name).setLevel(level)
 
                 # Display summary
-                console.print("\n[bold green]✓ Complete![/bold green]")
+                status_console.print("\n[bold green]✓ Complete![/bold green]")
 
                 # Format output directory path for display
                 try:
@@ -1269,7 +1875,8 @@ def fetch_command(
 
                 table.add_row("Output:", output_display)
 
-                console.print(table)
+                status_console.print(table)
+                processed_results.append(result)
 
                 # Post-fetch: save channel as a feed (--save-feed) or show
                 # a hint about --save-feed on raw YouTube URL fetches.
@@ -1288,37 +1895,37 @@ def fetch_command(
                                 f"[yellow]Channel already saved as "
                                 f"'[bold]{existing_match}[/bold]'[/yellow]"
                             )
-                            return
-
-                        # Auto-derive the feed name when --feed-name is omitted.
-                        # The user pasted a YouTube URL; they shouldn't have to
-                        # know a good feed name up front.
-                        if feed_name is None:
-                            existing = set(existing_feeds.keys())
-                            effective_name = _derive_feed_name(resolved, existing)
-                            display_name = resolved.channel_name
                         else:
-                            effective_name = _normalize_feed_name(feed_name)
-                            display_name = feed_name if effective_name != feed_name else None
-                        stored_name = manager.add_feed(
-                            effective_name,
-                            FeedConfig(
-                                url=HttpUrl(resolved.feed_url),
-                                display_name=display_name,
-                                auth=AuthConfig(type="none"),
-                            ),
-                        )
-                        err_console.print(
-                            f"[green]✓[/green] Saved channel as feed '[bold]{stored_name}[/bold]'"
-                        )
-                        if feed_name is None:
-                            err_console.print(
-                                f"[dim]  Auto-named from channel metadata. "
-                                f"To rename: [cyan]inkwell rename {stored_name} "
-                                f"<new-name>[/cyan]. "
-                                f"Pass [cyan]--feed-name[/cyan] next time to skip "
-                                f"this.[/dim]"
+                            # Auto-derive the feed name when --feed-name is omitted.
+                            # The user pasted a YouTube URL; they shouldn't have to
+                            # know a good feed name up front.
+                            if feed_name is None:
+                                existing = set(existing_feeds.keys())
+                                effective_name = _derive_feed_name(resolved, existing)
+                                display_name = resolved.channel_name
+                            else:
+                                effective_name = _normalize_feed_name(feed_name)
+                                display_name = feed_name if effective_name != feed_name else None
+                            stored_name = manager.add_feed(
+                                effective_name,
+                                FeedConfig(
+                                    url=HttpUrl(resolved.feed_url),
+                                    display_name=display_name,
+                                    auth=AuthConfig(type="none"),
+                                ),
                             )
+                            err_console.print(
+                                f"[green]✓[/green] Saved channel as feed "
+                                f"'[bold]{stored_name}[/bold]'"
+                            )
+                            if feed_name is None:
+                                err_console.print(
+                                    f"[dim]  Auto-named from channel metadata. "
+                                    f"To rename: [cyan]inkwell rename {stored_name} "
+                                    f"<new-name>[/cyan]. "
+                                    f"Pass [cyan]--feed-name[/cyan] next time to skip "
+                                    f"this.[/dim]"
+                                )
                     except (ValidationError, ConfigError) as e:
                         err_console.print(f"[yellow]⚠[/yellow] Couldn't save feed: {e}")
                 elif _should_show_save_feed_hint(url=url_or_feed, input_was_url=is_url):
@@ -1327,24 +1934,48 @@ def fetch_command(
                         "[cyan]--save-feed[/cyan] to save it as a feed.[/dim]"
                     )
 
+            if extract_only:
+                if output_dir is None:
+                    print("\n\n".join(extract_transcripts))
+                elif plain:
+                    print("\n".join(str(path) for path in extract_output_paths))
+                return
+
+            if json_output:
+                _print_json_payload(
+                    _fetch_json_payload(
+                        source=input_source,
+                        normalized_input=url_or_feed,
+                        output_dir=base_output_dir,
+                        latest=latest,
+                        count=count,
+                        episode=episode,
+                        results=processed_results,
+                    )
+                )
+            elif plain:
+                print(
+                    "\n".join(str(result.episode_output.directory) for result in processed_results)
+                )
+
         except KeyboardInterrupt:
-            console.print("\n[yellow]Cancelled by user[/yellow]")
+            status_console.print("\n[yellow]Cancelled by user[/yellow]")
             sys.exit(130)
         except FileExistsError as e:
-            console.print(f"\n[red]✗[/red] {e}")
+            status_console.print(f"\n[red]✗[/red] {e}")
             sys.exit(1)
         except InkwellError as e:
             # Print message and suggestion separately so agents parsing
             # line-by-line can capture both cleanly (matches add_feed's pattern).
-            console.print(f"\n[red]✗[/red] {e.message}")
+            status_console.print(f"\n[red]✗[/red] {e.message}")
             if e.suggestion:
-                console.print(f"[dim]  {e.suggestion}[/dim]")
+                status_console.print(f"[dim]  {e.suggestion}[/dim]")
             sys.exit(1)
         except Exception as e:
-            console.print(f"\n[red]✗[/red] Unexpected error: {e}")
+            status_console.print(f"\n[red]✗[/red] Unexpected error: {e}")
             import traceback
 
-            console.print(f"[dim]{traceback.format_exc()}[/dim]")
+            status_console.print(f"[dim]{traceback.format_exc()}[/dim]")
             sys.exit(1)
 
     asyncio.run(run_fetch())

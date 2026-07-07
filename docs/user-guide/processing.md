@@ -14,6 +14,23 @@ Process any YouTube video or podcast episode directly:
 inkwell fetch https://youtube.com/watch?v=xyz
 ```
 
+### Process from Local Files or Stdin
+
+Local audio/video routes through transcription. Local text/markdown and stdin are treated as already-clean source text for the extraction templates.
+
+```bash
+# Local audio/video
+inkwell fetch ~/Downloads/interview.mp3
+
+# Local text or markdown
+inkwell fetch ./notes.md
+
+# Pasted/stdin text
+pbpaste | inkwell fetch -
+```
+
+See [Supported Inputs](../reference/supported-inputs.md) for the full input matrix and planned future formats.
+
 ### Process from Feed
 
 If you've added a feed, process by feed name:
@@ -34,12 +51,15 @@ When you run `inkwell fetch`, here's what happens:
 
 ```mermaid
 flowchart TD
-    A([inkwell fetch URL / feed]) --> B[Download audio\n& episode metadata]
+    A([inkwell fetch URL / feed]) --> B[Resolve source\n& episode metadata]
     B --> C{YouTube transcript\navailable?}
     C -- Yes / Free --> D[Use YouTube transcript]
-    C -- No --> E[Transcribe with Gemini\n~$0.01 / hour]
+    C -- No / blocked --> E{Public YouTube URL?}
+    E -- Yes --> J[Gemini video URL fallback\nbounded clips]
+    E -- No --> K[Download audio\nand transcribe with Gemini]
     D --> F[Select extraction templates\nauto or manual]
-    E --> F
+    J --> F
+    K --> F
     F --> G[Extract content via AI\nper template]
     G --> H[Write markdown files\nto output directory]
     H --> I([Done — structured notes ready])
@@ -80,13 +100,14 @@ Step 4/4: Writing markdown files...
 
 | Option | Short | Description | Default |
 |--------|-------|-------------|---------|
-| `--output` | `-o` | Output directory | `~/inkwell-notes` |
+| `--output-dir` | `-o` | Output directory | `~/inkwell-notes` |
 | `--count` | | Latest N episodes from a saved feed | |
 | `--templates` | `-t` | Comma-separated template list | Auto-select |
 | `--category` | `-c` | Episode category | Auto-detect |
 | `--provider` | `-p` | LLM provider (claude, gemini) | Smart selection |
 | `--skip-cache` | | Skip extraction cache | `false` |
 | `--dry-run` | | Cost estimate only | `false` |
+| `--extract` | | Emit transcript text only and skip note generation | `false` |
 | `--overwrite` | | Overwrite existing directory | `false` |
 | `--interview` | | Enable interview mode | `false` |
 
@@ -181,6 +202,22 @@ inkwell fetch URL --dry-run
 inkwell fetch URL
 ```
 
+### Transcript Only
+
+```bash
+# Print transcript text to stdout; progress goes to stderr
+inkwell fetch URL --extract
+
+# Write transcript-only files without creating episode note directories
+inkwell fetch my-podcast --latest --extract --output-dir ~/transcripts --plain
+```
+
+Use this when you want the clean media transcript first and want to decide later whether to run Inkwell's structured note templates or reflection flow.
+
+PDFs, web article extraction, slide decks, and OCR inputs are not part of local/stdin ingestion yet.
+
+For script-friendly `--json` and `--plain` output, see [Machine-Readable Output](../reference/machine-readable-output.md).
+
 ### Re-extract with Different Templates
 
 ```bash
@@ -202,14 +239,15 @@ Inkwell first checks for existing YouTube transcripts. These are:
 - **Free** - No API cost
 - **Fast** - Already available
 - **Accurate** - Human-corrected for popular videos
+- **Flexible** - Inkwell can use available non-English captions when English captions are missing
 
 ### Gemini Fallback
 
-If no YouTube transcript exists, Inkwell uses Google's Gemini:
+If no YouTube transcript exists or YouTube blocks the worker, Inkwell uses Google's Gemini:
 
-- Downloads audio
-- Transcribes using Gemini Flash
-- Cost: ~$0.01 per hour of audio
+- Public YouTube URLs: process bounded video clips directly from the URL
+- Other sources: download audio and transcribe using Gemini Flash
+- Cost: URL input is currently a Gemini preview feature; downloaded audio is billed by Gemini usage
 
 ---
 

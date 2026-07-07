@@ -11,7 +11,7 @@ from difflib import get_close_matches
 from pathlib import Path
 
 import yaml
-from pydantic import ValidationError
+from pydantic import ValidationError as PydanticValidationError
 
 from inkwell.config.crypto import CredentialEncryptor
 from inkwell.config.defaults import (
@@ -24,9 +24,7 @@ from inkwell.utils.datetime import now_utc
 from inkwell.utils.errors import (
     ConfigError,
     NotFoundError,
-)
-from inkwell.utils.errors import (
-    ValidationError as InkwellValidationError,
+    ValidationError,
 )
 from inkwell.utils.paths import (
     get_config_dir,
@@ -47,7 +45,7 @@ def normalize_feed_name(name: str) -> str:
     """Normalize and validate a feed name for use as a config key."""
     normalized = slugify_feed_name(name)
     if not normalized:
-        raise InkwellValidationError(
+        raise ValidationError(
             "Feed name must include at least one letter or number",
             suggestion="Use a short name like 'syntax' or 'oren-meets-world'",
         )
@@ -159,7 +157,7 @@ class ConfigManager:
         try:
             data = yaml.safe_load(self.config_file.read_text(encoding="utf-8")) or {}
             return GlobalConfig(**data)
-        except ValidationError as e:
+        except PydanticValidationError as e:
             # Format Pydantic validation errors nicely
             error_lines = ["Invalid configuration in config.yaml:"]
             for error in e.errors():
@@ -308,7 +306,7 @@ class ConfigManager:
                             ) from e
 
             return Feeds(**data)
-        except ValidationError as e:
+        except PydanticValidationError as e:
             # Format Pydantic validation errors nicely
             error_lines = ["Invalid feeds configuration in feeds.yaml:"]
             for error in e.errors():
@@ -425,7 +423,7 @@ class ConfigManager:
             feeds = self.load_feeds()
 
             if normalized_name in feeds.feeds:
-                raise InkwellValidationError(
+                raise ValidationError(
                     f"Feed '{normalized_name}' already exists. Use update to modify it.",
                     suggestion=(
                         "Choose a different name to disambiguate it, or use "
@@ -567,7 +565,7 @@ class ConfigManager:
                 return
 
             if normalized_new_name in feeds.feeds and not overwrite:
-                raise InkwellValidationError(
+                raise ValidationError(
                     f"Feed '{normalized_new_name}' already exists.",
                     suggestion="Choose a different name, or pass --force to overwrite it",
                 )

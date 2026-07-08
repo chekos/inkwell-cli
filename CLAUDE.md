@@ -73,6 +73,12 @@ Run Python checks:
 ```bash
 uv run pytest
 uv run ruff check .
+uv run ruff format --check .
+```
+
+Format Python files:
+
+```bash
 uv run ruff format .
 ```
 
@@ -140,11 +146,12 @@ Each processed episode creates a directory:
 ```text
 podcast-name-YYYY-MM-DD-episode-title/
 |-- .metadata.yaml
+|-- _transcript.md
 |-- summary.md
 |-- quotes.md
 |-- key-concepts.md
-|-- [context-specific].md
-`-- my-notes.md
+|-- [additional-template].md
+`-- my-notes.md (if interview mode runs)
 ```
 
 ## Agentic Development Contract

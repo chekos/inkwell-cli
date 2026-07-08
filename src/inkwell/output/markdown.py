@@ -145,9 +145,18 @@ class MarkdownOutput(OutputPlugin):
             "extracted_with": result.provider,
             "cost_usd": round(result.cost_usd, 4),
         }
+        if result.model:
+            frontmatter_data["model"] = result.model
+        if result.bypassed:
+            frontmatter_data["extraction_bypassed"] = True
+            frontmatter_data["bypass_reason"] = result.bypass_reason
 
         if "episode_url" in episode_metadata:
             frontmatter_data["url"] = episode_metadata["episode_url"]
+        custom_fields = episode_metadata.get("custom_fields") or {}
+        source_kind = custom_fields.get("source_kind")
+        if source_kind:
+            frontmatter_data["source_kind"] = source_kind
 
         tags = self._generate_tags(result.template_name)
         if tags:

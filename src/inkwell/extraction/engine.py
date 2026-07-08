@@ -20,7 +20,7 @@ from ..config.schema import ExtractionConfig
 # from inkwell.extraction.extractors.base, which triggers inkwell.extraction.__init__)
 from ..plugins.discovery import discover_plugins, get_entry_point_group
 from ..plugins.registry import PluginRegistry
-from ..plugins.types.extraction import ExtractionPlugin
+from ..plugins.types.extraction import ExtractionCapabilities, ExtractionPlugin
 from ..utils.errors import ValidationError
 from ..utils.json_utils import JSONParsingError, safe_json_loads
 from .cache import ExtractionCache
@@ -33,6 +33,7 @@ from .models import (
     ExtractionSummary,
     ExtractionTemplate,
 )
+from .routing import ExtractionRoutingAttempt, ExtractionRoutingPolicy
 
 if TYPE_CHECKING:
     from ..utils.costs import CostTracker
@@ -93,6 +94,8 @@ class ExtractionEngine:
         cost_tracker: "CostTracker | None" = None,
         use_plugin_registry: bool = True,
         extractor_override: str | None = None,
+        force_extraction: bool = False,
+        routing_policy: ExtractionRoutingPolicy | None = None,
     ) -> None:
         """Initialize extraction engine.
 
@@ -106,6 +109,8 @@ class ExtractionEngine:
             use_plugin_registry: Whether to load extractors from plugin registry (default: True)
             extractor_override: Force a specific extractor plugin (e.g., "claude", "gemini").
                                Takes precedence over INKWELL_EXTRACTOR env var.
+            force_extraction: Run LLM extraction even when short-content bypass applies.
+            routing_policy: Token-aware provider routing policy.
 
         Note:
             Prefer passing `config` over individual parameters. Individual parameters
@@ -158,6 +163,71 @@ class ExtractionEngine:
         self._plugins_loaded = False
 
         self._extractor_override = extractor_override
+        self._force_extraction = force_extraction
+        self._short_content_bypass_enabled = config.short_content_bypass_enabled if config else True
+        self._short_content_bypass_tokens = config.short_content_bypass_tokens if config else 500
+        self.routing_policy = routing_policy or ExtractionRoutingPolicy()
+
+    @staticmethod
+    def _estimate_text_tokens(text: str) -> int:
+        """Estimate token count from text using the repo's existing rough ratio."""
+        return max(1, len(text) // 4)
+
+    def _should_bypass_short_content(
+        self,
+        template: ExtractionTemplate,
+        transcript: str,
+        metadata: dict[str, Any],
+    ) -> tuple[bool, int, str | None]:
+        """Return whether summary extraction should pass through short content."""
+        source_tokens = self._estimate_text_tokens(transcript)
+
+        if self._force_extraction:
+            return False, source_tokens, None
+        if not self._short_content_bypass_enabled:
+            return False, source_tokens, None
+        if template.name != "summary":
+            return False, source_tokens, None
+        if not metadata.get("episode_url") and not metadata.get("source_kind"):
+            return False, source_tokens, None
+        if source_tokens > self._short_content_bypass_tokens:
+            return False, source_tokens, None
+
+        reason = f"source_tokens={source_tokens} <= threshold={self._short_content_bypass_tokens}"
+        return True, source_tokens, reason
+
+    def _bypass_result(
+        self,
+        template: ExtractionTemplate,
+        transcript: str,
+        metadata: dict[str, Any],
+        *,
+        source_tokens: int,
+        reason: str,
+    ) -> ExtractionResult:
+        """Build a pass-through extraction result for short summary content."""
+        content = ExtractedContent(
+            template_name=template.name,
+            content=transcript.strip(),
+            metadata={
+                "bypassed": True,
+                "bypass_reason": reason,
+                "source_tokens": source_tokens,
+                "threshold_tokens": self._short_content_bypass_tokens,
+            },
+        )
+        return ExtractionResult(
+            episode_url=metadata.get("episode_url", ""),
+            template_name=template.name,
+            template_version=template.version,
+            success=True,
+            extracted_content=content,
+            cost_usd=0.0,
+            provider="bypass",
+            model=None,
+            bypassed=True,
+            bypass_reason=reason,
+        )
 
     def _load_extraction_plugins(self) -> None:
         """Load extraction plugins from entry points into registry.
@@ -344,6 +414,50 @@ class ExtractionEngine:
         }
         return default_models.get(provider, "unknown")
 
+    def _cache_key_options_for_provider(
+        self,
+        template: ExtractionTemplate,
+        *,
+        provider: str,
+        model: str,
+    ) -> dict[str, str]:
+        """Build cache-key metadata for a selected provider/model."""
+        return {
+            "provider": provider,
+            "model": model,
+            "prompt_hash": self._template_prompt_hash(template),
+            "output_schema_version": self._output_schema_version(template),
+        }
+
+    def _available_extraction_capabilities(self) -> dict[str, ExtractionCapabilities]:
+        """Return enabled extraction provider capabilities."""
+        capabilities: dict[str, ExtractionCapabilities] = {}
+        for name, plugin in self.extraction_registry.get_enabled():
+            get_capabilities = getattr(plugin, "get_capabilities", None)
+            if callable(get_capabilities):
+                capabilities[name] = get_capabilities()
+            else:
+                model_name = self._model_name_for_extractor(plugin)
+                capabilities[name] = ExtractionCapabilities(model_name=model_name)
+        return capabilities
+
+    def _plan_extraction_attempts(
+        self,
+        template: ExtractionTemplate,
+        transcript: str,
+        metadata: dict[str, Any],
+    ) -> list[ExtractionRoutingAttempt]:
+        """Plan ordered extraction attempts for one template."""
+        override = self._extractor_override or os.environ.get("INKWELL_EXTRACTOR")
+        return self.routing_policy.plan(
+            template=template,
+            transcript=transcript,
+            metadata=metadata,
+            available_capabilities=self._available_extraction_capabilities(),
+            default_provider=self.default_provider,
+            override=override,
+        )
+
     def _template_prompt_hash(self, template: ExtractionTemplate) -> str:
         """Hash prompt/template inputs that affect extraction output."""
         payload = {
@@ -372,6 +486,94 @@ class ExtractionEngine:
         schema_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
         return f"{template.expected_format}:{schema_hash}"
 
+    async def _extract_with_single_extractor(
+        self,
+        *,
+        template: ExtractionTemplate,
+        transcript: str,
+        metadata: dict[str, Any],
+        use_cache: bool,
+        episode_url: str,
+    ) -> ExtractionResult:
+        """Compatibility path for callers/tests that inject `_select_extractor`."""
+        extractor = self._select_extractor(template)
+        provider_name = self._provider_name_for_extractor(extractor)
+        model_name = self._model_name_for_extractor(extractor)
+        cache_key_options = self._cache_key_options(template, extractor)
+
+        if use_cache:
+            cached = await self.cache.get(
+                template.name,
+                template.version,
+                transcript,
+                **cache_key_options,
+            )
+            if cached:
+                content = self._parse_output(cached, template)
+                return ExtractionResult(
+                    episode_url=episode_url,
+                    template_name=template.name,
+                    template_version=template.version,
+                    success=True,
+                    extracted_content=content,
+                    cost_usd=0.0,
+                    provider="cache",
+                    model=model_name,
+                    from_cache=True,
+                )
+
+        estimated_cost = extractor.estimate_cost(template, len(transcript))
+
+        try:
+            raw_output = await extractor.extract(template, transcript, metadata)
+            content = self._parse_output(raw_output, template)
+
+            if use_cache:
+                await self.cache.set(
+                    template.name,
+                    template.version,
+                    transcript,
+                    raw_output,
+                    **cache_key_options,
+                )
+
+            if self.cost_tracker:
+                input_tokens = len(transcript) // 4
+                output_tokens = len(raw_output) // 4
+                self.cost_tracker.add_cost(
+                    provider=provider_name,
+                    model=model_name,
+                    operation="extraction",
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                    episode_title=metadata.get("episode_title"),
+                    template_name=template.name,
+                )
+
+            return ExtractionResult(
+                episode_url=episode_url,
+                template_name=template.name,
+                template_version=template.version,
+                success=True,
+                extracted_content=content,
+                cost_usd=estimated_cost,
+                provider=provider_name,
+                model=model_name,
+            )
+        except Exception as e:
+            error_msg = _sanitize_error_message(str(e))
+            return ExtractionResult(
+                episode_url=episode_url,
+                template_name=template.name,
+                template_version=template.version,
+                success=False,
+                extracted_content=None,
+                error=error_msg,
+                cost_usd=0.0,
+                provider=provider_name,
+                model=model_name,
+            )
+
     async def extract(
         self,
         template: ExtractionTemplate,
@@ -394,109 +596,151 @@ class ExtractionEngine:
             ExtractionError: If extraction fails
         """
         episode_url = metadata.get("episode_url", "")
-        policy_cache_key_options = self._cache_key_options(template)
-
-        if use_cache:
-            cached = await self.cache.get(
-                template.name,
-                template.version,
+        should_bypass, source_tokens, bypass_reason = self._should_bypass_short_content(
+            template, transcript, metadata
+        )
+        if should_bypass and bypass_reason is not None:
+            return self._bypass_result(
+                template,
                 transcript,
-                **policy_cache_key_options,
+                metadata,
+                source_tokens=source_tokens,
+                reason=bypass_reason,
             )
-            if cached:
-                content = self._parse_output(cached, template)
-                return ExtractionResult(
-                    episode_url=episode_url,
-                    template_name=template.name,
-                    template_version=template.version,
-                    success=True,
-                    extracted_content=content,
-                    cost_usd=0.0,  # Cached, no cost
-                    provider="cache",
-                    from_cache=True,
-                )
 
-        extractor = self._select_extractor(template)
-        provider_name = self._provider_name_for_extractor(extractor)
-        cache_key_options = self._cache_key_options(template, extractor)
-
-        if use_cache and cache_key_options != policy_cache_key_options:
-            cached = await self.cache.get(
-                template.name,
-                template.version,
-                transcript,
-                **cache_key_options,
-            )
-            if cached:
-                content = self._parse_output(cached, template)
-                return ExtractionResult(
-                    episode_url=episode_url,
-                    template_name=template.name,
-                    template_version=template.version,
-                    success=True,
-                    extracted_content=content,
-                    cost_usd=0.0,
-                    provider="cache",
-                    from_cache=True,
-                )
-
-        # Estimate cost
-        estimated_cost = extractor.estimate_cost(template, len(transcript))
-
-        try:
-            # Extract
-            raw_output = await extractor.extract(template, transcript, metadata)
-
-            content = self._parse_output(raw_output, template)
-
-            if use_cache:
-                await self.cache.set(
-                    template.name,
-                    template.version,
-                    transcript,
-                    raw_output,
-                    **cache_key_options,
-                )
-
-            if self.cost_tracker:
-                # Estimate token counts based on transcript length
-                # This is an approximation; real token counts would come from API response
-                input_tokens = len(transcript) // 4  # Rough approximation
-                output_tokens = len(raw_output) // 4
-
-                self.cost_tracker.add_cost(
-                    provider=provider_name,
-                    model=extractor.model if hasattr(extractor, "model") else "unknown",
-                    operation="extraction",
-                    input_tokens=input_tokens,
-                    output_tokens=output_tokens,
-                    episode_title=metadata.get("episode_title"),
-                    template_name=template.name,
-                )
-
-            return ExtractionResult(
+        if "_select_extractor" in self.__dict__:
+            return await self._extract_with_single_extractor(
+                template=template,
+                transcript=transcript,
+                metadata=metadata,
+                use_cache=use_cache,
                 episode_url=episode_url,
-                template_name=template.name,
-                template_version=template.version,
-                success=True,
-                extracted_content=content,
-                cost_usd=estimated_cost,
-                provider=provider_name,
             )
 
-        except Exception as e:
-            # Sanitize error message to prevent API key leakage
-            error_msg = _sanitize_error_message(str(e))
+        attempts = self._plan_extraction_attempts(template, transcript, metadata)
+        if not attempts:
+            estimated_tokens = self.routing_policy.estimate_prompt_tokens(
+                template=template,
+                transcript=transcript,
+                metadata=metadata,
+            )
             return ExtractionResult(
                 episode_url=episode_url,
                 template_name=template.name,
                 template_version=template.version,
                 success=False,
                 extracted_content=None,
-                error=error_msg,
+                error=(
+                    "No configured extraction provider can handle the estimated "
+                    f"{estimated_tokens} token prompt."
+                ),
                 cost_usd=0.0,
-                provider=provider_name,
+                provider=None,
+                model=None,
             )
+
+        if use_cache:
+            for attempt in attempts:
+                cache_key_options = self._cache_key_options_for_provider(
+                    template,
+                    provider=attempt.provider,
+                    model=attempt.model,
+                )
+                cached = await self.cache.get(
+                    template.name,
+                    template.version,
+                    transcript,
+                    **cache_key_options,
+                )
+                if cached:
+                    content = self._parse_output(cached, template)
+                    return ExtractionResult(
+                        episode_url=episode_url,
+                        template_name=template.name,
+                        template_version=template.version,
+                        success=True,
+                        extracted_content=content,
+                        cost_usd=0.0,
+                        provider="cache",
+                        model=attempt.model,
+                        from_cache=True,
+                    )
+
+        last_error: str | None = None
+        last_attempt: ExtractionRoutingAttempt | None = None
+
+        for attempt in attempts:
+            last_attempt = attempt
+            extractor = self.extraction_registry.get(attempt.provider)
+            if extractor is None:
+                last_error = f"Provider '{attempt.provider}' is not available"
+                continue
+
+            estimated_cost = extractor.estimate_cost(template, len(transcript))
+            cache_key_options = self._cache_key_options_for_provider(
+                template,
+                provider=attempt.provider,
+                model=attempt.model,
+            )
+
+            try:
+                raw_output = await extractor.extract(template, transcript, metadata)
+                content = self._parse_output(raw_output, template)
+
+                if use_cache:
+                    await self.cache.set(
+                        template.name,
+                        template.version,
+                        transcript,
+                        raw_output,
+                        **cache_key_options,
+                    )
+
+                if self.cost_tracker:
+                    input_tokens = len(transcript) // 4
+                    output_tokens = len(raw_output) // 4
+
+                    self.cost_tracker.add_cost(
+                        provider=attempt.provider,
+                        model=attempt.model,
+                        operation="extraction",
+                        input_tokens=input_tokens,
+                        output_tokens=output_tokens,
+                        episode_title=metadata.get("episode_title"),
+                        template_name=template.name,
+                    )
+
+                return ExtractionResult(
+                    episode_url=episode_url,
+                    template_name=template.name,
+                    template_version=template.version,
+                    success=True,
+                    extracted_content=content,
+                    cost_usd=estimated_cost,
+                    provider=attempt.provider,
+                    model=attempt.model,
+                )
+            except Exception as e:
+                last_error = _sanitize_error_message(str(e))
+                logger.warning(
+                    "Extraction attempt failed for template '%s' with provider '%s': %s",
+                    template.name,
+                    attempt.provider,
+                    last_error,
+                )
+                continue
+
+        return ExtractionResult(
+            episode_url=episode_url,
+            template_name=template.name,
+            template_version=template.version,
+            success=False,
+            extracted_content=None,
+            error=last_error or "All extraction attempts failed",
+            cost_usd=0.0,
+            provider=last_attempt.provider if last_attempt else None,
+            model=last_attempt.model if last_attempt else None,
+        )
 
     async def extract_all(
         self,
@@ -606,24 +850,44 @@ class ExtractionEngine:
         self,
         templates: list[ExtractionTemplate],
         transcript: str,
-        episode_url: str,
+        metadata: dict[str, Any],
     ) -> dict[str, ExtractionResult]:
         """Lookup multiple templates in cache concurrently.
 
         Args:
             templates: List of templates to check
             transcript: Episode transcript for cache key
-            episode_url: Episode URL for results
+            metadata: Episode/source metadata for routing and results
 
         Returns:
             Dict mapping template name to ExtractionResult (only cache hits)
         """
         import asyncio
 
+        episode_url = metadata.get("episode_url", "")
+
         async def lookup_one(
             template: ExtractionTemplate,
-        ) -> tuple[ExtractionTemplate, str | None]:
+        ) -> tuple[ExtractionTemplate, str | None, dict[str, str]]:
             """Lookup single template in cache."""
+            if "_select_extractor" not in self.__dict__:
+                attempts = self._plan_extraction_attempts(template, transcript, metadata)
+                for attempt in attempts:
+                    cache_key_options = self._cache_key_options_for_provider(
+                        template,
+                        provider=attempt.provider,
+                        model=attempt.model,
+                    )
+                    result = await self.cache.get(
+                        template.name,
+                        template.version,
+                        transcript,
+                        **cache_key_options,
+                    )
+                    if result is not None:
+                        return (template, result, cache_key_options)
+                return (template, None, {})
+
             policy_cache_key_options = self._cache_key_options(template)
             result = await self.cache.get(
                 template.name,
@@ -632,7 +896,7 @@ class ExtractionEngine:
                 **policy_cache_key_options,
             )
             if result is not None:
-                return (template, result)
+                return (template, result, policy_cache_key_options)
 
             extractor = self._select_extractor(template)
             cache_key_options = self._cache_key_options(template, extractor)
@@ -643,12 +907,14 @@ class ExtractionEngine:
                     transcript,
                     **cache_key_options,
                 )
-            return (template, result)
+                if result is not None:
+                    return (template, result, cache_key_options)
+            return (template, result, policy_cache_key_options)
 
         results = await asyncio.gather(*[lookup_one(t) for t in templates])
 
         cached_results = {}
-        for template, cached_raw in results:
+        for template, cached_raw, cache_key_options in results:
             if cached_raw is not None:
                 content = self._parse_output(cached_raw, template)
                 cached_results[template.name] = ExtractionResult(
@@ -659,6 +925,7 @@ class ExtractionEngine:
                     extracted_content=content,
                     cost_usd=0.0,
                     provider="cache",
+                    model=cache_key_options["model"],
                     from_cache=True,
                 )
 
@@ -704,68 +971,83 @@ class ExtractionEngine:
 
         episode_url = metadata.get("episode_url", "")
 
+        bypassed_results: dict[str, ExtractionResult] = {}
+        processable_templates: list[ExtractionTemplate] = []
+        for template in templates:
+            should_bypass, source_tokens, bypass_reason = self._should_bypass_short_content(
+                template,
+                transcript,
+                metadata,
+            )
+            if should_bypass and bypass_reason is not None:
+                bypassed_results[template.name] = self._bypass_result(
+                    template,
+                    transcript,
+                    metadata,
+                    source_tokens=source_tokens,
+                    reason=bypass_reason,
+                )
+            else:
+                processable_templates.append(template)
+
         cached_results = {}
         uncached_templates = []
 
         if use_cache:
             # Batch lookup all templates at once
             cache_start = time.time()
-            cached_results = await self._batch_cache_lookup(templates, transcript, episode_url)
+            cached_results = await self._batch_cache_lookup(
+                processable_templates,
+                transcript,
+                metadata,
+            )
             cache_duration = time.time() - cache_start
 
             logger.debug(
-                f"Cache lookup took {cache_duration:.3f}s for {len(templates)} templates "
-                f"({len(cached_results)} hits, {len(templates) - len(cached_results)} misses)"
+                f"Cache lookup took {cache_duration:.3f}s for {len(processable_templates)} "
+                f"templates ({len(cached_results)} hits, "
+                f"{len(processable_templates) - len(cached_results)} misses)"
             )
 
             # Separate cached from uncached
-            for template in templates:
+            for template in processable_templates:
                 if template.name not in cached_results:
                     uncached_templates.append(template)
         else:
-            uncached_templates = templates
-
-        # If all cached, return early with summary
-        if not uncached_templates:
-            logger.info("All templates found in cache, returning cached results")
-            results_list = [cached_results[t.name] for t in templates]
-
-            attempts = [
-                ExtractionAttempt(
-                    template_name=t.name,
-                    status=ExtractionStatus.CACHED,
-                    result=cached_results[t.name],
-                    duration_seconds=0.0,
-                )
-                for t in templates
-            ]
-            summary = ExtractionSummary(
-                total=len(templates),
-                successful=0,
-                failed=0,
-                cached=len(templates),
-                attempts=attempts,
-            )
-            return results_list, summary
+            uncached_templates = processable_templates
 
         # Extract each template individually for focused, reliable results
-        logger.info(f"Extracting {len(uncached_templates)} templates individually")
-        batch_results = await self._extract_individually(
-            uncached_templates, transcript, metadata, episode_url
-        )
+        batch_results = {}
+        if uncached_templates:
+            logger.info(f"Extracting {len(uncached_templates)} templates individually")
+            batch_results = await self._extract_individually(
+                uncached_templates, transcript, metadata, episode_url
+            )
+        else:
+            logger.info("No uncached templates require LLM extraction")
 
         if use_cache:
             for template in uncached_templates:
                 result = batch_results.get(template.name)
-                if result and result.success and result.extracted_content:
+                provider = result.provider if result else None
+                if (
+                    result
+                    and result.success
+                    and result.extracted_content
+                    and provider is not None
+                    and provider not in {"cache", "bypass"}
+                ):
                     raw_output = self._serialize_extracted_content(result.extracted_content)
-                    extractor = self._select_extractor(template)
                     await self.cache.set(
                         template.name,
                         template.version,
                         transcript,
                         raw_output,
-                        **self._cache_key_options(template, extractor),
+                        **self._cache_key_options_for_provider(
+                            template,
+                            provider=provider,
+                            model=result.model or self._cache_model_for_provider(provider),
+                        ),
                     )
 
         # Combine cached and new results in original order and build summary
@@ -774,7 +1056,18 @@ class ExtractionEngine:
         batch_duration = time.time() - batch_start_time
 
         for template in templates:
-            if template.name in cached_results:
+            if template.name in bypassed_results:
+                result = bypassed_results[template.name]
+                all_results.append(result)
+                attempts.append(
+                    ExtractionAttempt(
+                        template_name=template.name,
+                        status=ExtractionStatus.SUCCESS,
+                        result=result,
+                        duration_seconds=0.0,
+                    )
+                )
+            elif template.name in cached_results:
                 result = cached_results[template.name]
                 all_results.append(result)
                 attempts.append(

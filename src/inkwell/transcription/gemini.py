@@ -12,7 +12,11 @@ from google import genai
 from google.genai import types
 from pydantic import BaseModel, Field
 
-from inkwell.plugins.types.transcription import TranscriptionPlugin, TranscriptionRequest
+from inkwell.plugins.types.transcription import (
+    TranscriptionCapabilities,
+    TranscriptionPlugin,
+    TranscriptionRequest,
+)
 from inkwell.transcription.chunking import (
     CHUNK_DURATION_SECONDS,
     OVERLAP_SECONDS,
@@ -90,14 +94,19 @@ class GeminiTranscriber(TranscriptionPlugin):
 
     # Transcription-specific metadata
     HANDLES_URLS: ClassVar[list[str]] = ["youtube.com", "youtu.be"]
-    CAPABILITIES: ClassVar[dict[str, Any]] = {
-        "formats": ["mp3", "m4a", "wav", "aac", "ogg", "flac"],
-        "max_duration_hours": None,  # Handles long audio via chunking
-        "requires_internet": True,
-        "supports_file": True,
-        "supports_url": True,
-        "supports_bytes": False,
-    }
+    CAPABILITY_INFO: ClassVar[TranscriptionCapabilities] = TranscriptionCapabilities(
+        formats=("mp3", "m4a", "wav", "aac", "ogg", "flac"),
+        can_transcribe_url=True,
+        can_transcribe_file=True,
+        can_transcribe_bytes=False,
+        supports_timestamps=True,
+        supports_diarization=False,
+        supports_direct_youtube_url=True,
+        requires_internet=True,
+        model_name=MODEL,
+        estimated_cost_label="paid",
+    )
+    CAPABILITIES: ClassVar[dict[str, Any]] = CAPABILITY_INFO.to_legacy_dict()
 
     def __init__(
         self,

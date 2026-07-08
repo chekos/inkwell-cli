@@ -2,7 +2,7 @@
 
 import pytest
 
-from inkwell.plugins import ExtractionPlugin, PluginRegistry
+from inkwell.plugins import ExtractionCapabilities, ExtractionPlugin, PluginRegistry
 from inkwell.plugins.base import PLUGIN_API_VERSION
 
 
@@ -32,6 +32,42 @@ class TestExtractionPluginBase:
         """Test that ExtractionPlugin has correct API version."""
         assert ExtractionPlugin.API_VERSION == PLUGIN_API_VERSION
 
+    def test_plugin_exposes_typed_capabilities_from_legacy_dict(self) -> None:
+        """Test that legacy extraction metadata produces typed capabilities."""
+
+        class LegacyExtractor(ExtractionPlugin):
+            NAME = "legacy"
+            VERSION = "1.0.0"
+            DESCRIPTION = "Legacy extractor"
+            MODEL = "legacy-model"
+            INPUT_PRICE_PER_M = 1.0
+            OUTPUT_PRICE_PER_M = 2.0
+            CAPABILITIES = {
+                "max_input_tokens": 8000,
+                "supports_json_mode": False,
+                "requires_internet": False,
+            }
+
+            async def extract(self, template, transcript, metadata, **kwargs):
+                pass
+
+            def estimate_cost(self, template, transcript_length) -> float:
+                return 0.0
+
+            def supports_structured_output(self) -> bool:
+                return True
+
+        caps = LegacyExtractor.capability_info()
+
+        assert isinstance(caps, ExtractionCapabilities)
+        assert caps.model_name == "legacy-model"
+        assert caps.input_price_per_m == 1.0
+        assert caps.output_price_per_m == 2.0
+        assert caps.max_input_tokens == 8000
+        assert caps.supports_json_mode is False
+        assert caps.requires_internet is False
+        assert "offline" in caps.display_parts()
+
 
 class TestClaudePluginIntegration:
     """Tests for ClaudeExtractor as a plugin."""
@@ -59,6 +95,12 @@ class TestClaudePluginIntegration:
         assert ClaudeExtractor.INPUT_PRICE_PER_M > 0
         assert ClaudeExtractor.OUTPUT_PRICE_PER_M > 0
 
+        caps = ClaudeExtractor.capability_info()
+        assert caps.model_name == ClaudeExtractor.MODEL
+        assert caps.supports_structured_output is True
+        assert caps.supports_json_mode is True
+        assert caps.max_input_tokens == 200_000
+
 
 class TestGeminiPluginIntegration:
     """Tests for GeminiExtractor as a plugin."""
@@ -85,6 +127,11 @@ class TestGeminiPluginIntegration:
         assert GeminiExtractor.MODEL is not None
         assert GeminiExtractor.INPUT_PRICE_PER_M > 0
         assert GeminiExtractor.OUTPUT_PRICE_PER_M > 0
+
+        caps = GeminiExtractor.capability_info()
+        assert caps.model_name == GeminiExtractor.MODEL
+        assert caps.supports_structured_output is True
+        assert caps.max_input_tokens == 1_000_000
 
 
 class TestExtractionPluginRegistry:

@@ -4,7 +4,12 @@ from pathlib import Path
 
 import pytest
 
-from inkwell.plugins import PluginRegistry, TranscriptionPlugin, TranscriptionRequest
+from inkwell.plugins import (
+    PluginRegistry,
+    TranscriptionCapabilities,
+    TranscriptionPlugin,
+    TranscriptionRequest,
+)
 from inkwell.plugins.base import PLUGIN_API_VERSION
 
 
@@ -84,6 +89,37 @@ class TestTranscriptionPluginBase:
         assert "supports_url" in TranscriptionPlugin.CAPABILITIES
         assert "requires_internet" in TranscriptionPlugin.CAPABILITIES
 
+    def test_plugin_exposes_typed_capabilities_from_legacy_dict(self) -> None:
+        """Test that legacy CAPABILITIES dictionaries produce typed metadata."""
+
+        class LegacyPlugin(TranscriptionPlugin):
+            NAME = "legacy"
+            VERSION = "1.0.0"
+            DESCRIPTION = "Legacy plugin"
+            CAPABILITIES = {
+                "formats": ["MP3", ".WAV"],
+                "max_duration_hours": 2,
+                "requires_internet": False,
+                "supports_file": True,
+                "supports_url": False,
+                "supports_bytes": True,
+            }
+
+            async def transcribe(self, request: TranscriptionRequest):
+                pass
+
+        caps = LegacyPlugin.capability_info()
+
+        assert isinstance(caps, TranscriptionCapabilities)
+        assert caps.formats == ("mp3", "wav")
+        assert caps.can_transcribe_file is True
+        assert caps.can_transcribe_url is False
+        assert caps.can_transcribe_bytes is True
+        assert caps.requires_internet is False
+        assert caps.max_duration_seconds == 7200
+        assert "offline" in caps.display_parts()
+        assert LegacyPlugin().get_capabilities() == caps
+
     def test_default_estimate_cost_is_zero(self) -> None:
         """Test that default estimate_cost returns 0 (free)."""
 
@@ -132,6 +168,12 @@ class TestYouTubePluginIntegration:
         assert caps["supports_url"] is True
         assert caps["supports_file"] is False
         assert caps["requires_internet"] is True
+
+        typed_caps = YouTubeTranscriber.capability_info()
+        assert typed_caps.can_transcribe_url is True
+        assert typed_caps.can_transcribe_file is False
+        assert typed_caps.supports_timestamps is True
+        assert typed_caps.estimated_cost_label == "free"
 
     def test_youtube_can_handle_youtube_url(self) -> None:
         """Test can_handle for YouTube URLs."""
@@ -190,6 +232,12 @@ class TestGeminiPluginIntegration:
         assert caps["requires_internet"] is True
         assert "mp3" in caps["formats"]
         assert "wav" in caps["formats"]
+
+        typed_caps = GeminiTranscriber.capability_info()
+        assert typed_caps.can_transcribe_file is True
+        assert typed_caps.supports_direct_youtube_url is True
+        assert typed_caps.model_name == GeminiTranscriber.MODEL
+        assert typed_caps.estimated_cost_label == "paid"
 
     def test_gemini_can_handle_file_request(self, tmp_path: Path) -> None:
         """Test can_handle for file requests."""

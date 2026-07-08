@@ -228,6 +228,7 @@ class PipelineOrchestrator:
             episode_title=effective_episode_title,
             episode_url=options.url,
             transcription_source=transcript.source,
+            custom_fields={"source_kind": options.source_kind} if options.source_kind else {},
         )
 
         if progress_callback:
@@ -286,6 +287,7 @@ class PipelineOrchestrator:
             skip_cache=options.skip_cache,
             dry_run=options.dry_run,
             extractor_override=options.extractor,
+            force_extraction=options.force_extraction,
         )
 
         if progress_callback:
@@ -537,6 +539,7 @@ class PipelineOrchestrator:
         skip_cache: bool,
         dry_run: bool,
         extractor_override: str | None = None,
+        force_extraction: bool = False,
     ) -> tuple[list["ExtractionResult"], "ExtractionSummary", float]:
         """Extract content using templates and LLM.
 
@@ -563,6 +566,7 @@ class PipelineOrchestrator:
             gemini_api_key=shared_gemini_key,
             cost_tracker=self.cost_tracker,
             extractor_override=extractor_override,
+            force_extraction=force_extraction,
         )
 
         # Estimate cost

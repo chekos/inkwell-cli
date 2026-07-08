@@ -1,6 +1,7 @@
 """Transcription manager orchestrating multi-tier transcription."""
 
 import asyncio
+import inspect
 import logging
 import os
 import warnings
@@ -17,11 +18,19 @@ from inkwell.config.schema import MediaCacheConfig, TranscriptionConfig
 # Import from specific submodules to avoid potential circular imports
 from inkwell.plugins.discovery import discover_plugins
 from inkwell.plugins.registry import PluginRegistry
-from inkwell.plugins.types.transcription import TranscriptionPlugin, TranscriptionRequest
+from inkwell.plugins.types.transcription import (
+    TranscriptionCapabilities,
+    TranscriptionPlugin,
+    TranscriptionRequest,
+)
 from inkwell.transcription.cache import TranscriptCache
 from inkwell.transcription.gemini import CostEstimate, GeminiTranscriber
 from inkwell.transcription.models import Transcript, TranscriptionResult
-from inkwell.transcription.policy import TranscriptionAttemptKind, TranscriptionAttemptPolicy
+from inkwell.transcription.policy import (
+    TranscriptionAttempt,
+    TranscriptionAttemptKind,
+    TranscriptionAttemptPolicy,
+)
 from inkwell.transcription.youtube import YouTubeTranscriber
 from inkwell.utils.errors import APIError
 
@@ -151,6 +160,56 @@ class TranscriptionManager:
             except ValueError:
                 # No API key available - Gemini tier will be disabled
                 self.gemini_transcriber = None
+
+    def _provider_capabilities(self) -> dict[str, TranscriptionCapabilities]:
+        """Return known provider capabilities for policy planning."""
+        capabilities: dict[str, TranscriptionCapabilities] = {}
+
+        if isinstance(self.youtube_transcriber, TranscriptionPlugin):
+            capabilities["youtube"] = self.youtube_transcriber.get_capabilities()
+        else:
+            capabilities["youtube"] = YouTubeTranscriber.capability_info()
+
+        if isinstance(self.gemini_transcriber, TranscriptionPlugin):
+            capabilities["gemini"] = self.gemini_transcriber.get_capabilities()
+        else:
+            capabilities["gemini"] = GeminiTranscriber.capability_info()
+
+        return capabilities
+
+    def _policy_accepts_provider_capabilities(self) -> bool:
+        """Return True when the injected policy accepts typed provider metadata."""
+        parameters = inspect.signature(self.attempt_policy.plan).parameters
+        if "provider_capabilities" in parameters:
+            return True
+        return any(
+            parameter.kind is inspect.Parameter.VAR_KEYWORD for parameter in parameters.values()
+        )
+
+    def _plan_transcription_attempts(
+        self,
+        *,
+        use_cache: bool,
+        skip_youtube: bool,
+        is_youtube_url: bool,
+        is_local_media: bool,
+    ) -> list[TranscriptionAttempt]:
+        """Call the attempt policy while preserving older override signatures."""
+        if self._policy_accepts_provider_capabilities():
+            return self.attempt_policy.plan(
+                use_cache=use_cache,
+                skip_youtube=skip_youtube,
+                is_youtube_url=is_youtube_url,
+                is_local_media=is_local_media,
+                provider_capabilities=self._provider_capabilities(),
+            )
+
+        return self.attempt_policy.plan(
+            use_cache=use_cache,
+            skip_youtube=skip_youtube,
+            is_youtube_url=is_youtube_url,
+            is_local_media=is_local_media,
+        )
 
     def _load_transcription_plugins(self) -> None:
         """Load transcription plugins from entry points into registry.
@@ -386,7 +445,7 @@ class TranscriptionManager:
             )
 
         is_youtube_url = self._is_youtube_url(episode_url)
-        attempt_plan = self.attempt_policy.plan(
+        attempt_plan = self._plan_transcription_attempts(
             use_cache=use_cache,
             skip_youtube=skip_youtube,
             is_youtube_url=is_youtube_url,

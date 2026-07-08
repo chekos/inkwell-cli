@@ -24,13 +24,15 @@ Example:
     ...     DESCRIPTION = "Custom output format"
 """
 
-from .extraction import ExtractionPlugin
+from .extraction import ExtractionCapabilities, ExtractionPlugin
 from .output import OutputPlugin
-from .transcription import TranscriptionPlugin, TranscriptionRequest
+from .transcription import TranscriptionCapabilities, TranscriptionPlugin, TranscriptionRequest
 
 __all__ = [
+    "ExtractionCapabilities",
     "ExtractionPlugin",
     "OutputPlugin",
+    "TranscriptionCapabilities",
     "TranscriptionPlugin",
     "TranscriptionRequest",
 ]

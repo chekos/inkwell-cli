@@ -18,7 +18,11 @@ from youtube_transcript_api._errors import (
     VideoUnavailable,
 )
 
-from inkwell.plugins.types.transcription import TranscriptionPlugin, TranscriptionRequest
+from inkwell.plugins.types.transcription import (
+    TranscriptionCapabilities,
+    TranscriptionPlugin,
+    TranscriptionRequest,
+)
 from inkwell.transcription.models import Transcript, TranscriptSegment
 from inkwell.utils.errors import APIError
 
@@ -59,14 +63,18 @@ class YouTubeTranscriber(TranscriptionPlugin):
 
     # Transcription-specific metadata
     HANDLES_URLS: ClassVar[list[str]] = ["youtube.com", "youtu.be", "m.youtube.com"]
-    CAPABILITIES: ClassVar[dict[str, Any]] = {
-        "formats": [],  # YouTube handles its own formats
-        "max_duration_hours": None,
-        "requires_internet": True,
-        "supports_file": False,
-        "supports_url": True,
-        "supports_bytes": False,
-    }
+    CAPABILITY_INFO: ClassVar[TranscriptionCapabilities] = TranscriptionCapabilities(
+        formats=(),
+        can_transcribe_url=True,
+        can_transcribe_file=False,
+        can_transcribe_bytes=False,
+        supports_timestamps=True,
+        supports_diarization=False,
+        supports_direct_youtube_url=False,
+        requires_internet=True,
+        estimated_cost_label="free",
+    )
+    CAPABILITIES: ClassVar[dict[str, Any]] = CAPABILITY_INFO.to_legacy_dict()
 
     def __init__(
         self,

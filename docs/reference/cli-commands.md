@@ -213,8 +213,19 @@ inkwell cache <ACTION>
 | Action | Description |
 |--------|-------------|
 | `stats` | Show transcript, extraction, and media cache statistics |
-| `clear` | Clear cached transcripts only |
-| `clear-expired` | Remove expired cached transcripts only |
+| `clear` | Clear selected caches; defaults to transcripts |
+| `clear-expired` | Remove expired transcript/extraction entries; defaults to transcripts |
+| `enforce-media-policy` | Apply media cache TTL/size policy without downloading media |
+
+### Target Options
+
+| Option | Description |
+|--------|-------------|
+| `--transcripts` | Target transcript cache entries |
+| `--extractions` | Target extraction cache entries |
+| `--media` | Target downloaded media/audio cache files |
+| `--all` | Target transcript, extraction, and media caches |
+| `--force`, `-f` | Skip confirmation for destructive cache actions |
 
 ### Examples
 
@@ -222,9 +233,12 @@ inkwell cache <ACTION>
 inkwell cache stats
 inkwell cache clear-expired
 inkwell cache clear
+inkwell cache clear --extractions --force
+inkwell cache clear --media --force
+inkwell cache enforce-media-policy --force
 ```
 
-`stats` is observational only. `clear` and `clear-expired` currently operate on transcript cache entries. Downloaded media/audio retention is configured with `cache.media.enabled`, `cache.media.max_mb`, and `cache.media.ttl_days`; see [Cache Behavior](cache.md).
+`stats` is observational only. `clear` and `clear-expired` preserve transcript-only defaults for compatibility. Downloaded media/audio retention is configured with `cache.media.enabled`, `cache.media.max_mb`, and `cache.media.ttl_days`; see [Cache Behavior](cache.md).
 
 ---
 
@@ -240,7 +254,7 @@ inkwell fetch <SOURCE> [OPTIONS]
 
 | Argument | Required | Description |
 |----------|----------|-------------|
-| `SOURCE` | Yes | Feed name, episode/media URL, local audio/video file, local `.txt`/`.md` file, or `-` for stdin text. See [Supported Inputs](supported-inputs.md). |
+| `SOURCE` | Yes | Feed name, YouTube/media/article URL, local audio/video file, local `.txt`/`.md`/text `.pdf` file, or `-` for stdin text. See [Supported Inputs](supported-inputs.md). |
 
 ### Options
 
@@ -255,8 +269,9 @@ inkwell fetch <SOURCE> [OPTIONS]
 | `--category` | `-c` | string | Auto | Episode category |
 | `--provider` | `-p` | string | Auto | LLM provider (gemini, claude, auto) |
 | `--skip-cache` | | flag | false | Skip extraction cache |
+| `--force-extraction` | | flag | false | Run LLM extraction even when short-content bypass would apply |
 | `--dry-run` | | flag | false | Show cost estimate only |
-| `--extract` | | flag | false | Emit transcript text only; skip structured extraction, interview, and note output |
+| `--extract` | | flag | false | Emit transcript/source text only; skip structured extraction, interview, and note output |
 | `--overwrite` | | flag | false | Overwrite existing directory |
 | `--interview` | | flag | false | Enable interview mode |
 | `--interview-template` | | string | Config | Interview template (reflective, analytical, creative) |
@@ -282,6 +297,12 @@ inkwell fetch ~/Downloads/interview.mp3
 
 # From local text or markdown
 inkwell fetch ./notes.md
+
+# From local text PDF
+inkwell fetch ./paper.pdf
+
+# From a readable web article
+inkwell fetch https://example.com/article
 
 # From stdin text
 pbpaste | inkwell fetch -
@@ -319,6 +340,9 @@ inkwell fetch URL --dry-run
 # Transcript text only
 inkwell fetch URL --extract
 
+# Force LLM extraction even for short source text
+inkwell fetch ./short-note.md --force-extraction
+
 # Transcript file only, without an episode note directory
 inkwell fetch URL --extract --output-dir transcripts --plain
 
@@ -346,7 +370,7 @@ INKWELL_EXTRACTOR=gemini inkwell fetch URL
 
 `--json` and `--plain` are mutually exclusive. In both modes, stdout is reserved for the primary result and interactive progress output is sent to stderr. See [Machine-Readable Output](machine-readable-output.md) for envelope examples and scripting notes.
 
-`--extract` is transcript-only for media workflows. It does not run templates, structured extraction, interview mode, or the episode note writer. Without `--output-dir`, transcript text is printed to stdout and progress goes to stderr. With `--output-dir`, Inkwell writes `.transcript.md` file(s) directly into that directory; combine with `--plain` to print the file path(s) to stdout.
+`--extract` is transcript/source-text only. It does not run templates, structured extraction, interview mode, or the episode note writer. Without `--output-dir`, transcript or cleaned source text is printed to stdout and progress goes to stderr. With `--output-dir`, Inkwell writes `.transcript.md` file(s) directly into that directory; combine with `--plain` to print the file path(s) to stdout.
 
 ---
 
@@ -373,16 +397,16 @@ inkwell plugins list [OPTIONS]
 
 ```
 Extraction Plugins:
-  claude (built-in)     ✓ enabled   [priority: 100]  Claude API extractor
-  gemini (built-in)     ✓ enabled   [priority: 100]  Google Gemini extractor
+  claude (built-in)     ✓ enabled   [100]  text, structured, json, context=200K, model=claude-3-5-sonnet-20241022, paid  Claude API extractor
+  gemini (built-in)     ✓ enabled   [100]  text, structured, json, context=1M, model=gemini-3-pro-preview, paid        Google Gemini extractor
 
 Transcription Plugins:
-  youtube (built-in)    ✓ enabled   [priority: 100]  YouTube transcript API
-  gemini (built-in)     ✓ enabled   [priority: 100]  Gemini audio transcription
-  whisper (installed)   ✓ enabled   [priority: 50]   Local Whisper transcription
+  youtube (built-in)    ✓ enabled   [100]  url, timestamps, free                                                     YouTube transcript API
+  gemini (built-in)     ✓ enabled   [100]  url, direct-youtube, file, timestamps, formats=mp3/m4a/wav/aac+2, model=gemini-3-flash-preview, paid  Gemini audio transcription
+  whisper (installed)   ✓ enabled   [50]   file, timestamps, offline, formats=mp3/wav/m4a/mp4+1, free                Local Whisper transcription
 
 Output Plugins:
-  markdown (built-in)   ✓ enabled   [priority: 100]  Markdown file generation
+  markdown (built-in)   ✓ enabled   [100]                                                                             Markdown file generation
 
 Broken Plugins:
   broken-plugin         ✗ error     ImportError: No module named 'torch'

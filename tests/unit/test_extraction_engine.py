@@ -9,7 +9,7 @@ import pytest
 from inkwell.config.schema import ExtractionConfig
 from inkwell.extraction.cache import ExtractionCache
 from inkwell.extraction.engine import ExtractionEngine
-from inkwell.extraction.models import ExtractionTemplate
+from inkwell.extraction.models import ExtractionResult, ExtractionTemplate
 
 
 @pytest.fixture
@@ -278,6 +278,125 @@ class TestExtractionEngineConfigInjection:
             assert engine1.default_provider == "claude"
             assert engine2.default_provider == "gemini"
             assert engine3.default_provider == "claude"
+
+
+class TestShortContentBypass:
+    """Tests for default-on short-content summary bypass."""
+
+    @pytest.mark.asyncio
+    async def test_summary_bypasses_short_source_by_default(
+        self, text_template: ExtractionTemplate, temp_cache: ExtractionCache
+    ) -> None:
+        """Short source-backed summary extraction passes through without LLM calls."""
+        engine = ExtractionEngine(cache=temp_cache)
+
+        result = await engine.extract(
+            template=text_template,
+            transcript="A short note.",
+            metadata={"episode_url": "https://example.com/short"},
+        )
+
+        assert result.success is True
+        assert result.provider == "bypass"
+        assert result.bypassed is True
+        assert result.bypass_reason is not None
+        assert result.cost_usd == 0.0
+        assert result.extracted_content is not None
+        assert result.extracted_content.content == "A short note."
+        assert result.extracted_content.metadata["bypassed"] is True
+
+    @pytest.mark.asyncio
+    async def test_force_extraction_runs_summary_llm(
+        self, mock_api_keys: None, text_template: ExtractionTemplate, temp_cache: ExtractionCache
+    ) -> None:
+        """force_extraction disables the short-content bypass."""
+        engine = ExtractionEngine(
+            cache=temp_cache,
+            force_extraction=True,
+            gemini_api_key="AIzaSyD" + "X" * 32,
+        )
+        mock_extractor = Mock()
+        mock_extractor.extract = AsyncMock(return_value="Model summary")
+        mock_extractor.estimate_cost = Mock(return_value=0.01)
+        mock_extractor.model = "test-model"
+        mock_extractor.__class__.__name__ = "GeminiExtractor"
+
+        with patch.object(engine, "_select_extractor", return_value=mock_extractor):
+            result = await engine.extract(
+                template=text_template,
+                transcript="A short note.",
+                metadata={"episode_url": "https://example.com/short"},
+            )
+
+        assert result.provider == "gemini"
+        assert result.model == "test-model"
+        assert result.bypassed is False
+        assert result.extracted_content is not None
+        assert result.extracted_content.content == "Model summary"
+        mock_extractor.extract.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_non_summary_templates_do_not_bypass(
+        self, mock_api_keys: None, json_template: ExtractionTemplate, temp_cache: ExtractionCache
+    ) -> None:
+        """Structured templates still run even when the source is short."""
+        engine = ExtractionEngine(
+            cache=temp_cache,
+            gemini_api_key="AIzaSyD" + "X" * 32,
+        )
+        mock_extractor = Mock()
+        mock_extractor.extract = AsyncMock(return_value='{"quotes": ["short"]}')
+        mock_extractor.estimate_cost = Mock(return_value=0.02)
+        mock_extractor.model = "test-model"
+        mock_extractor.__class__.__name__ = "GeminiExtractor"
+
+        with patch.object(engine, "_select_extractor", return_value=mock_extractor):
+            result = await engine.extract(
+                template=json_template,
+                transcript="A short note.",
+                metadata={"episode_url": "https://example.com/short"},
+            )
+
+        assert result.provider == "gemini"
+        assert result.bypassed is False
+        mock_extractor.extract.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_batched_path_bypasses_only_summary_template(
+        self,
+        text_template: ExtractionTemplate,
+        json_template: ExtractionTemplate,
+        temp_cache: ExtractionCache,
+    ) -> None:
+        """Mixed batches bypass summary while preserving structured extraction."""
+        engine = ExtractionEngine(cache=temp_cache)
+        structured_result = ExtractionResult(
+            episode_url="https://example.com/short",
+            template_name=json_template.name,
+            template_version=json_template.version,
+            success=True,
+            extracted_content=None,
+            cost_usd=0.02,
+            provider="gemini",
+            model="test-model",
+        )
+        extract_individually = AsyncMock(return_value={json_template.name: structured_result})
+
+        with patch.object(engine, "_extract_individually", extract_individually):
+            results, summary = await engine.extract_all_batched(
+                templates=[text_template, json_template],
+                transcript="A short note.",
+                metadata={"episode_url": "https://example.com/short"},
+                use_cache=False,
+            )
+
+        assert [result.template_name for result in results] == ["summary", "quotes"]
+        assert results[0].provider == "bypass"
+        assert results[0].bypassed is True
+        assert results[1].provider == "gemini"
+        assert summary.successful == 2
+        assert summary.cached == 0
+        extract_individually.assert_awaited_once()
 
 
 class TestExtractionEngineExtract:

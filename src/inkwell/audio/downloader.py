@@ -120,6 +120,33 @@ class AudioDownloader:
             "extensions": extensions,
         }
 
+    @classmethod
+    def clear_cache(cls, cache_dir: Path | None = None) -> dict[str, int]:
+        """Clear all audio/media cache files.
+
+        Returns:
+            Counts of deleted files and deleted bytes.
+        """
+        resolved_cache_dir = cache_dir or cls.default_cache_dir()
+        result = {"files_deleted": 0, "bytes_deleted": 0}
+
+        if not resolved_cache_dir.exists():
+            return result
+
+        for cache_file in resolved_cache_dir.iterdir():
+            if not cache_file.is_file():
+                continue
+            try:
+                size = cache_file.stat().st_size
+                cache_file.unlink()
+            except OSError as e:
+                logger.debug(f"Failed to delete media cache file {cache_file}: {e}")
+                continue
+            result["files_deleted"] += 1
+            result["bytes_deleted"] += size
+
+        return result
+
     def _get_cache_path(self, url: str) -> Path:
         """Get cached audio file path for a URL.
 

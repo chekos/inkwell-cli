@@ -5,7 +5,7 @@ from typing import Any
 from anthropic import Anthropic, AsyncAnthropic
 from anthropic.types import Message
 
-from ...plugins.types.extraction import ExtractionPlugin
+from ...plugins.types.extraction import ExtractionCapabilities, ExtractionPlugin
 from ...utils.api_keys import get_validated_api_key
 from ...utils.errors import APIError, ValidationError
 from ...utils.rate_limiter import get_rate_limiter
@@ -36,6 +36,19 @@ class ClaudeExtractor(ExtractionPlugin):
     # Pricing per million tokens (USD)
     INPUT_PRICE_PER_M = 3.00
     OUTPUT_PRICE_PER_M = 15.00
+
+    CAPABILITY_INFO = ExtractionCapabilities(
+        model_name=MODEL,
+        can_extract_text=True,
+        supports_structured_output=True,
+        supports_json_mode=True,
+        requires_internet=True,
+        max_input_tokens=200_000,
+        input_price_per_m=INPUT_PRICE_PER_M,
+        output_price_per_m=OUTPUT_PRICE_PER_M,
+        estimated_cost_label="paid",
+    )
+    CAPABILITIES = CAPABILITY_INFO.to_legacy_dict()
 
     def __init__(self, api_key: str | None = None, *, lazy_init: bool = False) -> None:
         """Initialize Claude extractor.

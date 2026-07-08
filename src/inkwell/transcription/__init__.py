@@ -13,6 +13,7 @@ Key components:
 - manager: High-level orchestration
 """
 
+from inkwell.plugins.types.transcription import TranscriptionCapabilities
 from inkwell.transcription.cache import (
     TRANSCRIPT_CACHE_FORMAT_VERSION,
     CacheError,
@@ -48,6 +49,7 @@ __all__ = [
     "TranscriptionAttempt",
     "TranscriptionAttemptKind",
     "TranscriptionAttemptPolicy",
+    "TranscriptionCapabilities",
     "TranscriptSegment",
     "TranscriptionResult",
     "YouTubeTranscriber",

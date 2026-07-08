@@ -57,6 +57,24 @@ def _get_source_label(source: str) -> str:
     return "[cyan](installed)[/cyan]"
 
 
+def _get_capabilities_display(plugin: object | None) -> str:
+    """Return concise capability metadata for plugin list output."""
+    if plugin is None:
+        return ""
+
+    get_capabilities = getattr(plugin, "get_capabilities", None)
+    if not callable(get_capabilities):
+        return ""
+
+    capabilities = get_capabilities()
+    display_parts = getattr(capabilities, "display_parts", None)
+    if not callable(display_parts):
+        return ""
+
+    parts = [str(part) for part in display_parts()]
+    return ", ".join(parts[:7])
+
+
 def _load_all_registries() -> dict[str, PluginRegistry]:
     """Load all plugin registries.
 
@@ -166,6 +184,7 @@ def list_plugins(
         table.add_column("Source", no_wrap=True)
         table.add_column("Status", no_wrap=True)
         table.add_column("Priority", style="dim", justify="right")
+        table.add_column("Capabilities", no_wrap=True)
         table.add_column("Description")
 
         for entry in entries:
@@ -179,12 +198,14 @@ def list_plugins(
             source_label = _get_source_label(entry.source)
             status_display = _get_status_display(entry)
             priority_display = f"[{entry.priority}]"
+            capabilities_display = _get_capabilities_display(entry.plugin)
 
             table.add_row(
                 entry.name,
                 source_label,
                 status_display,
                 priority_display,
+                capabilities_display,
                 description,
             )
 

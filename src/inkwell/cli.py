@@ -29,7 +29,13 @@ from inkwell.feeds.youtube_resolver import (
     is_youtube_url,
     resolve_youtube_url,
 )
-from inkwell.ingestion import ContentSource, ContentSourceKind, InputResolver
+from inkwell.ingestion import (
+    ContentSource,
+    ContentSourceKind,
+    InputResolver,
+    extract_article_text_from_url,
+    extract_text_from_pdf,
+)
 from inkwell.pipeline import PipelineOptions, PipelineOrchestrator, PipelineResult
 from inkwell.transcription import CostEstimate, TranscriptionManager, TranscriptionResult
 from inkwell.utils.datetime import now_utc
@@ -54,6 +60,7 @@ console = Console()
 err_console = Console(stderr=True)
 
 _LOCAL_TEXT_EXTENSIONS = {".txt", ".md", ".markdown"}
+_LOCAL_PDF_EXTENSIONS = {".pdf"}
 _LOCAL_MEDIA_EXTENSIONS = {
     ".aac",
     ".aif",
@@ -169,6 +176,11 @@ def _parse_and_validate_extra_templates(value: str | None) -> list[str]:
 def _is_local_text_path(path: Path) -> bool:
     """Return True for local text inputs supported in Phase 6."""
     return path.suffix.lower() in _LOCAL_TEXT_EXTENSIONS
+
+
+def _is_local_pdf_path(path: Path) -> bool:
+    """Return True for local text-PDF inputs."""
+    return path.suffix.lower() in _LOCAL_PDF_EXTENSIONS
 
 
 def _is_local_media_path(path: Path) -> bool:
@@ -308,6 +320,9 @@ def _fetch_result_payload(result: PipelineResult) -> dict[str, Any]:
             "version": extraction_result.template_version,
             "success": extraction_result.success,
             "provider": extraction_result.provider,
+            "model": extraction_result.model,
+            "bypassed": extraction_result.bypassed,
+            "bypass_reason": extraction_result.bypass_reason,
             "from_cache": extraction_result.from_cache,
             "cost_usd": extraction_result.cost_usd,
             "error": extraction_result.error,
@@ -455,6 +470,39 @@ def _validate_extract_only_options(
                 "'inkwell fetch SOURCE --extract' for transcript-only output."
             ),
         )
+
+
+def _resolve_cache_targets(
+    *,
+    transcripts: bool,
+    extractions: bool,
+    media: bool,
+    all_targets: bool,
+) -> dict[str, bool]:
+    """Resolve cache target flags while preserving transcript-only defaults."""
+    if all_targets:
+        return {"transcripts": True, "extractions": True, "media": True}
+
+    targets = {
+        "transcripts": transcripts,
+        "extractions": extractions,
+        "media": media,
+    }
+    if not any(targets.values()):
+        targets["transcripts"] = True
+    return targets
+
+
+def _format_deleted_bytes(bytes_deleted: int) -> str:
+    """Format deleted byte counts for cache command output."""
+    return f"{bytes_deleted / 1024 / 1024:.2f} MB"
+
+
+def _confirm_cache_deletion(*, force: bool, message: str) -> bool:
+    """Confirm destructive cache actions unless explicitly forced."""
+    if force:
+        return True
+    return bool(typer.confirm(message))
 
 
 def _extract_transcript_output_path(
@@ -1114,27 +1162,63 @@ def transcribe_command(
 
 @app.command("cache")
 def cache_command(
-    action: str = typer.Argument(..., help="Action: stats, clear, clear-expired"),
+    action: str = typer.Argument(
+        ...,
+        help="Action: stats, clear, clear-expired, enforce-media-policy",
+    ),
+    transcripts: bool = typer.Option(
+        False,
+        "--transcripts",
+        help="Target transcript cache entries",
+    ),
+    extractions: bool = typer.Option(
+        False,
+        "--extractions",
+        help="Target extraction cache entries",
+    ),
+    media: bool = typer.Option(
+        False,
+        "--media",
+        help="Target downloaded media/audio cache files",
+    ),
+    all_targets: bool = typer.Option(
+        False,
+        "--all",
+        help="Target transcript, extraction, and media caches",
+    ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        "-f",
+        help="Skip confirmation for destructive cache actions",
+    ),
 ) -> None:
-    """Manage transcript cache.
+    """Manage local caches.
 
     Actions:
-        stats:         Show cache statistics
-        clear:         Clear all cached transcripts
-        clear-expired: Remove expired cache entries
+        stats:                Show cache statistics
+        clear:                Clear selected caches
+        clear-expired:        Remove expired transcript/extraction entries
+        enforce-media-policy: Apply media cache TTL/size policy
 
     Examples:
         inkwell cache stats
 
-        inkwell cache clear
+        inkwell cache clear --transcripts
+
+        inkwell cache clear --extractions --force
+
+        inkwell cache clear --media --force
+
+        inkwell cache enforce-media-policy --force
     """
     try:
+        from inkwell.audio.downloader import AudioDownloader
+        from inkwell.extraction.cache import ExtractionCache
+
         manager = TranscriptionManager()
 
         if action == "stats":
-            from inkwell.audio.downloader import AudioDownloader
-            from inkwell.extraction.cache import ExtractionCache
-
             stats = manager.cache_stats()
             extraction_stats = asyncio.run(ExtractionCache().get_stats())
             audio_stats = AudioDownloader.cache_stats()
@@ -1211,23 +1295,85 @@ def cache_command(
                     console.print(f"  • {extension}: {count}")
 
         elif action == "clear":
-            confirm: bool = typer.confirm(
-                "\nAre you sure you want to clear all cached transcripts?"
+            targets = _resolve_cache_targets(
+                transcripts=transcripts,
+                extractions=extractions,
+                media=media,
+                all_targets=all_targets,
             )
-            if not confirm:
+            selected = [name for name, selected in targets.items() if selected]
+            if not _confirm_cache_deletion(
+                force=force,
+                message=f"\nClear selected caches ({', '.join(selected)})?",
+            ):
                 console.print("[yellow]Cancelled[/yellow]")
                 return
 
-            count = manager.clear_cache()
-            console.print(f"[green]✓[/green] Cleared {count} cache entries")
+            if targets["transcripts"]:
+                count = manager.clear_cache()
+                console.print(f"[green]✓[/green] Cleared {count} transcript cache entries")
+
+            if targets["extractions"]:
+                count = asyncio.run(ExtractionCache().clear())
+                console.print(f"[green]✓[/green] Cleared {count} extraction cache entries")
+
+            if targets["media"]:
+                media_result = AudioDownloader.clear_cache()
+                console.print(
+                    "[green]✓[/green] Cleared "
+                    f"{media_result['files_deleted']} media cache files "
+                    f"({_format_deleted_bytes(media_result['bytes_deleted'])})"
+                )
 
         elif action == "clear-expired":
-            count = manager.clear_expired_cache()
-            console.print(f"[green]✓[/green] Removed {count} expired cache entries")
+            if all_targets:
+                targets = {"transcripts": True, "extractions": True}
+            elif transcripts or extractions:
+                targets = {"transcripts": transcripts, "extractions": extractions}
+            elif media:
+                targets = {"transcripts": False, "extractions": False}
+            else:
+                targets = {"transcripts": True, "extractions": False}
+
+            if media or all_targets:
+                console.print(
+                    "[yellow]Media cache expiration is handled by "
+                    "inkwell cache enforce-media-policy.[/yellow]"
+                )
+
+            if targets["transcripts"]:
+                count = manager.clear_expired_cache()
+                console.print(f"[green]✓[/green] Removed {count} expired transcript cache entries")
+
+            if targets["extractions"]:
+                count = asyncio.run(ExtractionCache().clear_expired())
+                console.print(f"[green]✓[/green] Removed {count} expired extraction cache entries")
+
+        elif action == "enforce-media-policy":
+            if not _confirm_cache_deletion(
+                force=force,
+                message="\nEnforce media cache TTL/size policy now?",
+            ):
+                console.print("[yellow]Cancelled[/yellow]")
+                return
+
+            media_config = ConfigManager().load_config().cache.media
+            downloader = AudioDownloader(
+                cache_enabled=media_config.enabled,
+                cache_max_mb=media_config.max_mb,
+                cache_ttl_days=media_config.ttl_days,
+            )
+            result = downloader.enforce_cache_policy()
+            console.print(
+                "[green]✓[/green] Enforced media cache policy: "
+                f"{result['expired_files']} expired files, "
+                f"{result['size_files']} size-limit files, "
+                f"{_format_deleted_bytes(result['bytes_deleted'])} deleted"
+            )
 
         else:
             console.print(f"[red]✗[/red] Unknown action: {action}")
-            console.print("Valid actions: stats, clear, clear-expired")
+            console.print("Valid actions: stats, clear, clear-expired, enforce-media-policy")
             sys.exit(1)
 
     except InkwellError as e:
@@ -1270,6 +1416,11 @@ def fetch_command(
         None, "--provider", "-p", help="LLM provider: claude, gemini, auto (default: auto)"
     ),
     skip_cache: bool = typer.Option(False, "--skip-cache", help="Skip extraction cache"),
+    force_extraction: bool = typer.Option(
+        False,
+        "--force-extraction",
+        help="Run LLM extraction even when short-content bypass would apply",
+    ),
     dry_run: bool = typer.Option(False, "--dry-run", help="Show cost estimate without extracting"),
     extract_only: bool = typer.Option(
         False,
@@ -1491,6 +1642,18 @@ def fetch_command(
                     source_episode_title = local_path.stem
                     source_podcast_name = "Local Files"
                     url = str(local_path)
+                elif _is_local_pdf_path(local_path):
+                    source_text = extract_text_from_pdf(local_path)
+                    source_kind = "pdf"
+                    source_episode_title = local_path.stem
+                    source_podcast_name = "Documents"
+                    url = str(local_path)
+                    input_source = ContentSource(
+                        raw_input=input_source.raw_input,
+                        kind=ContentSourceKind.PDF,
+                        value=str(local_path),
+                        path=local_path,
+                    )
                 elif _is_local_media_path(local_path):
                     source_episode_title = local_path.stem
                     source_podcast_name = "Local Files"
@@ -1499,8 +1662,8 @@ def fetch_command(
                     raise ValidationError(
                         f"Unsupported local file type: {local_path.suffix or '<none>'}",
                         suggestion=(
-                            "Use local audio/video, .txt, or .md files for now. "
-                            "PDF, article, slide, and OCR ingestion are planned later."
+                            "Use local audio/video, .txt, .md, or text PDF files. "
+                            "Slides and OCR/image ingestion are planned later."
                         ),
                     )
 
@@ -1512,6 +1675,20 @@ def fetch_command(
                 source_episode_title = "stdin"
                 source_podcast_name = "Stdin"
                 url = "stdin://input"
+
+            elif input_source.kind == ContentSourceKind.URL:
+                source_url = input_source.url or input_source.value
+                source_text = extract_article_text_from_url(source_url)
+                source_kind = "article"
+                source_episode_title = derive_readable_title_from_url(source_url)
+                source_podcast_name = "Articles"
+                url = source_url
+                input_source = ContentSource(
+                    raw_input=input_source.raw_input,
+                    kind=ContentSourceKind.ARTICLE,
+                    value=source_url,
+                    url=source_url,
+                )
 
             elif not is_url:
                 # Treat as feed name - look up in configured feeds
@@ -1734,6 +1911,7 @@ def fetch_command(
                     source_kind=source_kind,
                     extractor=extractor,
                     transcriber=transcriber,
+                    force_extraction=force_extraction,
                 )
 
                 orchestrator = PipelineOrchestrator(config)

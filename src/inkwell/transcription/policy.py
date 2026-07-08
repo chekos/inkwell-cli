@@ -7,8 +7,11 @@ without spreading ordering logic through TranscriptionManager.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import Enum
+
+from inkwell.plugins.types.transcription import TranscriptionCapabilities
 
 
 class TranscriptionAttemptKind(str, Enum):
@@ -33,6 +36,22 @@ class TranscriptionAttempt:
 class TranscriptionAttemptPolicy:
     """Produce ordered transcription attempts for the current provider set."""
 
+    @staticmethod
+    def _provider_can(
+        provider_capabilities: Mapping[str, TranscriptionCapabilities] | None,
+        provider: str,
+        capability: str,
+        *,
+        default: bool,
+    ) -> bool:
+        """Return provider capability with legacy-default fallback."""
+        if provider_capabilities is None:
+            return default
+        provider_info = provider_capabilities.get(provider)
+        if provider_info is None:
+            return default
+        return bool(getattr(provider_info, capability))
+
     def plan(
         self,
         *,
@@ -40,9 +59,17 @@ class TranscriptionAttemptPolicy:
         skip_youtube: bool,
         is_youtube_url: bool,
         is_local_media: bool,
+        provider_capabilities: Mapping[str, TranscriptionCapabilities] | None = None,
     ) -> list[TranscriptionAttempt]:
         """Return ordered attempts for a transcription request."""
         if is_local_media:
+            if not self._provider_can(
+                provider_capabilities,
+                "gemini",
+                "can_transcribe_file",
+                default=True,
+            ):
+                return []
             return [
                 TranscriptionAttempt(
                     kind=TranscriptionAttemptKind.GEMINI_LOCAL_MEDIA,
@@ -61,7 +88,12 @@ class TranscriptionAttemptPolicy:
                 )
             )
 
-        if not skip_youtube:
+        if not skip_youtube and self._provider_can(
+            provider_capabilities,
+            "youtube",
+            "can_transcribe_url",
+            default=True,
+        ):
             attempts.append(
                 TranscriptionAttempt(
                     kind=TranscriptionAttemptKind.YOUTUBE_TRANSCRIPT,
@@ -70,7 +102,12 @@ class TranscriptionAttemptPolicy:
                 )
             )
 
-        if is_youtube_url:
+        if is_youtube_url and self._provider_can(
+            provider_capabilities,
+            "gemini",
+            "supports_direct_youtube_url",
+            default=True,
+        ):
             attempts.append(
                 TranscriptionAttempt(
                     kind=TranscriptionAttemptKind.GEMINI_YOUTUBE_URL,
@@ -79,11 +116,17 @@ class TranscriptionAttemptPolicy:
                 )
             )
 
-        attempts.append(
-            TranscriptionAttempt(
-                kind=TranscriptionAttemptKind.GEMINI_AUDIO,
-                provider="gemini",
-                record_as="gemini",
+        if self._provider_can(
+            provider_capabilities,
+            "gemini",
+            "can_transcribe_file",
+            default=True,
+        ):
+            attempts.append(
+                TranscriptionAttempt(
+                    kind=TranscriptionAttemptKind.GEMINI_AUDIO,
+                    provider="gemini",
+                    record_as="gemini",
+                )
             )
-        )
         return attempts

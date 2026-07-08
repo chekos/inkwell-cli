@@ -494,6 +494,48 @@ class TestTranscriptionManager:
         mock_gemini.transcribe.assert_not_called()
 
     @pytest.mark.asyncio
+    async def test_transcribe_passes_provider_capabilities_to_policy(
+        self,
+        mock_cache: Mock,
+        mock_youtube: Mock,
+        mock_downloader: Mock,
+        mock_gemini: Mock,
+    ) -> None:
+        """The default manager supplies typed provider metadata to capable policies."""
+
+        class CapturingPolicy(TranscriptionAttemptPolicy):
+            provider_capabilities = None
+
+            def plan(
+                self,
+                *,
+                use_cache: bool,
+                skip_youtube: bool,
+                is_youtube_url: bool,
+                is_local_media: bool,
+                provider_capabilities=None,
+            ) -> list[TranscriptionAttempt]:
+                del use_cache, skip_youtube, is_youtube_url, is_local_media
+                self.provider_capabilities = provider_capabilities
+                return []
+
+        policy = CapturingPolicy()
+        manager = TranscriptionManager(
+            cache=mock_cache,
+            youtube_transcriber=mock_youtube,
+            audio_downloader=mock_downloader,
+            gemini_transcriber=mock_gemini,
+            attempt_policy=policy,
+        )
+
+        result = await manager.transcribe("https://youtube.com/watch?v=test")
+
+        assert result.success is False
+        assert policy.provider_capabilities is not None
+        assert policy.provider_capabilities["youtube"].can_transcribe_url is True
+        assert policy.provider_capabilities["gemini"].can_transcribe_file is True
+
+    @pytest.mark.asyncio
     async def test_transcribe_local_media_uses_gemini_without_download(
         self,
         tmp_path: Path,

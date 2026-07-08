@@ -39,6 +39,7 @@ class PipelineOptions:
     # Plugin overrides (from CLI flags or env vars)
     extractor: str | None = None
     transcriber: str | None = None
+    force_extraction: bool = False
 
 
 @dataclass

@@ -28,18 +28,28 @@ inkwell cache stats
 
 ```bash
 inkwell cache clear
+inkwell cache clear --transcripts
+inkwell cache clear --extractions
+inkwell cache clear --media
+inkwell cache clear --all
 inkwell cache clear-expired
+inkwell cache clear-expired --extractions
 ```
 
-Important: these commands currently operate on the transcript cache.
+For backward compatibility, `inkwell cache clear` and `inkwell cache clear-expired` still default to transcript cache entries when no target flag is provided.
 
-| Command | Current behavior |
-|---------|------------------|
+| Command | Behavior |
+|---------|----------|
 | `inkwell cache clear` | Clears cached transcripts |
+| `inkwell cache clear --transcripts` | Clears cached transcripts |
+| `inkwell cache clear --extractions` | Clears extraction cache entries |
+| `inkwell cache clear --media` | Clears downloaded media/audio cache files |
+| `inkwell cache clear --all` | Clears transcript, extraction, and media/audio caches |
 | `inkwell cache clear-expired` | Removes expired cached transcripts |
+| `inkwell cache clear-expired --extractions` | Removes expired extraction cache entries |
 | `inkwell cache stats` | Reports transcript, extraction, and media/audio cache stats |
 
-Extraction cache and media/audio cache clearing are intentionally not folded into `clear` yet, because deleting those artifacts has different cost and disk-space tradeoffs. Media/audio retention is bounded by configuration.
+`clear` confirms by default. Use `--force` for non-interactive cleanup.
 
 ---
 
@@ -64,6 +74,15 @@ inkwell config set cache.media.ttl_days 14
 ```
 
 The media cache policy is applied when media downloads run. Expired files are removed first, then oldest files are evicted until the cache is below `max_mb`.
+
+You can also enforce the media policy directly without downloading new media:
+
+```bash
+inkwell cache enforce-media-policy
+inkwell cache enforce-media-policy --force
+```
+
+Use this when reclaiming disk space or after changing `cache.media.max_mb` or `cache.media.ttl_days`.
 
 ---
 

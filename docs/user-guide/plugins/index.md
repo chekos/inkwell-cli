@@ -13,6 +13,7 @@ Inkwell's plugin architecture allows third-party developers to add:
 - **Output plugins**: New output formats (HTML, Notion, Obsidian Canvas, etc.)
 
 Plugins are discovered automatically via Python entry points, configured through YAML, and managed via the `inkwell plugins` CLI commands.
+`inkwell plugins list` shows each provider's declared capabilities, such as supported source types, formats, context limits, model names, and rough cost labels.
 
 !!! warning "Security Notice"
     Plugins run with full privileges and are automatically loaded when installed.
@@ -26,18 +27,24 @@ Create a minimal transcription plugin in 5 minutes:
 
 ```python
 # my_whisper_plugin.py
-from inkwell.plugins.types.transcription import TranscriptionPlugin, TranscriptionRequest
+from inkwell.plugins.types.transcription import (
+    TranscriptionCapabilities,
+    TranscriptionPlugin,
+    TranscriptionRequest,
+)
 
 class WhisperTranscriber(TranscriptionPlugin):
     NAME = "whisper"
     VERSION = "1.0.0"
     DESCRIPTION = "Local Whisper transcription"
 
-    CAPABILITIES = {
-        "supports_file": True,
-        "supports_url": False,
-        "requires_internet": False,
-    }
+    CAPABILITY_INFO = TranscriptionCapabilities(
+        formats=("mp3", "wav", "m4a"),
+        can_transcribe_file=True,
+        requires_internet=False,
+        estimated_cost_label="free",
+    )
+    CAPABILITIES = CAPABILITY_INFO.to_legacy_dict()
 
     async def transcribe(self, request: TranscriptionRequest):
         # Your implementation here

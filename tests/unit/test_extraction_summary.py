@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
+from inkwell.config.schema import ExtractionConfig
 from inkwell.extraction.engine import ExtractionEngine
 from inkwell.extraction.models import (
     ExtractionAttempt,
@@ -474,6 +475,7 @@ class TestExtractionEngineWithSummary:
         # Use temp cache to avoid cross-test contamination
         temp_cache = ExtractionCache(cache_dir=tmp_path / "cache")
         engine = ExtractionEngine(
+            config=ExtractionConfig(short_content_bypass_enabled=False),
             cache=temp_cache,
             gemini_api_key="AIzaSyD" + "X" * 32,
             claude_api_key="sk-ant-api03-" + "X" * 32,

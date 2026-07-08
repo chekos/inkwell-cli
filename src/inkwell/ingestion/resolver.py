@@ -1,8 +1,11 @@
 """Conservative input classification for CLI ingestion.
 
-This module intentionally stops at classification. It does not fetch RSS feeds,
-open local files, read stdin, or route content through extraction. Those are
-separate phases once the source model is stable.
+This module owns only source classification and minimal path checks. The CLI
+uses the resulting `ContentSource` to route saved feeds, URLs, local media,
+local text, and stdin into the appropriate pipeline path. More expensive work
+such as feed fetching, file reading, PDF parsing, article cleanup,
+transcription, and extraction stays outside the resolver. Dedicated slide and
+OCR routes remain separate follow-up ingestion work.
 """
 
 from __future__ import annotations
@@ -25,6 +28,8 @@ class ContentSourceKind(str, Enum):
     STDIN = "stdin"
     DIRECT_MEDIA = "direct_media"
     YOUTUBE = "youtube"
+    ARTICLE = "article"
+    PDF = "pdf"
     UNKNOWN_URL = "unknown_url"
 
 
@@ -53,6 +58,7 @@ class ContentSource:
             ContentSourceKind.URL,
             ContentSourceKind.DIRECT_MEDIA,
             ContentSourceKind.YOUTUBE,
+            ContentSourceKind.ARTICLE,
         }
 
 

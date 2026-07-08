@@ -418,6 +418,38 @@ class TestCLIFetchMachineOutput:
         assert item["cache_hits"] == {"extractions": 0, "transcript": True}
         assert item["costs"]["total_usd"] == 0.02
 
+    def test_fetch_json_identifies_article_inputs(self, tmp_path: Path, monkeypatch) -> None:
+        """Generic HTTP URLs that extract as articles are labeled distinctly."""
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+        monkeypatch.setattr(
+            "inkwell.cli.extract_article_text_from_url",
+            lambda _url: "Readable article text for local extraction.",
+        )
+
+        output_dir = tmp_path / "episode-dir"
+        output_dir.mkdir()
+
+        async def fake_process(*_args, **_kwargs):
+            return _sample_pipeline_result(output_dir)
+
+        monkeypatch.setattr("inkwell.pipeline.PipelineOrchestrator.process_episode", fake_process)
+
+        result = runner.invoke(
+            app,
+            [
+                "fetch",
+                "https://example.com/articles/local-extraction",
+                "--json",
+                "--output-dir",
+                str(tmp_path),
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        payload = json.loads(result.stdout)
+        assert payload["input"]["kind"] == "article"
+        assert payload["input"]["normalized"] == "https://example.com/articles/local-extraction"
+
         assert "Inkwell Extraction Pipeline" not in result.stdout
         assert "Inkwell Extraction Pipeline" in result.stderr
 
@@ -1487,6 +1519,48 @@ class TestCLIFetchSaveFeed:
         assert seen["source_kind"] == "local_text"
         assert seen["episode_title"] == "notes"
 
+    def test_fetch_local_pdf_routes_source_text_to_pipeline(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """Text PDFs bypass media transcription and feed extraction templates."""
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+        monkeypatch.setattr(
+            "inkwell.cli.extract_text_from_pdf",
+            lambda _path: "Selectable PDF text for extraction.",
+        )
+
+        local_pdf = tmp_path / "paper.pdf"
+        local_pdf.write_bytes(b"%PDF")
+        output_dir = tmp_path / "episode-dir"
+        output_dir.mkdir()
+        seen: dict[str, object] = {}
+
+        async def fake_process(_orchestrator, options, *_args, **_kwargs):
+            seen["url"] = options.url
+            seen["source_text"] = options.source_text
+            seen["source_kind"] = options.source_kind
+            seen["episode_title"] = options.episode_title
+            return _sample_pipeline_result(output_dir)
+
+        monkeypatch.setattr("inkwell.pipeline.PipelineOrchestrator.process_episode", fake_process)
+
+        result = runner.invoke(
+            app,
+            [
+                "fetch",
+                str(local_pdf),
+                "--dry-run",
+                "--output-dir",
+                str(tmp_path),
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert seen["url"] == str(local_pdf)
+        assert seen["source_text"] == "Selectable PDF text for extraction."
+        assert seen["source_kind"] == "pdf"
+        assert seen["episode_title"] == "paper"
+
     def test_fetch_stdin_routes_source_text_to_pipeline(self, tmp_path: Path, monkeypatch) -> None:
         """Stdin text bypasses transcription and feeds extraction templates."""
         monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
@@ -1516,18 +1590,58 @@ class TestCLIFetchSaveFeed:
         assert seen["source_kind"] == "stdin"
         assert seen["episode_title"] == "stdin"
 
+    def test_fetch_article_url_routes_source_text_to_pipeline(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """Generic article URLs are locally extracted into source text."""
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+        monkeypatch.setattr(
+            "inkwell.cli.extract_article_text_from_url",
+            lambda _url: "Readable article text for extraction.",
+        )
+
+        output_dir = tmp_path / "episode-dir"
+        output_dir.mkdir()
+        seen: dict[str, object] = {}
+
+        async def fake_process(_orchestrator, options, *_args, **_kwargs):
+            seen["url"] = options.url
+            seen["source_text"] = options.source_text
+            seen["source_kind"] = options.source_kind
+            seen["episode_title"] = options.episode_title
+            return _sample_pipeline_result(output_dir)
+
+        monkeypatch.setattr("inkwell.pipeline.PipelineOrchestrator.process_episode", fake_process)
+
+        result = runner.invoke(
+            app,
+            [
+                "fetch",
+                "https://example.com/articles/source-routing",
+                "--dry-run",
+                "--output-dir",
+                str(tmp_path),
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert seen["url"] == "https://example.com/articles/source-routing"
+        assert seen["source_text"] == "Readable article text for extraction."
+        assert seen["source_kind"] == "article"
+        assert seen["episode_title"] == "source routing"
+
     def test_fetch_unsupported_local_file_type_errors(self, tmp_path: Path, monkeypatch) -> None:
-        """PDF/article/OCR-style inputs remain out of scope for Phase 6."""
+        """Slides and unsupported local file formats still fail clearly."""
         monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
 
-        local_pdf = tmp_path / "paper.pdf"
-        local_pdf.write_bytes(b"%PDF")
+        local_slide = tmp_path / "deck.pptx"
+        local_slide.write_bytes(b"fake slide deck")
 
-        result = runner.invoke(app, ["fetch", str(local_pdf), "--dry-run"])
+        result = runner.invoke(app, ["fetch", str(local_slide), "--dry-run"])
 
         assert result.exit_code != 0
         assert "Unsupported local file type" in result.output
-        assert "PDF" in result.output
+        assert "Slides" in result.output or "OCR" in result.output
 
 
 class TestCLIFetchHintSuppression:
@@ -2057,6 +2171,132 @@ class TestCLICache:
         assert "Transcript Cache Statistics" in result.stdout
         assert "Extraction Cache Statistics" in result.stdout
         assert "Media Cache Statistics" in result.stdout
+
+    def test_cache_clear_extractions_only(self, monkeypatch) -> None:
+        """Cache clear can target extraction entries without touching others."""
+        calls = {"transcripts": 0, "extractions": 0, "media": 0}
+
+        class FakeManager:
+            def clear_cache(self) -> int:
+                calls["transcripts"] += 1
+                return 3
+
+        class FakeExtractionCache:
+            async def clear(self) -> int:
+                calls["extractions"] += 1
+                return 2
+
+        class FakeAudioDownloader:
+            @classmethod
+            def clear_cache(cls):
+                calls["media"] += 1
+                return {"files_deleted": 1, "bytes_deleted": 5}
+
+        monkeypatch.setattr("inkwell.cli.TranscriptionManager", lambda: FakeManager())
+        monkeypatch.setattr("inkwell.extraction.cache.ExtractionCache", FakeExtractionCache)
+        monkeypatch.setattr("inkwell.audio.downloader.AudioDownloader", FakeAudioDownloader)
+
+        result = runner.invoke(app, ["cache", "clear", "--extractions", "--force"])
+
+        assert result.exit_code == 0, result.output
+        assert calls == {"transcripts": 0, "extractions": 1, "media": 0}
+        assert "Cleared 2 extraction cache entries" in result.stdout
+
+    def test_cache_clear_all_targets(self, monkeypatch) -> None:
+        """Cache clear can remove transcript, extraction, and media artifacts."""
+        calls = {"transcripts": 0, "extractions": 0, "media": 0}
+
+        class FakeManager:
+            def clear_cache(self) -> int:
+                calls["transcripts"] += 1
+                return 3
+
+        class FakeExtractionCache:
+            async def clear(self) -> int:
+                calls["extractions"] += 1
+                return 2
+
+        class FakeAudioDownloader:
+            @classmethod
+            def clear_cache(cls):
+                calls["media"] += 1
+                return {"files_deleted": 1, "bytes_deleted": 5}
+
+        monkeypatch.setattr("inkwell.cli.TranscriptionManager", lambda: FakeManager())
+        monkeypatch.setattr("inkwell.extraction.cache.ExtractionCache", FakeExtractionCache)
+        monkeypatch.setattr("inkwell.audio.downloader.AudioDownloader", FakeAudioDownloader)
+
+        result = runner.invoke(app, ["cache", "clear", "--all", "--force"])
+
+        assert result.exit_code == 0, result.output
+        assert calls == {"transcripts": 1, "extractions": 1, "media": 1}
+        assert "transcript cache entries" in result.stdout
+        assert "extraction cache entries" in result.stdout
+        assert "media cache files" in result.stdout
+
+    def test_cache_enforce_media_policy(self, monkeypatch) -> None:
+        """Media cache policy can be enforced without downloading new media."""
+        from types import SimpleNamespace
+
+        calls = {"enforced": 0}
+
+        class FakeManager:
+            pass
+
+        class FakeMediaConfig:
+            enabled = True
+            max_mb = 10
+            ttl_days = 7
+
+        class FakeConfig:
+            cache = SimpleNamespace(media=FakeMediaConfig())
+
+        class FakeConfigManager:
+            def load_config(self):
+                return FakeConfig()
+
+        class FakeAudioDownloader:
+            def __init__(self, *, cache_enabled, cache_max_mb, cache_ttl_days):
+                assert cache_enabled is True
+                assert cache_max_mb == 10
+                assert cache_ttl_days == 7
+
+            def enforce_cache_policy(self):
+                calls["enforced"] += 1
+                return {"expired_files": 1, "size_files": 0, "bytes_deleted": 5}
+
+        monkeypatch.setattr("inkwell.cli.TranscriptionManager", lambda: FakeManager())
+        monkeypatch.setattr("inkwell.cli.ConfigManager", FakeConfigManager)
+        monkeypatch.setattr("inkwell.audio.downloader.AudioDownloader", FakeAudioDownloader)
+
+        result = runner.invoke(app, ["cache", "enforce-media-policy", "--force"])
+
+        assert result.exit_code == 0, result.output
+        assert calls == {"enforced": 1}
+        assert "Enforced media cache policy" in result.stdout
+
+    def test_cache_clear_expired_media_points_to_policy_command(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """Media clear-expired uses the explicit policy command instead."""
+
+        class FakeManager:
+            pass
+
+        monkeypatch.setattr("inkwell.cli.TranscriptionManager", lambda: FakeManager())
+        monkeypatch.setattr(
+            "inkwell.transcription.cache.user_cache_dir",
+            lambda *_args: str(tmp_path / "transcripts-root"),
+        )
+        monkeypatch.setattr(
+            "inkwell.audio.downloader.platformdirs.user_cache_dir",
+            lambda *_args: str(tmp_path / "media-root"),
+        )
+
+        result = runner.invoke(app, ["cache", "clear-expired", "--media", "--force"])
+
+        assert result.exit_code == 0, result.output
+        assert "enforce-media-policy" in result.stdout
 
     def test_cache_invalid_action(self) -> None:
         """Test cache command with invalid action."""

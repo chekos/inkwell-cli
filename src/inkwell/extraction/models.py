@@ -232,6 +232,9 @@ class ExtractionResult(BaseModel):
     tokens_used: int = Field(0, description="Total tokens used (input + output)", ge=0)
     cost_usd: float = Field(0.0, description="Cost in USD", ge=0)
     provider: str | None = Field(None, description="LLM provider used")
+    model: str | None = Field(None, description="Model used for extraction")
+    bypassed: bool = Field(False, description="Whether LLM extraction was bypassed")
+    bypass_reason: str | None = Field(None, description="Reason extraction was bypassed")
 
     from_cache: bool = Field(False, description="Whether result came from cache")
     cache_key: str | None = Field(None, description="Cache key if cached")

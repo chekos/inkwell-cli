@@ -69,7 +69,14 @@ from .registry import (
 )
 
 # Plugin type base classes
-from .types import ExtractionPlugin, OutputPlugin, TranscriptionPlugin, TranscriptionRequest
+from .types import (
+    ExtractionCapabilities,
+    ExtractionPlugin,
+    OutputPlugin,
+    TranscriptionCapabilities,
+    TranscriptionPlugin,
+    TranscriptionRequest,
+)
 
 __all__ = [
     # Constants
@@ -78,8 +85,10 @@ __all__ = [
     # Base classes
     "InkwellPlugin",
     "BrokenPlugin",
+    "ExtractionCapabilities",
     "ExtractionPlugin",
     "OutputPlugin",
+    "TranscriptionCapabilities",
     "TranscriptionPlugin",
     "TranscriptionRequest",
     # Exceptions

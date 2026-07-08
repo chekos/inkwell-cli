@@ -16,7 +16,7 @@ inkwell fetch https://youtube.com/watch?v=xyz
 
 ### Process from Local Files or Stdin
 
-Local audio/video routes through transcription. Local text/markdown and stdin are treated as already-clean source text for the extraction templates.
+Local audio/video routes through transcription. Local text/markdown, local text PDFs, web articles, and stdin are treated as source text for the extraction templates.
 
 ```bash
 # Local audio/video
@@ -24,6 +24,12 @@ inkwell fetch ~/Downloads/interview.mp3
 
 # Local text or markdown
 inkwell fetch ./notes.md
+
+# Local text PDF
+inkwell fetch ./paper.pdf
+
+# Web article
+inkwell fetch https://example.com/article
 
 # Pasted/stdin text
 pbpaste | inkwell fetch -
@@ -51,8 +57,10 @@ When you run `inkwell fetch`, here's what happens:
 
 ```mermaid
 flowchart TD
-    A([inkwell fetch URL / feed]) --> B[Resolve source\n& episode metadata]
-    B --> C{YouTube transcript\navailable?}
+    A([inkwell fetch URL / feed / file]) --> B[Resolve source\n& episode metadata]
+    B --> S{Already text?}
+    S -- Article / PDF / text / stdin --> F[Select extraction templates\nauto or manual]
+    S -- Media / feed episode --> C{YouTube transcript\navailable?}
     C -- Yes / Free --> D[Use YouTube transcript]
     C -- No / blocked --> E{Public YouTube URL?}
     E -- Yes --> J[Gemini video URL fallback\nbounded clips]
@@ -106,8 +114,9 @@ Step 4/4: Writing markdown files...
 | `--category` | `-c` | Episode category | Auto-detect |
 | `--provider` | `-p` | LLM provider (claude, gemini) | Smart selection |
 | `--skip-cache` | | Skip extraction cache | `false` |
+| `--force-extraction` | | Run LLM extraction even when short-content bypass would apply | `false` |
 | `--dry-run` | | Cost estimate only | `false` |
-| `--extract` | | Emit transcript text only and skip note generation | `false` |
+| `--extract` | | Emit transcript/source text only and skip note generation | `false` |
 | `--overwrite` | | Overwrite existing directory | `false` |
 | `--interview` | | Enable interview mode | `false` |
 
@@ -212,9 +221,9 @@ inkwell fetch URL --extract
 inkwell fetch my-podcast --latest --extract --output-dir ~/transcripts --plain
 ```
 
-Use this when you want the clean media transcript first and want to decide later whether to run Inkwell's structured note templates or reflection flow.
+Use this when you want the clean media transcript or source text first and want to decide later whether to run Inkwell's structured note templates or reflection flow.
 
-PDFs, web article extraction, slide decks, and OCR inputs are not part of local/stdin ingestion yet.
+Web articles and text PDFs use local extraction. Hosted article fallbacks, slide decks, and OCR/image PDFs are not part of this path yet.
 
 For script-friendly `--json` and `--plain` output, see [Machine-Readable Output](../reference/machine-readable-output.md).
 

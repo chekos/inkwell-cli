@@ -47,6 +47,14 @@ class TestPluginsList:
         # Should only show transcription plugins
         assert "youtube" in result.stdout.lower()
 
+    def test_plugins_list_shows_capabilities(self) -> None:
+        """Test that plugin list includes capability labels."""
+        result = runner.invoke(app, ["plugins", "list", "--type", "transcription"])
+
+        assert result.exit_code == 0
+        assert "direct-youtube" in result.stdout
+        assert "timestamps" in result.stdout
+
     def test_plugins_list_invalid_type(self) -> None:
         """Test error handling for invalid plugin type."""
         result = runner.invoke(app, ["plugins", "list", "--type", "invalid"])

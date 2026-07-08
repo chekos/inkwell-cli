@@ -4,6 +4,7 @@ This module defines the base class that all extraction plugins must implement.
 It combines the plugin lifecycle with the BaseExtractor interface.
 """
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from inkwell.extraction.extractors.base import BaseExtractor
@@ -13,6 +14,93 @@ from inkwell.utils.json_utils import JSONParsingError, safe_json_loads
 
 if TYPE_CHECKING:
     from inkwell.utils.costs import CostTracker
+
+
+@dataclass(frozen=True)
+class ExtractionCapabilities:
+    """Typed capability metadata for extraction providers."""
+
+    model_name: str = "unknown"
+    can_extract_text: bool = True
+    supports_structured_output: bool = True
+    supports_json_mode: bool = True
+    requires_internet: bool = True
+    max_input_tokens: int | None = None
+    input_price_per_m: float = 0.0
+    output_price_per_m: float = 0.0
+    estimated_cost_label: str | None = None
+
+    @classmethod
+    def from_legacy(
+        cls,
+        capabilities: dict[str, Any] | None,
+        *,
+        model_name: str = "unknown",
+        input_price_per_m: float = 0.0,
+        output_price_per_m: float = 0.0,
+    ) -> "ExtractionCapabilities":
+        """Build typed metadata from legacy class attributes or dictionaries."""
+        caps = capabilities or {}
+        return cls(
+            model_name=str(caps.get("model_name") or model_name),
+            can_extract_text=bool(caps.get("can_extract_text", True)),
+            supports_structured_output=bool(caps.get("supports_structured_output", True)),
+            supports_json_mode=bool(caps.get("supports_json_mode", True)),
+            requires_internet=bool(caps.get("requires_internet", True)),
+            max_input_tokens=(
+                int(caps["max_input_tokens"]) if caps.get("max_input_tokens") is not None else None
+            ),
+            input_price_per_m=float(caps.get("input_price_per_m", input_price_per_m)),
+            output_price_per_m=float(caps.get("output_price_per_m", output_price_per_m)),
+            estimated_cost_label=(
+                str(caps["estimated_cost_label"])
+                if caps.get("estimated_cost_label") is not None
+                else None
+            ),
+        )
+
+    def to_legacy_dict(self) -> dict[str, Any]:
+        """Return a compatibility dictionary for existing plugin code."""
+        return {
+            "model_name": self.model_name,
+            "can_extract_text": self.can_extract_text,
+            "supports_structured_output": self.supports_structured_output,
+            "supports_json_mode": self.supports_json_mode,
+            "requires_internet": self.requires_internet,
+            "max_input_tokens": self.max_input_tokens,
+            "input_price_per_m": self.input_price_per_m,
+            "output_price_per_m": self.output_price_per_m,
+            "estimated_cost_label": self.estimated_cost_label,
+        }
+
+    def display_parts(self) -> list[str]:
+        """Return concise, safe capability labels for CLI display."""
+        parts: list[str] = []
+        if self.can_extract_text:
+            parts.append("text")
+        if self.supports_structured_output:
+            parts.append("structured")
+        if self.supports_json_mode:
+            parts.append("json")
+        if not self.requires_internet:
+            parts.append("offline")
+        if self.max_input_tokens is not None:
+            parts.append(f"context={self._format_count(self.max_input_tokens)}")
+        if self.model_name != "unknown":
+            parts.append(f"model={self.model_name}")
+        if self.estimated_cost_label:
+            parts.append(self.estimated_cost_label)
+        elif self.input_price_per_m or self.output_price_per_m:
+            parts.append(f"${self.input_price_per_m:g}/${self.output_price_per_m:g} per 1M tokens")
+        return parts
+
+    @staticmethod
+    def _format_count(value: int) -> str:
+        if value >= 1_000_000 and value % 1_000_000 == 0:
+            return f"{value // 1_000_000}M"
+        if value >= 1_000 and value % 1_000 == 0:
+            return f"{value // 1_000}K"
+        return str(value)
 
 
 class ExtractionPlugin(InkwellPlugin, BaseExtractor):
@@ -57,6 +145,9 @@ class ExtractionPlugin(InkwellPlugin, BaseExtractor):
     INPUT_PRICE_PER_M: ClassVar[float] = 0.0
     OUTPUT_PRICE_PER_M: ClassVar[float] = 0.0
 
+    CAPABILITIES: ClassVar[dict[str, Any]] = {}
+    CAPABILITY_INFO: ClassVar[ExtractionCapabilities | None] = None
+
     def __init__(self) -> None:
         """Initialize the extraction plugin.
 
@@ -68,6 +159,22 @@ class ExtractionPlugin(InkwellPlugin, BaseExtractor):
     def model(self) -> str:
         """Get the model identifier for this extractor."""
         return self.MODEL
+
+    @classmethod
+    def capability_info(cls) -> ExtractionCapabilities:
+        """Return typed capability metadata for this provider class."""
+        if cls.CAPABILITY_INFO is not None:
+            return cls.CAPABILITY_INFO
+        return ExtractionCapabilities.from_legacy(
+            cls.CAPABILITIES,
+            model_name=cls.MODEL,
+            input_price_per_m=cls.INPUT_PRICE_PER_M,
+            output_price_per_m=cls.OUTPUT_PRICE_PER_M,
+        )
+
+    def get_capabilities(self) -> ExtractionCapabilities:
+        """Return typed capability metadata for this provider instance."""
+        return self.__class__.capability_info()
 
     # Abstract methods (extract, estimate_cost, supports_structured_output)
     # and helper methods (build_prompt, _count_tokens) are inherited from BaseExtractor

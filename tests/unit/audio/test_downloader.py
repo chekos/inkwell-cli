@@ -157,6 +157,25 @@ class TestAudioDownloader:
         assert stats["cache_format_version"] == AUDIO_CACHE_FORMAT_VERSION
         assert stats["extensions"] == {".m4a": 1, ".webm": 1}
 
+    def test_clear_cache_removes_media_files(self, cache_dir: Path) -> None:
+        """Media cache clear removes files and reports bytes deleted."""
+        (cache_dir / "one.m4a").write_bytes(b"abc")
+        (cache_dir / "two.webm").write_bytes(b"abcd")
+        (cache_dir / "nested").mkdir()
+
+        result = AudioDownloader.clear_cache(cache_dir)
+
+        assert result == {"files_deleted": 2, "bytes_deleted": 7}
+        assert not (cache_dir / "one.m4a").exists()
+        assert not (cache_dir / "two.webm").exists()
+        assert (cache_dir / "nested").exists()
+
+    def test_clear_cache_handles_missing_directory(self, tmp_path: Path) -> None:
+        """Media cache clear is safe when the cache directory does not exist."""
+        result = AudioDownloader.clear_cache(tmp_path / "missing-cache")
+
+        assert result == {"files_deleted": 0, "bytes_deleted": 0}
+
     def test_cache_disabled_does_not_create_cache_directory(
         self, temp_dir: Path, tmp_path: Path
     ) -> None:

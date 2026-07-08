@@ -64,6 +64,16 @@ class ExtractionConfig(BaseModel):
     """Extraction service configuration."""
 
     default_provider: Literal["claude", "gemini"] = "gemini"
+    short_content_bypass_enabled: bool = Field(
+        default=True,
+        description="Skip summary LLM extraction for very short source text by default",
+    )
+    short_content_bypass_tokens: int = Field(
+        default=500,
+        ge=1,
+        le=100000,
+        description="Source token threshold for summary pass-through bypass",
+    )
     claude_api_key: str | None = Field(
         default=None,
         min_length=20,

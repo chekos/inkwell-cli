@@ -11,7 +11,7 @@ Extraction plugins use LLMs to extract structured content from transcripts.
 ### Base Class
 
 ```python
-from inkwell.plugins.types.extraction import ExtractionPlugin
+from inkwell.plugins.types.extraction import ExtractionCapabilities, ExtractionPlugin
 ```
 
 ### Required Methods
@@ -45,6 +45,17 @@ class OpenAIExtractor(ExtractionPlugin):
     MODEL: ClassVar[str] = "gpt-4-turbo"
     INPUT_PRICE_PER_M: ClassVar[float] = 10.00   # $10/M input tokens
     OUTPUT_PRICE_PER_M: ClassVar[float] = 30.00  # $30/M output tokens
+    CAPABILITY_INFO: ClassVar[ExtractionCapabilities] = ExtractionCapabilities(
+        model_name=MODEL,
+        can_extract_text=True,
+        supports_structured_output=True,
+        supports_json_mode=True,
+        max_input_tokens=128_000,
+        input_price_per_m=INPUT_PRICE_PER_M,
+        output_price_per_m=OUTPUT_PRICE_PER_M,
+        estimated_cost_label="paid",
+    )
+    CAPABILITIES: ClassVar[dict[str, Any]] = CAPABILITY_INFO.to_legacy_dict()
 
     def __init__(self, api_key: str | None = None, *, lazy_init: bool = False):
         super().__init__()
@@ -125,6 +136,7 @@ Transcription plugins convert audio/video to text.
 
 ```python
 from inkwell.plugins.types.transcription import (
+    TranscriptionCapabilities,
     TranscriptionPlugin,
     TranscriptionRequest,
 )
@@ -140,24 +152,30 @@ from inkwell.plugins.types.transcription import (
 
 | Method | Return Type | Default | Description |
 |--------|-------------|---------|-------------|
-| `can_handle()` | `bool` | Based on `CAPABILITIES` | Check if plugin can handle request |
+| `can_handle()` | `bool` | Based on `CAPABILITY_INFO` / `CAPABILITIES` | Check if plugin can handle request |
 | `estimate_cost()` | `float` | `0.0` | Estimate cost for duration |
 
 ### Class Attributes
 
 ```python
+from typing import Any, ClassVar
+
 # URL patterns this plugin handles (for auto-selection)
 HANDLES_URLS: ClassVar[list[str]] = ["youtube.com", "youtu.be"]
 
-# Capability declarations
-CAPABILITIES: ClassVar[dict] = {
-    "formats": ["mp3", "wav", "m4a", "mp4"],
-    "max_duration_hours": None,  # None = no limit
-    "requires_internet": True,
-    "supports_file": True,
-    "supports_url": False,
-    "supports_bytes": False,
-}
+# Preferred typed capability declaration. `CAPABILITIES` dictionaries still work
+# for compatibility, but typed metadata gives policy routing and plugin-list
+# output a stable shape.
+CAPABILITY_INFO: ClassVar[TranscriptionCapabilities] = TranscriptionCapabilities(
+    formats=("mp3", "wav", "m4a", "mp4"),
+    can_transcribe_file=True,
+    can_transcribe_url=False,
+    can_transcribe_bytes=False,
+    supports_timestamps=True,
+    requires_internet=True,
+    estimated_cost_label="paid",
+)
+CAPABILITIES: ClassVar[dict[str, Any]] = CAPABILITY_INFO.to_legacy_dict()
 ```
 
 ### Example: Whisper Local Transcription
@@ -169,6 +187,7 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 from inkwell.plugins.types.transcription import (
+    TranscriptionCapabilities,
     TranscriptionPlugin,
     TranscriptionRequest,
 )
@@ -182,14 +201,16 @@ class WhisperTranscriber(TranscriptionPlugin):
     VERSION: ClassVar[str] = "1.0.0"
     DESCRIPTION: ClassVar[str] = "Local Whisper transcription (offline, GPU-accelerated)"
 
-    CAPABILITIES: ClassVar[dict[str, Any]] = {
-        "formats": ["mp3", "wav", "m4a", "mp4", "webm"],
-        "max_duration_hours": None,
-        "requires_internet": False,
-        "supports_file": True,
-        "supports_url": False,  # Requires downloaded file
-        "supports_bytes": False,
-    }
+    CAPABILITY_INFO: ClassVar[TranscriptionCapabilities] = TranscriptionCapabilities(
+        formats=("mp3", "wav", "m4a", "mp4", "webm"),
+        can_transcribe_file=True,
+        can_transcribe_url=False,  # Requires downloaded file
+        can_transcribe_bytes=False,
+        supports_timestamps=True,
+        requires_internet=False,
+        estimated_cost_label="free",
+    )
+    CAPABILITIES: ClassVar[dict[str, Any]] = CAPABILITY_INFO.to_legacy_dict()
 
     def __init__(self, *, lazy_init: bool = False):
         super().__init__()

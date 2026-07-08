@@ -1,6 +1,6 @@
 # Transcription Attempt Policy
 
-`TranscriptionAttemptPolicy` makes the transcription fallback order explicit without adding new providers. It is a small developer-facing foundation for future provider capability work.
+`TranscriptionAttemptPolicy` makes the transcription fallback order explicit without adding new providers. It uses typed provider capability metadata when available, while preserving the current built-in fallback order.
 
 ---
 
@@ -14,6 +14,8 @@ For a normal remote media or episode URL, the default policy can produce:
 4. Gemini audio fallback
 
 For local media files, the policy goes directly to Gemini local media transcription. Local media does not run through `yt-dlp`.
+
+Source-text inputs such as local text/markdown, stdin, locally extracted articles, and text PDFs bypass this policy entirely and enter extraction as text.
 
 ---
 
@@ -35,7 +37,7 @@ The manager records attempts with stable labels such as `cache`, `youtube`, and 
 
 ## Extension Guidance
 
-Future provider work should add capability-aware planning to the policy instead of embedding more fallback order in `TranscriptionManager`.
+Future provider work should extend capability-aware planning in the policy instead of embedding more fallback order in `TranscriptionManager`.
 
 Good future policy inputs include:
 
@@ -56,6 +58,5 @@ This policy does not yet add:
 
 - new transcription providers
 - token-aware routing
-- web article extraction
-- PDF, slide, or OCR ingestion
+- slide or OCR ingestion
 - cross-provider quality scoring

@@ -54,6 +54,10 @@ inkwell fetch ~/Downloads/interview.mp3
 inkwell fetch ./notes.md
 pbpaste | inkwell fetch -
 
+# Process a text PDF or readable article
+inkwell fetch ./paper.pdf
+inkwell fetch https://example.com/article
+
 # Transcript only
 inkwell fetch <url> --extract
 

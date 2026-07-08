@@ -5,6 +5,7 @@ It provides the transcription interface with flexible input handling via Transcr
 """
 
 from abc import abstractmethod
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, Literal
@@ -63,6 +64,154 @@ class TranscriptionRequest:
             raise ValueError("Exactly one of url, file_path, or audio_bytes must be provided")
 
 
+@dataclass(frozen=True)
+class TranscriptionCapabilities:
+    """Typed capability metadata for transcription providers.
+
+    `CAPABILITIES` dictionaries remain supported for third-party plugin
+    compatibility. Built-in providers should prefer this typed declaration and
+    derive legacy dictionaries from it.
+    """
+
+    formats: tuple[str, ...] = ()
+    can_transcribe_url: bool = False
+    can_transcribe_file: bool = False
+    can_transcribe_bytes: bool = False
+    supports_timestamps: bool = False
+    supports_diarization: bool = False
+    supports_direct_youtube_url: bool = False
+    requires_internet: bool = True
+    max_duration_seconds: float | None = None
+    max_input_tokens: int | None = None
+    model_name: str | None = None
+    estimated_cost_label: str | None = None
+
+    @classmethod
+    def from_legacy(
+        cls,
+        capabilities: Mapping[str, Any] | None,
+        *,
+        handles_urls: Sequence[str] = (),
+        model_name: str | None = None,
+    ) -> "TranscriptionCapabilities":
+        """Build typed metadata from the legacy `CAPABILITIES` dictionary."""
+        caps = capabilities or {}
+        formats = tuple(str(fmt).lower().lstrip(".") for fmt in caps.get("formats", ()) or ())
+
+        max_duration_seconds = caps.get("max_duration_seconds")
+        if max_duration_seconds is None and caps.get("max_duration_hours") is not None:
+            max_duration_seconds = float(caps["max_duration_hours"]) * 3600
+
+        capability_model = caps.get("model_name") or model_name
+
+        return cls(
+            formats=formats,
+            can_transcribe_url=bool(
+                caps.get("can_transcribe_url", caps.get("supports_url", bool(handles_urls)))
+            ),
+            can_transcribe_file=bool(
+                caps.get("can_transcribe_file", caps.get("supports_file", True))
+            ),
+            can_transcribe_bytes=bool(
+                caps.get("can_transcribe_bytes", caps.get("supports_bytes", False))
+            ),
+            supports_timestamps=bool(caps.get("supports_timestamps", False)),
+            supports_diarization=bool(caps.get("supports_diarization", False)),
+            supports_direct_youtube_url=bool(caps.get("supports_direct_youtube_url", False)),
+            requires_internet=bool(caps.get("requires_internet", True)),
+            max_duration_seconds=(
+                float(max_duration_seconds) if max_duration_seconds is not None else None
+            ),
+            max_input_tokens=(
+                int(caps["max_input_tokens"]) if caps.get("max_input_tokens") is not None else None
+            ),
+            model_name=str(capability_model) if capability_model else None,
+            estimated_cost_label=(
+                str(caps["estimated_cost_label"])
+                if caps.get("estimated_cost_label") is not None
+                else None
+            ),
+        )
+
+    def to_legacy_dict(self) -> dict[str, Any]:
+        """Return a compatibility dictionary for existing plugin code."""
+        max_duration_hours = (
+            self.max_duration_seconds / 3600 if self.max_duration_seconds is not None else None
+        )
+        return {
+            "formats": list(self.formats),
+            "max_duration_hours": max_duration_hours,
+            "max_duration_seconds": self.max_duration_seconds,
+            "requires_internet": self.requires_internet,
+            "supports_file": self.can_transcribe_file,
+            "supports_url": self.can_transcribe_url,
+            "supports_bytes": self.can_transcribe_bytes,
+            "can_transcribe_file": self.can_transcribe_file,
+            "can_transcribe_url": self.can_transcribe_url,
+            "can_transcribe_bytes": self.can_transcribe_bytes,
+            "supports_timestamps": self.supports_timestamps,
+            "supports_diarization": self.supports_diarization,
+            "supports_direct_youtube_url": self.supports_direct_youtube_url,
+            "max_input_tokens": self.max_input_tokens,
+            "model_name": self.model_name,
+            "estimated_cost_label": self.estimated_cost_label,
+        }
+
+    def display_parts(self) -> list[str]:
+        """Return concise, safe capability labels for CLI display."""
+        parts: list[str] = []
+
+        if self.can_transcribe_url:
+            parts.append("url")
+        if self.supports_direct_youtube_url:
+            parts.append("direct-youtube")
+        if self.can_transcribe_file:
+            parts.append("file")
+        if self.can_transcribe_bytes:
+            parts.append("bytes")
+        if self.supports_timestamps:
+            parts.append("timestamps")
+        if self.supports_diarization:
+            parts.append("diarization")
+        if not self.requires_internet:
+            parts.append("offline")
+        if self.formats:
+            parts.append(f"formats={self._format_values(self.formats)}")
+        if self.max_duration_seconds is not None:
+            parts.append(f"max={self._format_duration(self.max_duration_seconds)}")
+        if self.max_input_tokens is not None:
+            parts.append(f"context={self._format_count(self.max_input_tokens)}")
+        if self.model_name:
+            parts.append(f"model={self.model_name}")
+        if self.estimated_cost_label:
+            parts.append(self.estimated_cost_label)
+
+        return parts
+
+    @staticmethod
+    def _format_values(values: Sequence[str]) -> str:
+        displayed = "/".join(values[:4])
+        if len(values) > 4:
+            displayed = f"{displayed}+{len(values) - 4}"
+        return displayed
+
+    @staticmethod
+    def _format_duration(seconds: float) -> str:
+        if seconds >= 3600 and seconds % 3600 == 0:
+            return f"{int(seconds / 3600)}h"
+        if seconds >= 60 and seconds % 60 == 0:
+            return f"{int(seconds / 60)}m"
+        return f"{int(seconds)}s"
+
+    @staticmethod
+    def _format_count(value: int) -> str:
+        if value >= 1_000_000 and value % 1_000_000 == 0:
+            return f"{value // 1_000_000}M"
+        if value >= 1_000 and value % 1_000 == 0:
+            return f"{value // 1_000}K"
+        return str(value)
+
+
 class TranscriptionPlugin(InkwellPlugin):
     """Base class for transcription plugins.
 
@@ -108,6 +257,7 @@ class TranscriptionPlugin(InkwellPlugin):
         "supports_url": False,
         "supports_bytes": False,
     }
+    CAPABILITY_INFO: ClassVar[TranscriptionCapabilities | None] = None
 
     def __init__(self) -> None:
         """Initialize the transcription plugin.
@@ -161,6 +311,21 @@ class TranscriptionPlugin(InkwellPlugin):
             return bool(caps.get("supports_file", True))
         else:  # bytes
             return bool(caps.get("supports_bytes", False))
+
+    @classmethod
+    def capability_info(cls) -> TranscriptionCapabilities:
+        """Return typed capability metadata for this provider class."""
+        if cls.CAPABILITY_INFO is not None:
+            return cls.CAPABILITY_INFO
+        return TranscriptionCapabilities.from_legacy(
+            cls.CAPABILITIES,
+            handles_urls=cls.HANDLES_URLS,
+            model_name=getattr(cls, "MODEL", None),
+        )
+
+    def get_capabilities(self) -> TranscriptionCapabilities:
+        """Return typed capability metadata for this provider instance."""
+        return self.__class__.capability_info()
 
     def estimate_cost(self, duration_seconds: float) -> float:
         """Estimate cost for transcribing audio of given duration.

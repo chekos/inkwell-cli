@@ -38,6 +38,8 @@ JSON responses include:
 
 Treat `schema_version` as the compatibility guard for scripts. New optional fields may be added over time, but incompatible shape changes should use a new schema version.
 
+`input.kind` identifies the routed source shape. Common values include `saved_feed`, `youtube`, `direct_media`, `article`, `pdf`, `local_file`, `stdin`, and `unknown_url`.
+
 ---
 
 ## `inkwell transcribe --json`
@@ -189,6 +191,8 @@ Example response:
 ```
 
 For feed runs with `--count`, `results` contains one entry per processed episode.
+
+For generic article URLs, `input.kind` is `article` after local extraction succeeds. For local text PDFs, it is `pdf`. These sources skip media transcription; the transcription section reports text-style attempts such as `article` or `pdf`.
 
 ---
 

@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
+from inkwell.config.schema import ExtractionConfig
 from inkwell.extraction.cache import ExtractionCache
 from inkwell.extraction.engine import ExtractionEngine
 from inkwell.extraction.models import ExtractionTemplate
@@ -94,6 +95,7 @@ class TestBatchedExtraction:
         """Test successful batched extraction of multiple templates."""
         # Pass API key directly so engine knows gemini is available
         engine = ExtractionEngine(
+            config=ExtractionConfig(short_content_bypass_enabled=False),
             cache=temp_cache,
             gemini_api_key="AIzaSyD" + "X" * 32,
         )
@@ -214,7 +216,10 @@ class TestBatchedExtraction:
             patch("inkwell.extraction.extractors.claude.ClaudeExtractor"),
             patch("inkwell.extraction.extractors.gemini.GeminiExtractor"),
         ):
-            engine = ExtractionEngine(cache=temp_cache)
+            engine = ExtractionEngine(
+                config=ExtractionConfig(short_content_bypass_enabled=False),
+                cache=temp_cache,
+            )
 
             transcript = "Test transcript"
             metadata = {"episode_url": "https://example.com/ep1"}

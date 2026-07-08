@@ -1,173 +1,342 @@
 # AGENTS.md
 
-This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
+This file provides guidance to Codex when working in this repository.
 
 ## Project Overview
 
-**Inkwell** is a CLI tool and small web app that transforms podcast episodes and media URLs into structured, searchable markdown notes. The Python pipeline handles RSS/private-feed ingestion, YouTube URL ingestion, transcription, LLM extraction, optional interview capture, and Obsidian-friendly output. The web app lets signed-in users paste URLs, run the Python pipeline through a Modal worker, and save generated notes in Supabase.
+Inkwell is a CLI tool and small web app that transforms podcast episodes and
+media URLs into structured, searchable Markdown notes. The Python pipeline
+handles RSS/private-feed ingestion, direct URL ingestion, YouTube URL ingestion,
+transcription, LLM extraction, optional interview capture, and Obsidian-friendly
+output. The web app lets signed-in users paste URLs, run the Python pipeline
+through a Modal worker, and save generated notes in Supabase.
 
-**Vision:** Transform passive podcast listening into active knowledge building by capturing both *what was said* and *what you thought about it*.
+Vision: transform passive podcast listening into active knowledge building by
+capturing both what was said and what the user thought about it.
 
-See [docs/_internal/prd.md](./docs/_internal/prd.md) for complete product requirements.
+See `docs/_internal/prd.md` for complete product requirements.
 
 ## Tech Stack
 
-**Language & Core:**
+Language and core:
+
 - Python 3.10+
-- CLI Framework: `typer`
-- Terminal Output: `rich`
-- Config: `pyyaml`
+- CLI framework: `typer`
+- Terminal output: `rich`
+- Config: `pyyaml` and Pydantic settings
+- Package/dependency management: `uv`
 
-**Podcast Processing:**
-- RSS Parsing: `feedparser`
-- Audio Download: `yt-dlp`
-- Transcription: `youtube-transcript-api` (primary), `google-genai` / Gemini (public YouTube URL and audio fallback)
+Podcast and source processing:
 
-**LLM & AI:**
-- Interview Mode: Codex Agent SDK
-- Content Extraction: Claude/Gemini APIs
+- RSS parsing: `feedparser`
+- Audio download: `yt-dlp`
+- Transcription: `youtube-transcript-api`, then `google-genai` / Gemini public
+  YouTube URL and audio fallbacks
+- Text/PDF extraction for supported direct inputs
 
-**Web App:**
+LLM and AI:
+
+- Content extraction: Claude and Gemini APIs
+- Interview mode: Anthropic SDK via `AsyncAnthropic`
+- Prompt-configured extraction templates in `src/inkwell/templates/`
+
+Web app:
+
 - Frontend: Next.js App Router in `apps/web/`
-- Hosting/Auth/Data: Vercel + Supabase Auth/Postgres/RLS
+- Hosting/auth/data: Vercel and Supabase Auth/Postgres/RLS
 - Worker: Modal in `workers/inkwell/`
 
-**System Requirements:**
-- ffmpeg (required for audio processing)
-- Google AI (Gemini) API key
-- Anthropic (Codex) API key for interview mode
+System requirements:
+
+- `ffmpeg` for audio processing
+- Google AI API key for Gemini transcription and fallback paths
+- Anthropic API key for Claude extraction or interview mode
 
 ## Development Setup
 
 Install dependencies and hooks:
-```bash
-# Install project dependencies
-uv sync --dev
 
-# REQUIRED: Install git hooks (prevents CI failures)
+```bash
+uv sync --dev
 uvx pre-commit install
 uvx pre-commit install --hook-type pre-push
 ```
 
-**The pre-push hook runs the full test suite before pushing.** This prevents CI failures.
+If using the repo hook wrapper:
 
-Run tests:
+```bash
+./.claude/hooks/install-git-hooks.sh
+```
+
+Run Python checks:
+
 ```bash
 uv run pytest
-```
-
-Run linter:
-```bash
 uv run ruff check .
+uv run ruff format --check .
 ```
 
-Run formatter:
+Format Python files:
+
 ```bash
 uv run ruff format .
 ```
 
+Run web checks from the repo root:
+
+```bash
+pnpm --dir apps/web test
+pnpm --dir apps/web build
+```
+
 ## Python Tooling
 
-**IMPORTANT:** Always use `uv` for package management. Never use `pip install` or manual venv activation.
+Always use `uv` for Python package management. Never use `pip install` or manual
+virtualenv activation.
 
-- `uv add <package>` - Add production dependency
-- `uv add --dev <package>` - Add dev dependency
-- `uv run <command>` - Run commands in project venv
-- `uv sync --dev` - Install all dependencies
+- `uv add <package>` adds a production dependency.
+- `uv add --dev <package>` adds a dev dependency.
+- `uv run <command>` runs commands in the project environment.
+- `uv sync --dev` installs dependencies for local development.
 
-See [ADR-008](./docs/building-in-public/adr/008-use-uv-for-python-tooling.md) for rationale.
+See `docs/building-in-public/adr/008-use-uv-for-python-tooling.md`.
 
 ## Architecture
 
-### Core Pipeline Flow
+Core pipeline:
+
 ```text
-RSS Feed / Direct URL → Parse or resolve source → Check YouTube captions
-         → [YouTube] Gemini public URL fallback
-         → [Final fallback] Download Audio
-         → Transcribe (YouTube captions, Gemini public YouTube URL, or Gemini audio)
-         → LLM Extraction Pipeline
-         → [Optional] Interactive Interview
-         → Generate Markdown Files
-         → Save to Output Directory
+RSS feed / direct URL / local source
+  -> parse or resolve source
+  -> check YouTube captions
+  -> for public YouTube, try Gemini public URL fallback when captions/downloads fail
+  -> download audio as final media fallback
+  -> transcribe
+  -> run LLM extraction templates
+  -> optionally run interactive interview
+  -> write Markdown output and metadata
 ```
 
-For the web app, Vercel creates durable import jobs in Supabase and dispatches them to the Modal worker. The worker updates job state, runs the same Python pipeline, and writes one saved note row back to Supabase.
+Web import flow:
 
-### Key Components
+```text
+Browser
+  -> Next.js on Vercel
+  -> Supabase source/import_jobs rows
+  -> Modal Python worker
+  -> shared Inkwell Python pipeline
+  -> Supabase notes row
+```
 
-1. **Feed Management** - Add/list/remove podcast feeds with auth support
-2. **Transcription Layer** - YouTube transcript extraction → Gemini public URL fallback → Gemini audio fallback
-3. **LLM Extraction** - Template-based content extraction (quotes, concepts, etc.)
-4. **Interview Mode** - Interactive Q&A using Codex Agent SDK
-5. **Output Generation** - Structured markdown with Obsidian compatibility
-6. **Web Import Flow** - Next.js app, Supabase job/note storage, Modal worker dispatch
+Key components:
 
-### Output Structure
+- Feed management: add, list, rename, remove feeds with auth support.
+- Source ingestion: RSS entries, direct URLs, YouTube URLs, local text/Markdown,
+  PDFs, local media, and stdin where supported.
+- Transcription: YouTube transcripts, Gemini public YouTube URL fallback, Gemini
+  audio fallback, and transcript caching.
+- Extraction: YAML template selection and Claude/Gemini provider routing.
+- Interview: interactive Claude-powered reflective Q&A.
+- Output: episode-scoped Markdown files with `.metadata.yaml`.
+- Plugins: extraction, transcription, and output plugin registries.
+- Web app: Supabase-backed import jobs, saved notes, and Modal dispatch.
+
 Each processed episode creates a directory:
-```
+
+```text
 podcast-name-YYYY-MM-DD-episode-title/
-├── .metadata.yaml
-├── summary.md
-├── quotes.md
-├── key-concepts.md
-├── [context-specific].md  # tools-mentioned, books-mentioned, etc.
-└── my-notes.md            # if --interview used
+|-- .metadata.yaml
+|-- _transcript.md
+|-- summary.md
+|-- quotes.md
+|-- key-concepts.md
+|-- [additional-template].md
+`-- my-notes.md (if interview mode runs)
 ```
+
+## Agentic Development Contract
+
+Treat Inkwell as an agent-native product, not only a human CLI. Changes should
+preserve these properties:
+
+- Action parity: anything a user can do through the CLI or web UI should have a
+  programmatic path an agent can call.
+- Primitive capabilities: expose small operations and let prompts define the
+  workflow.
+- Shared workspace: generated notes, metadata, jobs, and saved notes should be
+  visible to users and reusable by agents.
+- Dynamic context: prompts should include available feeds, templates, output
+  files, user preferences, job state, and relevant recent activity.
+- Explicit completion: long-running agent loops should end through clear
+  terminal state, not output-shape guessing.
+- Verifiable output: every agent action should leave inspectable files, JSON,
+  database rows, logs, tests, or command output.
+
+## Local Agent Surfaces
+
+Use existing APIs before scraping terminal output.
+
+| User outcome | CLI surface | Programmatic surface |
+| --- | --- | --- |
+| Manage feeds | `inkwell add`, `inkwell rename`, `inkwell remove`, `inkwell list feeds --json` | `ConfigManager` |
+| Inspect templates | `inkwell list templates --json` | `TemplateLoader` |
+| Process source into notes | `inkwell fetch SOURCE --json` | `PipelineOrchestrator.process_episode()` |
+| Transcribe only | `inkwell transcribe SOURCE --json` | `TranscriptionManager.transcribe()` |
+| Inspect cache | `inkwell cache ...` | transcript, extraction, and media cache classes |
+| Inspect costs | `inkwell costs ...` | `CostTracker` |
+| Manage plugins | `inkwell plugins list/enable/disable/validate` | `PluginRegistry`, `PluginConfigManager` |
+
+Agent-facing CLI behavior should:
+
+- Route operational chatter to stderr when stdout carries structured data.
+- Support `--json` for list, fetch, and transcription workflows where practical.
+- Return stable schema fields before adding cosmetic display fields.
+- Include paths to written files so agents can read back and verify results.
+- Report cache hits, provider/model details, attempts, duration, and costs.
+- Use nonzero exits for actionable failures.
+- Avoid interactive prompts unless a noninteractive flag exists.
+
+When adding a CLI action, add or update the matching programmatic API in the
+same change. If no API exists, keep the CLI behavior easy to wrap and document
+the gap in the PR.
+
+## Cloud Agent Surfaces
+
+The cloud path uses Supabase as the shared workspace and Modal as the only
+runtime that executes media processing. Keep the Python pipeline authoritative;
+do not reimplement pipeline behavior in TypeScript.
+
+Cloud agent work should preserve:
+
+- Durable state in `sources`, `import_jobs`, and `notes`.
+- Owner-scoped mutations using `user_id` plus row id.
+- Explicit terminal states: `succeeded`, `failed`, or `cancelled`.
+- Idempotent result writes by `import_job_id`.
+- Sanitized user-visible errors and detailed Modal logs.
+- The YouTube fallback order: captions, Gemini public YouTube URL clips,
+  Gemini audio fallback.
+
+Hosted tools, if added, should be primitives such as `create_import_job`,
+`read_import_job`, `update_import_job_stage`, `list_user_notes`, `read_note`,
+`update_note`, `delete_note`, `run_pipeline_for_job`, and `complete_task`.
+
+## Prompt-Native Behavior
+
+Keep deterministic infrastructure in code:
+
+- Authentication, path safety, and secret handling
+- Rate limits and retry policies
+- Atomic file writes and metadata integrity
+- Schema validation and durable error codes
+- Cost accounting and cache keys
+- RLS and owner-scoped cloud mutations
+
+Move editable behavior to templates or prompt files:
+
+- Extraction instructions and quality criteria
+- Interview style and question strategy
+- Editorial category heuristics
+- User-facing synthesis rules
+- Agent workflow guidance
+
+Behavior that should be adjustable as prose should not require a Python or
+TypeScript refactor.
+
+## Context Injection
+
+Agents should not operate blindly. Build prompts from live state at session
+start, and refresh context during long sessions when state can change.
+
+Useful context for Inkwell:
+
+- Configured feeds and display names
+- Available extraction templates and template descriptions
+- Selected source URL, source kind, title, podcast name, and episode date
+- Existing output directory and generated files
+- Transcript source, word count, media duration, and attempts
+- Enabled plugins and active provider/transcriber overrides
+- User preferences from config
+- Cache status and estimated or actual costs
+- Supabase source id, job id, job status/stage, and note id for web imports
+- The capabilities available to the agent in user vocabulary
+
+When a user says "fetch this", "make notes", "use the tech template", "add this
+to my Obsidian notes", or "check my import", the agent should have enough
+context to map that language to commands, templates, output paths, database
+rows, and tools.
+
+## Workspace And Safety
+
+Generated notes are shared workspace artifacts. Read existing files before
+overwriting user-editable Markdown. Use atomic writes for generated artifacts.
+Keep ephemeral logs, checkpoints, and traces out of durable user content unless
+the user asked for them.
+
+Safety rules:
+
+- Never print secrets or full auth configs.
+- Do not expose `SUPABASE_SERVICE_ROLE_KEY`, `GOOGLE_API_KEY`,
+  `ANTHROPIC_API_KEY`, or `INKWELL_WORKER_TOKEN` to the browser.
+- Use Supabase service-role credentials only in trusted server/worker code.
+- Keep RLS enabled for browser-visible tables.
+- Keep destructive operations explicit and reversible where possible.
+- Preserve user edits in generated Markdown.
+- Redact private feed credentials and provider raw responses from logs.
 
 ## Documentation
 
-### User Documentation
-User-facing documentation is built with MkDocs and deployed to Read the Docs. The main sections are:
-- `docs/getting-started/` - Installation, quickstart, tutorials
-- `docs/user-guide/` - Feature documentation
-- `docs/reference/` - CLI commands, templates, configuration
+User-facing documentation is built with MkDocs. Main sections:
 
-### Developer Knowledge System (DKS)
-This project uses a structured documentation system for internal engineering knowledge, located in `docs/building-in-public/`.
+- `docs/getting-started/`
+- `docs/user-guide/`
+- `docs/reference/`
 
-**When Working on Tasks:**
+Internal engineering knowledge lives in `docs/building-in-public/`.
 
-- Create a devlog entry in `docs/building-in-public/devlog/YYYY-MM-DD-description.md` when starting new features
-- Create an ADR in `docs/building-in-public/adr/NNN-decision-title.md` for significant decisions
-- Create research docs in `docs/building-in-public/research/topic-name.md` before major decisions
-- Add lessons learned to `docs/building-in-public/lessons/YYYY-MM-DD-topic.md`
+Use the templates in that tree exactly:
 
-**Templates** are in their respective directories under `docs/building-in-public/`.
+- Devlog: `docs/building-in-public/devlog/YYYY-MM-DD-description.md`
+- ADR: `docs/building-in-public/adr/NNN-decision-title.md`
+- Research: `docs/building-in-public/research/topic-name.md`
+- Lessons: `docs/building-in-public/lessons/YYYY-MM-DD-topic.md`
 
-**IMPORTANT:** Follow templates exactly. Keep ADRs brief to avoid hallucination.
+Keep evergreen docs free of temporal planning headings and open-ended task
+lists. Put active priorities in issues, dated docs, or project updates.
 
-See [docs/building-in-public/](./docs/building-in-public/) for full DKS documentation.
+## Testing Guidance
 
-## Development Workflow
+Let test scope match the blast radius:
 
-When implementing features:
-1. **Start:** Create devlog entry for the feature
-2. **Research:** Document any technology research in `docs/building-in-public/research/`
-3. **Decide:** Create ADR for significant architectural decisions
-4. **Experiment:** Record experiments/benchmarks in `docs/building-in-public/experiments/`
-5. **Reflect:** Add lessons learned to `docs/building-in-public/lessons/` when complete
-6. **Update:** Keep this AGENTS.md updated as the architecture evolves
+- CLI JSON/schema behavior: focused CLI tests.
+- Pipeline behavior: `uv run pytest` or targeted pipeline tests.
+- Prompt/template behavior: rendering and outcome tests.
+- Plugin behavior: discovery, validation, enable/disable persistence.
+- Web behavior: `pnpm --dir apps/web test` and `pnpm --dir apps/web build`.
+- Worker behavior: payload validation, Supabase mutations, and Modal smoke tests
+  when dispatch or runtime behavior changes.
+- Agentic parity: tests or review checklist entries proving each new user action
+  has a programmatic path.
 
-**Before committing:** Install git hooks once after cloning:
-```bash
-./.Codex/hooks/install-git-hooks.sh
-```
-This installs both pre-commit and pre-push hooks that mirror CI checks. See [ADR-007](./docs/building-in-public/adr/007-enforce-pre-commit-hooks.md).
+## Review Checklist
 
-**CI Prevention:** Codex hooks in `.Codex/settings.json` automatically run lint, format, and type checks after code changes, and full test suite before stopping.
+Use this checklist for agentic changes:
+
+- User-facing actions have matching programmatic paths.
+- New behavior is prompt/template-driven when prose should control it.
+- Tools expose primitives, not hidden workflows.
+- Agents can discover available resources without guessing.
+- Outputs are shared, inspectable, and safe to overwrite only after reading.
+- JSON output remains stable or is versioned.
+- Supabase writes are owner-scoped and RLS remains enabled.
+- Long-running work has durable progress and terminal state.
+- Tests verify outcomes and failure modes.
 
 ## Releasing
 
-Versions are managed via git tags (see `dynamic = ["version"]` in pyproject.toml).
-
-**To release a new version:**
+Versions are managed through git tags via `dynamic = ["version"]` in
+`pyproject.toml`.
 
 ```bash
-# Minor version (new features): v0.9.1 → v0.10.0
 gh release create v0.10.0 --generate-notes --title "v0.10.0 - Feature Name"
-
-# Patch version (bug fixes): v0.10.0 → v0.10.1
 gh release create v0.10.1 --generate-notes --title "v0.10.1 - Bug Fixes"
 ```
-
-The `--generate-notes` flag auto-generates release notes from merged PRs and commits since the last release.

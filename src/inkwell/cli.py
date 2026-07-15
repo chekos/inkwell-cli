@@ -33,8 +33,10 @@ from inkwell.ingestion import (
     ContentSource,
     ContentSourceKind,
     InputResolver,
+    OCRMode,
     extract_article_text_from_url,
-    extract_text_from_pdf,
+    extract_source_text_from_image,
+    extract_source_text_from_pdf,
 )
 from inkwell.pipeline import PipelineOptions, PipelineOrchestrator, PipelineResult
 from inkwell.transcription import CostEstimate, TranscriptionManager, TranscriptionResult
@@ -61,6 +63,20 @@ err_console = Console(stderr=True)
 
 _LOCAL_TEXT_EXTENSIONS = {".txt", ".md", ".markdown"}
 _LOCAL_PDF_EXTENSIONS = {".pdf"}
+_LOCAL_IMAGE_EXTENSIONS = {
+    ".bmp",
+    ".gif",
+    ".jpeg",
+    ".jpg",
+    ".pbm",
+    ".pgm",
+    ".png",
+    ".pnm",
+    ".ppm",
+    ".tif",
+    ".tiff",
+    ".webp",
+}
 _LOCAL_MEDIA_EXTENSIONS = {
     ".aac",
     ".aif",
@@ -179,8 +195,13 @@ def _is_local_text_path(path: Path) -> bool:
 
 
 def _is_local_pdf_path(path: Path) -> bool:
-    """Return True for local text-PDF inputs."""
+    """Return True for local PDF inputs."""
     return path.suffix.lower() in _LOCAL_PDF_EXTENSIONS
+
+
+def _is_local_image_path(path: Path) -> bool:
+    """Return True for local image formats supported by the OCR extra."""
+    return path.suffix.lower() in _LOCAL_IMAGE_EXTENSIONS
 
 
 def _is_local_media_path(path: Path) -> bool:
@@ -363,6 +384,7 @@ def _fetch_result_payload(result: PipelineResult) -> dict[str, Any]:
             "completed": result.interview_result is not None,
             "cost_usd": result.interview_cost_usd,
         },
+        "source_extraction": metadata.custom_fields.get("source_extraction"),
     }
 
 
@@ -1383,7 +1405,9 @@ def cache_command(
 
 @app.command("fetch")
 def fetch_command(
-    url_or_feed: str = typer.Argument(..., help="Episode URL or configured feed name"),
+    url_or_feed: str = typer.Argument(
+        ..., help="Episode URL, configured feed name, or local media/document/image file"
+    ),
     output_dir: Path | None = typer.Option(
         None, "--output-dir", "-o", help="Base directory for output (default: ~/inkwell-notes)"
     ),
@@ -1464,6 +1488,23 @@ def fetch_command(
         help="Force specific transcription plugin (e.g., youtube, gemini)",
         envvar="INKWELL_TRANSCRIBER",
     ),
+    ocr_mode: OCRMode = typer.Option(
+        OCRMode.AUTO,
+        "--ocr-mode",
+        case_sensitive=False,
+        help="Local OCR behavior for images/PDFs: auto, always, or never",
+    ),
+    ocr_engine: str | None = typer.Option(
+        None,
+        "--ocr-engine",
+        help="Force a local OCR plugin (default: tesseract)",
+        envvar="INKWELL_OCR",
+    ),
+    ocr_language: str = typer.Option(
+        "eng",
+        "--ocr-language",
+        help="Tesseract language code(s), for example eng, spa, or eng+spa",
+    ),
     json_output: bool = typer.Option(
         False,
         "--json",
@@ -1512,6 +1553,10 @@ def fetch_command(
         inkwell fetch https://... --extractor claude  # Force Claude extractor
 
         inkwell fetch https://... --transcriber gemini  # Force Gemini transcriber
+
+        inkwell fetch ./scan.png  # Local OCR into normal note output
+
+        inkwell fetch ./document.pdf --ocr-mode auto --ocr-language eng
     """
 
     async def run_fetch() -> None:
@@ -1580,6 +1625,7 @@ def fetch_command(
             ep: Episode | None = None
             source_text: str | None = None
             source_kind: str | None = None
+            source_metadata: dict[str, Any] | None = None
             source_episode_title: str | None = None
             source_podcast_name: str | None = None
             # Set when the argument resolves to a configured feed (and we fan
@@ -1643,14 +1689,42 @@ def fetch_command(
                     source_podcast_name = "Local Files"
                     url = str(local_path)
                 elif _is_local_pdf_path(local_path):
-                    source_text = extract_text_from_pdf(local_path)
-                    source_kind = "pdf"
+                    source_result = extract_source_text_from_pdf(
+                        local_path,
+                        ocr_mode=ocr_mode,
+                        ocr_engine=ocr_engine,
+                        ocr_language=ocr_language,
+                    )
+                    source_text = source_result.text
+                    source_kind = source_result.source_kind
+                    source_metadata = source_result.provenance()
                     source_episode_title = local_path.stem
                     source_podcast_name = "Documents"
                     url = str(local_path)
+                    for source_warning in source_result.warnings:
+                        status_console.print(f"[yellow]⚠[/yellow] {source_warning}")
                     input_source = ContentSource(
                         raw_input=input_source.raw_input,
                         kind=ContentSourceKind.PDF,
+                        value=str(local_path),
+                        path=local_path,
+                    )
+                elif _is_local_image_path(local_path):
+                    source_result = extract_source_text_from_image(
+                        local_path,
+                        ocr_mode=ocr_mode,
+                        ocr_engine=ocr_engine,
+                        ocr_language=ocr_language,
+                    )
+                    source_text = source_result.text
+                    source_kind = source_result.source_kind
+                    source_metadata = source_result.provenance()
+                    source_episode_title = local_path.stem
+                    source_podcast_name = "Images"
+                    url = str(local_path)
+                    input_source = ContentSource(
+                        raw_input=input_source.raw_input,
+                        kind=ContentSourceKind.IMAGE,
                         value=str(local_path),
                         path=local_path,
                     )
@@ -1662,8 +1736,8 @@ def fetch_command(
                     raise ValidationError(
                         f"Unsupported local file type: {local_path.suffix or '<none>'}",
                         suggestion=(
-                            "Use local audio/video, .txt, .md, or text PDF files. "
-                            "Slides and OCR/image ingestion are planned later."
+                            "Use local audio/video, .txt, .md, PDF, PNG, JPEG, TIFF, "
+                            "BMP, GIF, WebP, or PNM files. Video slide extraction remains separate."
                         ),
                     )
 
@@ -1909,6 +1983,7 @@ def fetch_command(
                     podcast_name=podcast_name or detected_podcast_name,
                     source_text=source_text,
                     source_kind=source_kind,
+                    source_metadata=source_metadata,
                     extractor=extractor,
                     transcriber=transcriber,
                     force_extraction=force_extraction,

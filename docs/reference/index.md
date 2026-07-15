@@ -10,7 +10,8 @@ Technical reference documentation for Inkwell.
 Complete reference for all Inkwell commands, options, and flags.
 
 ### [Supported Inputs](supported-inputs.md)
-Input support matrix for saved feeds, URLs, local files, stdin, and planned future formats.
+Input support matrix for saved feeds, URLs, local files, image/PDF OCR, stdin,
+and planned future formats.
 
 ### [Machine-Readable Output](machine-readable-output.md)
 JSON/plain output contracts for shell scripts and automation.

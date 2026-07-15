@@ -192,7 +192,11 @@ Example response:
 
 For feed runs with `--count`, `results` contains one entry per processed episode.
 
-For generic article URLs, `input.kind` is `article` after local extraction succeeds. For local text PDFs, it is `pdf`. These sources skip media transcription; the transcription section reports text-style attempts such as `article` or `pdf`.
+For generic article URLs, `input.kind` is `article` after local extraction
+succeeds. Local PDFs use `pdf`, and local OCR images use `image`. These sources
+skip media transcription; the transcription section reports text-style attempts
+such as `article`, `pdf`, or `image`. Each fetch result may include a
+`source_extraction` object with deterministic local provenance for images/PDFs.
 
 ---
 

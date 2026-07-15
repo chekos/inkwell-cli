@@ -7,8 +7,9 @@ This file provides guidance to Codex when working in this repository.
 Inkwell is a CLI tool and small web app that transforms podcast episodes and
 media URLs into structured, searchable Markdown notes. The Python pipeline
 handles RSS/private-feed ingestion, direct URL ingestion, YouTube URL ingestion,
-transcription, LLM extraction, optional interview capture, and Obsidian-friendly
-output. The web app lets signed-in users paste URLs, run the Python pipeline
+local image/PDF text extraction and OCR, transcription, LLM extraction, optional
+interview capture, and Obsidian-friendly output. The web app lets signed-in users
+paste URLs, run the Python pipeline
 through a Modal worker, and save generated notes in Supabase.
 
 Vision: transform passive podcast listening into active knowledge building by
@@ -32,7 +33,7 @@ Podcast and source processing:
 - Audio download: `yt-dlp`
 - Transcription: `youtube-transcript-api`, then `google-genai` / Gemini public
   YouTube URL and audio fallbacks
-- Text/PDF extraction for supported direct inputs
+- Text, image, and PDF extraction for supported local inputs
 
 LLM and AI:
 
@@ -49,6 +50,7 @@ Web app:
 System requirements:
 
 - `ffmpeg` for audio processing
+- Tesseract plus the `ocr` Python extra for optional local image/PDF OCR
 - Google AI API key for Gemini transcription and fallback paths
 - Anthropic API key for Claude extraction or interview mode
 
@@ -106,8 +108,9 @@ See `docs/building-in-public/adr/008-use-uv-for-python-tooling.md`.
 Core pipeline:
 
 ```text
-RSS feed / direct URL / local source
+RSS feed / direct URL / local source / local image or PDF
   -> parse or resolve source
+  -> extract local source text or run local OCR when applicable
   -> check YouTube captions
   -> for public YouTube, try Gemini public URL fallback when captions/downloads fail
   -> download audio as final media fallback
@@ -132,7 +135,7 @@ Key components:
 
 - Feed management: add, list, rename, remove feeds with auth support.
 - Source ingestion: RSS entries, direct URLs, YouTube URLs, local text/Markdown,
-  PDFs, local media, and stdin where supported.
+  images, selectable or image-based PDFs, local media, and stdin where supported.
 - Transcription: YouTube transcripts, Gemini public YouTube URL fallback, Gemini
   audio fallback, and transcript caching.
 - Extraction: YAML template selection and Claude/Gemini provider routing.

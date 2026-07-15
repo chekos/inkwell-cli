@@ -24,6 +24,7 @@ class TestPluginsList:
         assert "Extraction Plugins" in result.stdout or "extraction" in result.stdout.lower()
         assert "Transcription Plugins" in result.stdout or "transcription" in result.stdout.lower()
         assert "Output Plugins" in result.stdout or "output" in result.stdout.lower()
+        assert "OCR Plugins" in result.stdout or "ocr" in result.stdout.lower()
 
     def test_plugins_list_shows_youtube_transcriber(self) -> None:
         """Test that youtube transcriber is listed."""
@@ -54,6 +55,15 @@ class TestPluginsList:
         assert result.exit_code == 0
         assert "direct-youtube" in result.stdout
         assert "timestamps" in result.stdout
+
+    def test_plugins_list_shows_local_ocr_capabilities(self) -> None:
+        """Test that the built-in OCR plugin advertises local-only behavior."""
+        result = runner.invoke(app, ["plugins", "list", "--type", "ocr"])
+
+        assert result.exit_code == 0
+        assert "tessera" in result.stdout.lower()
+        assert "local" in result.stdout.lower()
+        assert "orientation" in result.stdout.lower()
 
     def test_plugins_list_invalid_type(self) -> None:
         """Test error handling for invalid plugin type."""
@@ -164,3 +174,13 @@ class TestFetchPluginOverrides:
         assert result.exit_code == 0
         assert "--transcriber" in result.stdout
         assert "INKWELL_TRANSCRIBER" in result.stdout
+
+    def test_fetch_help_shows_local_ocr_options(self) -> None:
+        """Test that image/PDF OCR controls are discoverable on fetch."""
+        result = runner.invoke(app, ["fetch", "--help"])
+
+        assert result.exit_code == 0
+        assert "--ocr-mode" in result.stdout
+        assert "--ocr-engine" in result.stdout
+        assert "--ocr-language" in result.stdout
+        assert "INKWELL_OCR" in result.stdout

@@ -28,6 +28,13 @@ That's it! Your structured notes are now in `~/inkwell-notes/`.
 ### Automatic Transcription
 Inkwell first checks for free YouTube transcripts. For public YouTube videos where cloud workers are blocked from captions or downloads, it can ask Gemini to process bounded clips directly from the public video URL. For other sources, it downloads audio and uses Gemini as the final transcription fallback.
 
+### Local Image And PDF Text Extraction
+
+Selectable PDF text is reused directly. With the optional OCR extra, images and
+scanned PDF pages are read locally through Tesseract before entering the same
+template and markdown pipeline. No hosted account or remote document storage is
+required for OCR.
+
 ### AI-Powered Extraction
 Extract what matters from each episode:
 
@@ -154,6 +161,7 @@ Inkwell is built in public. Browse our [engineering notes](building-in-public/in
 - ffmpeg (for audio processing)
 - Google AI API key (for transcription and extraction)
 - Anthropic API key (optional, for interview mode)
+- Tesseract and the `ocr` extra (optional, for local image/scanned-PDF OCR)
 
 ---
 

@@ -3,9 +3,9 @@
 This module owns only source classification and minimal path checks. The CLI
 uses the resulting `ContentSource` to route saved feeds, URLs, local media,
 local text, and stdin into the appropriate pipeline path. More expensive work
-such as feed fetching, file reading, PDF parsing, article cleanup,
-transcription, and extraction stays outside the resolver. Dedicated slide and
-OCR routes remain separate follow-up ingestion work.
+such as feed fetching, file reading, PDF parsing, article cleanup, local OCR,
+transcription, and extraction stays outside the resolver. Dedicated video slide
+routes remain separate follow-up ingestion work.
 """
 
 from __future__ import annotations
@@ -30,6 +30,7 @@ class ContentSourceKind(str, Enum):
     YOUTUBE = "youtube"
     ARTICLE = "article"
     PDF = "pdf"
+    IMAGE = "image"
     UNKNOWN_URL = "unknown_url"
 
 

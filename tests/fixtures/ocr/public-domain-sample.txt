@@ -1,0 +1,4 @@
+INKWELL LOCAL OCR
+
+This synthetic regression text is public and contains no private user content.
+It verifies local image and document extraction without uploading source material.

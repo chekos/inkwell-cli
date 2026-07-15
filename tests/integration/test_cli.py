@@ -1522,15 +1522,31 @@ class TestCLIFetchSaveFeed:
     def test_fetch_local_pdf_routes_source_text_to_pipeline(
         self, tmp_path: Path, monkeypatch
     ) -> None:
-        """Text PDFs bypass media transcription and feed extraction templates."""
+        """PDF extraction bypasses transcription and carries local provenance."""
+        from inkwell.ingestion.models import SourcePageProvenance, SourceTextResult
+
         monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
-        monkeypatch.setattr(
-            "inkwell.cli.extract_text_from_pdf",
-            lambda _path: "Selectable PDF text for extraction.",
-        )
 
         local_pdf = tmp_path / "paper.pdf"
         local_pdf.write_bytes(b"%PDF")
+        source_result = SourceTextResult(
+            text="Selectable PDF text for extraction.",
+            source_kind="pdf",
+            media_type="application/pdf",
+            source_path=local_pdf,
+            method="selectable_text",
+            pages=(
+                SourcePageProvenance(
+                    page_number=1,
+                    extraction_method="selectable_text",
+                    character_count=35,
+                ),
+            ),
+        )
+        monkeypatch.setattr(
+            "inkwell.cli.extract_source_text_from_pdf",
+            lambda _path, **_kwargs: source_result,
+        )
         output_dir = tmp_path / "episode-dir"
         output_dir.mkdir()
         seen: dict[str, object] = {}
@@ -1539,6 +1555,7 @@ class TestCLIFetchSaveFeed:
             seen["url"] = options.url
             seen["source_text"] = options.source_text
             seen["source_kind"] = options.source_kind
+            seen["source_metadata"] = options.source_metadata
             seen["episode_title"] = options.episode_title
             return _sample_pipeline_result(output_dir)
 
@@ -1559,7 +1576,73 @@ class TestCLIFetchSaveFeed:
         assert seen["url"] == str(local_pdf)
         assert seen["source_text"] == "Selectable PDF text for extraction."
         assert seen["source_kind"] == "pdf"
+        assert isinstance(seen["source_metadata"], dict)
+        assert seen["source_metadata"]["local_only"] is True  # type: ignore[index]
         assert seen["episode_title"] == "paper"
+
+    def test_fetch_local_image_routes_ocr_text_to_pipeline(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """Local images use OCR through the same source-text pipeline contract."""
+        from inkwell.ingestion.models import SourcePageProvenance, SourceTextResult
+
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+
+        local_image = tmp_path / "public-note.png"
+        local_image.write_bytes(b"synthetic-public-image")
+        source_result = SourceTextResult(
+            text="Public OCR fixture text.",
+            source_kind="image",
+            media_type="image/png",
+            source_path=local_image,
+            method="ocr",
+            pages=(
+                SourcePageProvenance(
+                    page_number=1,
+                    extraction_method="ocr",
+                    character_count=24,
+                    confidence=94.5,
+                    rotation_degrees=90,
+                ),
+            ),
+            ocr_engine="tesseract",
+            ocr_engine_version="5.5.1",
+            ocr_language="eng",
+        )
+        monkeypatch.setattr(
+            "inkwell.cli.extract_source_text_from_image",
+            lambda _path, **_kwargs: source_result,
+        )
+
+        output_dir = tmp_path / "episode-dir"
+        output_dir.mkdir()
+        seen: dict[str, object] = {}
+
+        async def fake_process(_orchestrator, options, *_args, **_kwargs):
+            seen["source_text"] = options.source_text
+            seen["source_kind"] = options.source_kind
+            seen["source_metadata"] = options.source_metadata
+            return _sample_pipeline_result(output_dir)
+
+        monkeypatch.setattr("inkwell.pipeline.PipelineOrchestrator.process_episode", fake_process)
+
+        result = runner.invoke(
+            app,
+            [
+                "fetch",
+                str(local_image),
+                "--ocr-language",
+                "eng",
+                "--dry-run",
+                "--output-dir",
+                str(tmp_path),
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert seen["source_text"] == "Public OCR fixture text."
+        assert seen["source_kind"] == "image"
+        assert seen["source_metadata"]["ocr"]["engine"] == "tesseract"  # type: ignore[index]
 
     def test_fetch_stdin_routes_source_text_to_pipeline(self, tmp_path: Path, monkeypatch) -> None:
         """Stdin text bypasses transcription and feeds extraction templates."""
@@ -1641,7 +1724,7 @@ class TestCLIFetchSaveFeed:
 
         assert result.exit_code != 0
         assert "Unsupported local file type" in result.output
-        assert "Slides" in result.output or "OCR" in result.output
+        assert "Video slide extraction remains separate" in result.output
 
 
 class TestCLIFetchHintSuppression:

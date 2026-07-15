@@ -18,6 +18,9 @@ and markdown output path is useful for short notes, web articles, and documents.
 The active roadmap calls for local-only article extraction and text-only PDFs,
 while deferring OCR/image PDFs and hosted article fallbacks.
 
+The OCR deferral in this decision was later resolved by ADR 040. Hosted article
+fallbacks and slide/video-frame extraction remain separate boundaries.
+
 The key boundary is source text. Once source text is available, the existing
 pipeline can skip media transcription and reuse template selection, extraction
 caching, markdown output, interview mode, and machine-readable output.

@@ -15,7 +15,9 @@ For a normal remote media or episode URL, the default policy can produce:
 
 For local media files, the policy goes directly to Gemini local media transcription. Local media does not run through `yt-dlp`.
 
-Source-text inputs such as local text/markdown, stdin, locally extracted articles, and text PDFs bypass this policy entirely and enter extraction as text.
+Source-text inputs such as local text/markdown, stdin, locally extracted
+articles, images, and PDFs bypass this policy entirely and enter extraction as
+text. Optional OCR is an ingestion plugin, not a transcription attempt.
 
 ---
 
@@ -58,5 +60,5 @@ This policy does not yet add:
 
 - new transcription providers
 - token-aware routing
-- slide or OCR ingestion
+- slide/video-frame ingestion
 - cross-provider quality scoring

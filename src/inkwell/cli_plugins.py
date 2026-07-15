@@ -20,7 +20,7 @@ from inkwell.plugins import (
     discover_all_plugins,
 )
 from inkwell.plugins.config import PluginConfigManager
-from inkwell.plugins.types import ExtractionPlugin, OutputPlugin, TranscriptionPlugin
+from inkwell.plugins.types import ExtractionPlugin, OCRPlugin, OutputPlugin, TranscriptionPlugin
 
 app = typer.Typer(
     name="plugins",
@@ -36,6 +36,7 @@ def _get_plugin_type_label(plugin_type: str) -> str:
         "extraction": "Extraction Plugins",
         "transcription": "Transcription Plugins",
         "output": "Output Plugins",
+        "ocr": "OCR Plugins",
     }
     return labels.get(plugin_type, plugin_type.title())
 
@@ -86,6 +87,7 @@ def _load_all_registries() -> dict[str, PluginRegistry]:
         "extraction": ExtractionPlugin,
         "transcription": TranscriptionPlugin,
         "output": OutputPlugin,
+        "ocr": OCRPlugin,
     }
 
     registries = {}
@@ -133,7 +135,7 @@ def list_plugins(
         None,
         "--type",
         "-t",
-        help="Filter by plugin type: extraction, transcription, output",
+        help="Filter by plugin type: extraction, transcription, output, ocr",
     ),
     show_all: bool = typer.Option(False, "--all", "-a", help="Show all plugins including disabled"),
 ) -> None:

@@ -5,7 +5,7 @@ import logging
 import os
 from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, cast
 from urllib.parse import parse_qs, urlparse
 
 from google import genai
@@ -30,6 +30,8 @@ from inkwell.utils.errors import APIError
 from inkwell.utils.rate_limiter import get_rate_limiter
 
 if TYPE_CHECKING:
+    from PIL.Image import Image as PILImage
+
     from inkwell.utils.costs import CostTracker
 
 logger = logging.getLogger(__name__)
@@ -525,9 +527,12 @@ class GeminiTranscriber(TranscriptionPlugin):
             f"[01:30] Host: That's a great point. Let me add that...\n"
         )
 
+        contents: list[
+            str | PILImage | types.File | types.FileDict | types.Part | types.PartDict
+        ] = [cast(types.File, audio_file), prompt]
         response = self.client.models.generate_content(
             model=self.model_name,
-            contents=[audio_file, prompt],
+            contents=contents,
             config=types.GenerateContentConfig(
                 response_mime_type="text/plain",
                 max_output_tokens=65536,
@@ -640,9 +645,12 @@ class GeminiTranscriber(TranscriptionPlugin):
             "[00:15] Guest: Thanks for having me. I've been working on...\n"
         )
 
+        contents: list[
+            str | PILImage | types.File | types.FileDict | types.Part | types.PartDict
+        ] = [cast(types.File, audio_file), prompt]
         response = self.client.models.generate_content(
             model=self.model_name,
-            contents=[audio_file, prompt],
+            contents=contents,
             config=types.GenerateContentConfig(
                 response_mime_type="text/plain",
                 max_output_tokens=65536,  # Support long transcripts (2+ hours)

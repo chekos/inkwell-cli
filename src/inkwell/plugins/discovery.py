@@ -7,6 +7,7 @@ Entry Point Groups:
     - inkwell.plugins.extraction: ExtractionPlugin implementations
     - inkwell.plugins.transcription: TranscriptionPlugin implementations
     - inkwell.plugins.output: OutputPlugin implementations
+    - inkwell.plugins.ocr: OCRPlugin implementations
 """
 
 from collections.abc import Iterator
@@ -24,6 +25,7 @@ ENTRY_POINT_GROUPS = {
     "extraction": "inkwell.plugins.extraction",
     "transcription": "inkwell.plugins.transcription",
     "output": "inkwell.plugins.output",
+    "ocr": "inkwell.plugins.ocr",
 }
 
 
@@ -204,7 +206,7 @@ def get_entry_point_group(plugin_type: str) -> str:
     """Get the entry point group name for a plugin type.
 
     Args:
-        plugin_type: Short name like "extraction", "transcription", "output".
+        plugin_type: Short name like "extraction", "transcription", "output", or "ocr".
 
     Returns:
         Full entry point group name.

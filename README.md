@@ -21,12 +21,12 @@ Current health baseline:
 - Conservative input resolution for feeds, URLs, local files, stdin, direct media, and YouTube
 - Multi-tier transcription: cache → YouTube transcripts → Gemini YouTube URL/audio fallback
 - Transcript-only extraction for media workflows
-- Local audio/video ingestion plus local text/markdown and stdin extraction
+- Local audio/video ingestion plus local text/markdown, image/PDF OCR, and stdin extraction
 - Template-based LLM extraction with Claude/Gemini providers
 - Interactive interview mode
 - Obsidian-friendly markdown with frontmatter, wikilinks, and tags
 - JSON/plain output modes for scripting `fetch` and `transcribe`
-- Plugin architecture for extraction, transcription, and output providers
+- Plugin architecture for extraction, transcription, OCR, and output providers
 - Cost tracking, cache observability, bounded media cache controls, retry logic, and structured errors
 - 1,300+ tests with a measured 75%+ coverage gate
 
@@ -37,6 +37,13 @@ Current health baseline:
 ```bash
 # Install as a CLI tool
 uv tool install inkwell-cli
+```
+
+For local image or scanned-PDF OCR, install the optional extra and Tesseract:
+
+```bash
+uv tool install 'inkwell-cli[ocr]'
+brew install tesseract  # macOS; use your OS package manager elsewhere
 ```
 
 Inkwell is distributed as the `inkwell-cli` package on PyPI. `uv tool install`
@@ -86,6 +93,10 @@ inkwell fetch ~/Downloads/interview.mp3
 inkwell fetch ./notes.md
 pbpaste | inkwell fetch -
 
+# Process a local image or scanned PDF with local OCR
+inkwell fetch ./whiteboard.png
+inkwell fetch ./scanned-paper.pdf
+
 # Get transcript text only
 inkwell fetch https://youtube.com/watch?v=xyz --extract
 ```
@@ -113,6 +124,15 @@ inkwell fetch https://youtube.com/watch?v=xyz --extract
 **Obsidian Features**:
 - **Wikilinks**: Auto-generated `[[links]]` for entities (books, people, concepts)
 - **Tags**: Smart tag generation using LLM (e.g., `#productivity`, `#ai`, `#health`)
+
+### 🔎 Local Document OCR
+
+Images and scanned PDFs can be read locally through the optional Tesseract OCR
+plugin. Selectable PDF text is reused automatically; only pages without enough
+text fall back to OCR. Source bytes stay on the machine and deterministic
+provenance is recorded in `.metadata.yaml`. Normal note extraction can still
+send the resulting text to the configured LLM; use `--extract` for local text
+extraction without template or interview API calls.
 - **Dataview**: Rich frontmatter for Obsidian Dataview queries
 
 ### 💬 Interactive Interview Mode
@@ -302,7 +322,8 @@ inkwell fetch https://youtube.com/watch?v=xyz --extract
 inkwell fetch syntax --latest --extract --output-dir ~/transcripts --plain
 ```
 
-PDF, cleaned web article extraction, slides, and OCR are planned later and are not part of the current local/stdin ingestion path.
+Local PDFs and images enter the source-text path; image-based pages use optional
+local OCR. Slide/video-frame extraction remains a separate capability.
 
 ### Machine-Readable Output
 
@@ -458,9 +479,10 @@ nano ~/.config/inkwell/config.yaml
 ### High-Level Pipeline
 
 ```text
-Feed / URL / local file / stdin → Resolve source
+Feed / URL / local file / image / PDF / stdin → Resolve source
        → [saved feed] Parse episodes
        → [text/stdin] Treat as source text
+       → [image/PDF] Extract selectable text or run local OCR
        → [media] Check transcript cache
        → [YouTube] Check YouTube captions
        → [YouTube only] Gemini public URL fallback
@@ -513,8 +535,8 @@ Feed / URL / local file / stdin → Resolve source
 
 8. **Input Resolution** (`src/inkwell/ingestion/`)
    - Conservative source classification
-   - Saved feed, URL, local file, stdin, direct media, and YouTube source kinds
-   - Foundation for future universal ingestion work
+   - Saved feed, URL, local file, image, PDF, stdin, direct media, and YouTube source kinds
+   - Local article, image, and PDF source-text extraction with inspectable provenance
 
 ### Project Structure
 
@@ -660,8 +682,7 @@ Manual workflow runs publish to TestPyPI only, which keeps release rehearsals sa
 - Custom templates and prompts
 - Batch processing automation
 - Export formats (PDF, HTML)
-- Cleaned web/article extraction
-- PDF, slides, and OCR ingestion
+- Slide/video-frame extraction
 - Token-aware model routing
 - Web dashboard for management
 - Mobile app integration

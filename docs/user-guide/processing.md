@@ -16,7 +16,9 @@ inkwell fetch https://youtube.com/watch?v=xyz
 
 ### Process from Local Files or Stdin
 
-Local audio/video routes through transcription. Local text/markdown, local text PDFs, web articles, and stdin are treated as source text for the extraction templates.
+Local audio/video routes through transcription. Local text/markdown, images,
+PDFs, web articles, and stdin are treated as source text for the extraction
+templates. Image-based pages use optional local OCR.
 
 ```bash
 # Local audio/video
@@ -25,8 +27,9 @@ inkwell fetch ~/Downloads/interview.mp3
 # Local text or markdown
 inkwell fetch ./notes.md
 
-# Local text PDF
+# Local PDF or image
 inkwell fetch ./paper.pdf
+inkwell fetch ./whiteboard.png
 
 # Web article
 inkwell fetch https://example.com/article
@@ -59,7 +62,7 @@ When you run `inkwell fetch`, here's what happens:
 flowchart TD
     A([inkwell fetch URL / feed / file]) --> B[Resolve source\n& episode metadata]
     B --> S{Already text?}
-    S -- Article / PDF / text / stdin --> F[Select extraction templates\nauto or manual]
+    S -- Article / image / PDF / text / stdin --> F[Select extraction templates\nauto or manual]
     S -- Media / feed episode --> C{YouTube transcript\navailable?}
     C -- Yes / Free --> D[Use YouTube transcript]
     C -- No / blocked --> E{Public YouTube URL?}
@@ -223,7 +226,10 @@ inkwell fetch my-podcast --latest --extract --output-dir ~/transcripts --plain
 
 Use this when you want the clean media transcript or source text first and want to decide later whether to run Inkwell's structured note templates or reflection flow.
 
-Web articles and text PDFs use local extraction. Hosted article fallbacks, slide decks, and OCR/image PDFs are not part of this path yet.
+Web articles, PDFs, and images use local extraction. Image/PDF OCR is optional,
+runs through Tesseract on the local machine, and preserves the same markdown
+output contract. Hosted article fallbacks and slide/video-frame extraction are
+not part of this path.
 
 For script-friendly `--json` and `--plain` output, see [Machine-Readable Output](../reference/machine-readable-output.md).
 

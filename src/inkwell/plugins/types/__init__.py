@@ -4,6 +4,7 @@ This package contains base classes for specific plugin types:
 - ExtractionPlugin: LLM-based content extraction (Claude, Gemini, etc.)
 - TranscriptionPlugin: Audio to text conversion
 - OutputPlugin: Output file generation (Markdown, HTML, etc.)
+- OCRPlugin: Local image-to-text extraction
 
 Example:
     >>> from inkwell.plugins.types import ExtractionPlugin, TranscriptionPlugin, OutputPlugin
@@ -25,12 +26,17 @@ Example:
 """
 
 from .extraction import ExtractionCapabilities, ExtractionPlugin
+from .ocr import OCRCapabilities, OCRPlugin, OCRRequest, OCRResult
 from .output import OutputPlugin
 from .transcription import TranscriptionCapabilities, TranscriptionPlugin, TranscriptionRequest
 
 __all__ = [
     "ExtractionCapabilities",
     "ExtractionPlugin",
+    "OCRCapabilities",
+    "OCRPlugin",
+    "OCRRequest",
+    "OCRResult",
     "OutputPlugin",
     "TranscriptionCapabilities",
     "TranscriptionPlugin",

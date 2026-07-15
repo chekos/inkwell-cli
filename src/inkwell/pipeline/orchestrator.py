@@ -7,7 +7,7 @@ separated from CLI presentation concerns.
 import logging
 from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import yaml
 
@@ -223,12 +223,18 @@ class PipelineOrchestrator:
             podcast_name=effective_podcast_name,
         )
 
+        custom_fields: dict[str, Any] = {}
+        if options.source_kind:
+            custom_fields["source_kind"] = options.source_kind
+        if options.source_metadata:
+            custom_fields["source_extraction"] = dict(options.source_metadata)
+
         episode_metadata = EpisodeMetadata(
             podcast_name=effective_podcast_name,
             episode_title=effective_episode_title,
             episode_url=options.url,
             transcription_source=transcript.source,
-            custom_fields={"source_kind": options.source_kind} if options.source_kind else {},
+            custom_fields=custom_fields,
         )
 
         if progress_callback:

@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from inkwell.extraction.models import ExtractionResult, ExtractionSummary
 from inkwell.interview import SimpleInterviewResult
@@ -36,6 +37,7 @@ class PipelineOptions:
     # Already-clean source text (local .txt/.md files or stdin)
     source_text: str | None = None
     source_kind: str | None = None
+    source_metadata: dict[str, Any] | None = None
     # Plugin overrides (from CLI flags or env vars)
     extractor: str | None = None
     transcriber: str | None = None

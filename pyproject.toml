@@ -75,6 +75,11 @@ worker = [
     "fastapi>=0.136.1",
     "modal>=1.4.2",
 ]
+ocr = [
+    "pillow>=11.0.0",
+    "pypdfium2>=4.30.0",
+    "pytesseract>=0.3.13",
+]
 
 [project.scripts]
 inkwell = "inkwell.cli:app"
@@ -91,6 +96,9 @@ gemini = "inkwell.transcription.gemini:GeminiTranscriber"
 
 [project.entry-points."inkwell.plugins.output"]
 markdown = "inkwell.output.markdown:MarkdownOutput"
+
+[project.entry-points."inkwell.plugins.ocr"]
+tesseract = "inkwell.ingestion.ocr:TesseractOCRPlugin"
 
 [build-system]
 requires = ["setuptools>=61.0", "wheel", "setuptools-scm>=8.0"]
@@ -162,6 +170,10 @@ plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
 module = "feedparser.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["pypdfium2.*", "pytesseract.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

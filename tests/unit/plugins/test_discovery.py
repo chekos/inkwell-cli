@@ -171,6 +171,10 @@ class TestGetEntryPointGroup:
         """Test output group name."""
         assert get_entry_point_group("output") == "inkwell.plugins.output"
 
+    def test_ocr(self) -> None:
+        """Test OCR group name."""
+        assert get_entry_point_group("ocr") == "inkwell.plugins.ocr"
+
     def test_invalid_raises(self) -> None:
         """Test invalid type raises ValueError."""
         with pytest.raises(ValueError, match="Unknown plugin type"):
@@ -185,6 +189,7 @@ class TestEntryPointGroups:
         assert "extraction" in ENTRY_POINT_GROUPS
         assert "transcription" in ENTRY_POINT_GROUPS
         assert "output" in ENTRY_POINT_GROUPS
+        assert "ocr" in ENTRY_POINT_GROUPS
 
     def test_group_names_follow_convention(self) -> None:
         """Test group names follow inkwell.plugins.* convention."""

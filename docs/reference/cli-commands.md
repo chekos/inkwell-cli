@@ -254,7 +254,7 @@ inkwell fetch <SOURCE> [OPTIONS]
 
 | Argument | Required | Description |
 |----------|----------|-------------|
-| `SOURCE` | Yes | Feed name, YouTube/media/article URL, local audio/video file, local `.txt`/`.md`/text `.pdf` file, or `-` for stdin text. See [Supported Inputs](supported-inputs.md). |
+| `SOURCE` | Yes | Feed name, YouTube/media/article URL, local audio/video, text, image, or PDF file, or `-` for stdin text. See [Supported Inputs](supported-inputs.md). |
 
 ### Options
 
@@ -281,6 +281,9 @@ inkwell fetch <SOURCE> [OPTIONS]
 | `--resume-session` | | string | | Resume specific interview session by ID |
 | `--extractor` | | string | Auto | Force specific extraction plugin (e.g., claude, gemini) |
 | `--transcriber` | | string | Auto | Force specific transcription plugin (e.g., youtube, gemini) |
+| `--ocr-mode` | | `auto`, `always`, `never` | `auto` | Use OCR only when needed, on every page, or never |
+| `--ocr-engine` | | string | `tesseract` | Force a local OCR plugin; also reads `INKWELL_OCR` |
+| `--ocr-language` | | string | `eng` | Tesseract language code(s), such as `eng`, `spa`, or `eng+spa` |
 | `--json` | | flag | false | Print a JSON envelope to stdout; progress, warnings, and hints go to stderr |
 | `--plain` | | flag | false | Print only generated output directory path(s) to stdout |
 | `--save-feed` | | flag | false | After a successful YouTube URL fetch, also save the channel as a feed. Auto-names the feed from channel metadata unless `--feed-name` is set. |
@@ -298,8 +301,14 @@ inkwell fetch ~/Downloads/interview.mp3
 # From local text or markdown
 inkwell fetch ./notes.md
 
-# From local text PDF
+# From a selectable or scanned PDF
 inkwell fetch ./paper.pdf
+
+# From an image using local OCR
+inkwell fetch ./whiteboard.png
+
+# Force bilingual OCR for every PDF page
+inkwell fetch ./scan.pdf --ocr-mode always --ocr-language eng+spa
 
 # From a readable web article
 inkwell fetch https://example.com/article
@@ -366,11 +375,16 @@ inkwell fetch https://www.youtube.com/watch?v=abc123 --save-feed --feed-name som
 
 # Using environment variable overrides
 INKWELL_EXTRACTOR=gemini inkwell fetch URL
+INKWELL_OCR=tesseract inkwell fetch ./scan.pdf
 ```
 
 `--json` and `--plain` are mutually exclusive. In both modes, stdout is reserved for the primary result and interactive progress output is sent to stderr. See [Machine-Readable Output](machine-readable-output.md) for envelope examples and scripting notes.
 
 `--extract` is transcript/source-text only. It does not run templates, structured extraction, interview mode, or the episode note writer. Without `--output-dir`, transcript or cleaned source text is printed to stdout and progress goes to stderr. With `--output-dir`, Inkwell writes `.transcript.md` file(s) directly into that directory; combine with `--plain` to print the file path(s) to stdout.
+
+Image/PDF OCR runs locally and never uploads the source bytes. Without
+`--extract`, the resulting text continues through the configured extraction
+provider like any other source transcript.
 
 ---
 

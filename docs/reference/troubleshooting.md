@@ -52,6 +52,50 @@ choco install ffmpeg
 
 Verify: `ffmpeg -version`
 
+### "Local OCR engine 'tesseract' is not ready"
+
+**Cause:** The optional Python packages, Tesseract executable, or requested
+language data is missing.
+
+**Solutions:**
+
+```bash
+# Installed CLI
+uv tool install --force 'inkwell-cli[ocr]'
+
+# Source checkout
+uv sync --dev --extra ocr
+
+# macOS / Ubuntu
+brew install tesseract
+sudo apt-get install tesseract-ocr
+
+# Verify
+tesseract --version
+inkwell plugins validate tesseract
+```
+
+Install language data separately when using values such as
+`--ocr-language spa` or `--ocr-language eng+spa`.
+
+### "OCR confidence is too low" or "No readable text found"
+
+**Cause:** The scan may be rotated, blurry, handwritten, unusually laid out, or
+using an uninstalled language. Very large pages are downscaled to stay within
+the local memory bound.
+
+**Solutions:**
+
+1. Use a clearer or higher-resolution scan.
+2. Select installed language data with `--ocr-language`.
+3. Try `--ocr-mode always` if a PDF has misleading selectable text.
+4. Split PDFs longer than 250 pages into smaller documents.
+5. Use `--ocr-mode never` when you only want selectable PDF text.
+
+In `auto` mode, low-confidence OCR falls back to available selectable page text
+and prints a warning. If neither source is trustworthy, Inkwell stops instead
+of writing uncertain text into durable notes.
+
 ### "Python 3.10+ required"
 
 **Cause:** Python version too old.

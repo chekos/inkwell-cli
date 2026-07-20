@@ -50,6 +50,7 @@ dependencies = [
     "jinja2>=3.1.0",
     "trafilatura>=2.1.0",
     "pypdf>=6.14.2",
+    "jsonschema>=4.23",
 ]
 
 [project.urls]
@@ -88,6 +89,7 @@ inkwell = "inkwell.cli:app"
 # Third-party plugins can register their own entry points
 [project.entry-points."inkwell.plugins.extraction"]
 claude = "inkwell.extraction.extractors.claude:ClaudeExtractor"
+codex = "inkwell.extraction.extractors.codex:CodexExtractor"
 gemini = "inkwell.extraction.extractors.gemini:GeminiExtractor"
 
 [project.entry-points."inkwell.plugins.transcription"]
@@ -223,6 +225,7 @@ dev = [
     "respx>=0.22.0",
     "ruff>=0.14.4",
     "types-aiofiles>=25.1.0.20251011",
+    "types-jsonschema>=4.26.0.20260518",
     "types-pyyaml>=6.0.12.20250915",
     "types-regex>=2025.11.3.20251106",
     "types-requests>=2.32.4.20250913",

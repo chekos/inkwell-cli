@@ -200,6 +200,21 @@ class ExtractedContent(BaseModel):
         return len(self.warnings) > 0
 
 
+class ExtractorOutput(BaseModel):
+    """Raw extractor content plus immutable provider/runtime metadata."""
+
+    raw_content: str
+    provider: str
+    model: str
+    input_tokens: int = Field(0, ge=0)
+    output_tokens: int = Field(0, ge=0)
+    cost_usd: float = Field(0.0, ge=0)
+    cost_known: bool = True
+    billing: dict[str, Any] = Field(default_factory=lambda: {"mode": "known", "amount_usd": 0.0})
+    runtime: dict[str, Any] | None = None
+    duration_seconds: float = Field(0.0, ge=0)
+
+
 class ExtractionResult(BaseModel):
     """Result of extraction operation.
 
@@ -226,13 +241,22 @@ class ExtractionResult(BaseModel):
         None, description="Extracted content (if successful)"
     )
     error: str | None = Field(None, description="Error message (if failed)")
+    error_code: str | None = Field(None, description="Stable machine-readable failure code")
 
     # Metrics
     duration_seconds: float = Field(0.0, description="Extraction duration", ge=0)
     tokens_used: int = Field(0, description="Total tokens used (input + output)", ge=0)
     cost_usd: float = Field(0.0, description="Cost in USD", ge=0)
+    cost_known: bool = Field(True, description="Whether cost_usd is a complete monetary amount")
+    billing: dict[str, Any] = Field(
+        default_factory=lambda: {"mode": "known", "amount_usd": 0.0},
+        description="Monetary state, including runtime-managed unknown amounts",
+    )
     provider: str | None = Field(None, description="LLM provider used")
     model: str | None = Field(None, description="Model used for extraction")
+    runtime: dict[str, Any] | None = Field(
+        None, description="Local runtime provenance and usage, when applicable"
+    )
     bypassed: bool = Field(False, description="Whether LLM extraction was bypassed")
     bypass_reason: str | None = Field(None, description="Reason extraction was bypassed")
 
@@ -256,9 +280,10 @@ class ExtractionResult(BaseModel):
         """Get human-readable summary of result."""
         if self.success:
             cache_status = " (cached)" if self.from_cache else ""
+            cost = f"${self.cost_usd:.3f}" if self.cost_known else "unknown (runtime-managed)"
             return (
                 f"✓ {self.template_name}: Success{cache_status} "
-                f"({self.duration_seconds:.1f}s, ${self.cost_usd:.3f})"
+                f"({self.duration_seconds:.1f}s, {cost})"
             )
         else:
             return f"✗ {self.template_name}: Failed - {self.error}"

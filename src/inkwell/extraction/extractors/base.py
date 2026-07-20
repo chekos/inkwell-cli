@@ -7,7 +7,7 @@ must implement, ensuring consistent interface across providers.
 from abc import ABC, abstractmethod
 from typing import Any
 
-from ..models import ExtractionTemplate
+from ..models import ExtractionTemplate, ExtractorOutput
 
 
 class BaseExtractor(ABC):
@@ -48,6 +48,36 @@ class BaseExtractor(ABC):
             ExtractionError: If extraction fails
         """
         pass
+
+    async def extract_with_metadata(
+        self,
+        template: ExtractionTemplate,
+        transcript: str,
+        metadata: dict[str, Any],
+        force_json: bool = False,
+        max_tokens_override: int | None = None,
+    ) -> ExtractorOutput:
+        """Return content plus immutable metadata without shared mutable state."""
+        raw_content = await self.extract(
+            template,
+            transcript,
+            metadata,
+            force_json=force_json,
+            max_tokens_override=max_tokens_override,
+        )
+        model = getattr(self, "model", None) or getattr(self, "MODEL", "unknown")
+        provider = getattr(self, "NAME", self.__class__.__name__.lower())
+        cost = self.estimate_cost(template, len(transcript))
+        return ExtractorOutput(
+            raw_content=raw_content,
+            provider=str(provider),
+            model=str(model),
+            input_tokens=max(0, len(transcript) // 4),
+            output_tokens=max(0, len(raw_content) // 4),
+            cost_usd=cost,
+            cost_known=True,
+            billing={"mode": "known", "amount_usd": cost},
+        )
 
     @abstractmethod
     def estimate_cost(

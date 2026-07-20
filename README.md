@@ -339,6 +339,13 @@ inkwell transcribe https://youtube.com/watch?v=xyz --plain
 
 See the [machine-readable output reference](./docs/reference/machine-readable-output.md) for envelope examples and the stdout/stderr contract.
 
+Local CLI users may explicitly delegate extraction to their separately
+installed and authenticated Codex CLI. Configure a current model with
+`inkwell plugins configure codex model MODEL_ID`, validate with
+`inkwell plugins validate codex --json`, then use `--extractor codex`.
+Direct Claude/Gemini APIs remain the defaults and the only hosted path. See
+[Local Codex Extraction](./docs/user-guide/local-codex-extraction.md).
+
 ### Cache Management
 
 ```bash

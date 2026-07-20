@@ -173,6 +173,25 @@ class TestCostSummary:
         assert summary.costs_by_operation["extraction"] == 0.005
         assert summary.costs_by_episode["Test Episode"] == 0.005
 
+    def test_runtime_managed_usage_marks_aggregate_as_partial(self):
+        """A numeric compatibility zero never makes subscription work look free."""
+        usage = APIUsage(
+            provider="codex",
+            model="explicit-model",
+            operation="extraction",
+            input_tokens=5000,
+            output_tokens=1000,
+            cost_usd=0.0,
+            cost_known=False,
+            billing_mode="runtime_managed",
+        )
+
+        summary = CostSummary.from_usage_list([usage])
+
+        assert summary.total_cost_usd == 0.0
+        assert summary.total_cost_known is False
+        assert summary.unknown_cost_operations == 1
+
     def test_multiple_usage(self):
         """Test summary with multiple usage records."""
         usage1 = APIUsage(

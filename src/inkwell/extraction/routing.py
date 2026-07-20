@@ -87,7 +87,7 @@ class ExtractionRoutingPolicy:
             return [override]
 
         candidates: list[str] = []
-        if template.model_preference:
+        if template.model_preference and template.model_preference != "codex":
             candidates.append(template.model_preference)
 
         if "quote" in template.name.lower():

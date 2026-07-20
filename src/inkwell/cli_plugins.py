@@ -4,6 +4,8 @@ This module provides the `inkwell plugins` subcommand group for
 listing, enabling, disabling, and validating plugins.
 """
 
+import asyncio
+import json
 import os
 import sys
 
@@ -182,12 +184,12 @@ def list_plugins(
         console.print(f"\n[bold]{_get_plugin_type_label(ptype)}:[/bold]")
 
         table = Table(show_header=False, box=None, padding=(0, 2))
-        table.add_column("Name", style="cyan", no_wrap=True)
+        table.add_column("Name", style="cyan", no_wrap=True, min_width=12)
         table.add_column("Source", no_wrap=True)
         table.add_column("Status", no_wrap=True)
         table.add_column("Priority", style="dim", justify="right")
-        table.add_column("Capabilities", no_wrap=True)
-        table.add_column("Description")
+        table.add_column("Capabilities", no_wrap=True, max_width=38)
+        table.add_column("Description", max_width=24)
 
         for entry in entries:
             if entry.status == "broken":
@@ -351,6 +353,11 @@ def disable_plugin(
 @app.command("validate")
 def validate_plugin(
     name: str | None = typer.Argument(None, help="Plugin name to validate (all if omitted)"),
+    json_output: bool = typer.Option(
+        False,
+        "--json",
+        help="Print one stable JSON readiness object to stdout.",
+    ),
 ) -> None:
     """Validate plugin configuration.
 
@@ -384,8 +391,93 @@ def validate_plugin(
             sys.exit(1)
 
         try:
+            if name == "codex":
+                from inkwell.extraction.extractors.codex import CodexExtractor
+
+                config_manager = ConfigManager()
+                configured = PluginConfigManager(config_manager).get_plugin_config("codex")
+                plugin = entry.plugin
+                if not isinstance(plugin, CodexExtractor):
+                    plugin = CodexExtractor(lazy_init=True)
+                config_values = dict(configured.config) if configured else {}
+                try:
+                    if config_values.get("model"):
+                        plugin.configure(config_values)
+                        readiness = asyncio.run(plugin.readiness())
+                    else:
+                        from inkwell.agent_runtime.codex import CodexRuntimeBackend
+                        from inkwell.agent_runtime.models import RuntimeErrorCode
+
+                        readiness = asyncio.run(
+                            CodexRuntimeBackend(
+                                str(config_values.get("executable", "codex"))
+                            ).probe()
+                        ).model_copy(
+                            update={
+                                "ready": False,
+                                "error_code": RuntimeErrorCode.MODEL_REQUIRED,
+                                "reason": "An explicit Codex model is required.",
+                                "recovery_command": (
+                                    "inkwell plugins configure codex model MODEL_ID"
+                                ),
+                            }
+                        )
+                    payload = {
+                        **readiness.model_dump(mode="json"),
+                        "plugin": "codex",
+                        "configured_model": config_values.get("model"),
+                        "model_policy": "explicit_required",
+                    }
+                except Exception as exc:
+                    payload = {
+                        "schema_version": 1,
+                        "plugin": "codex",
+                        "runtime": "codex-cli",
+                        "ready": False,
+                        "installed": False,
+                        "authenticated": False,
+                        "supported": False,
+                        "executable": config_values.get("executable", "codex"),
+                        "version": None,
+                        "auth_class": None,
+                        "configured_model": config_values.get("model"),
+                        "model_policy": "explicit_required",
+                        "reason": str(exc),
+                        "recovery_command": (
+                            "inkwell plugins configure codex model MODEL_ID"
+                            if not config_values.get("model")
+                            else None
+                        ),
+                        "required_capabilities": [],
+                    }
+                if json_output:
+                    sys.stdout.write(json.dumps(payload, sort_keys=True))
+                    sys.stdout.write("\n")
+                elif payload["ready"]:
+                    console.print(
+                        "[green]✓[/green] Codex runtime is ready "
+                        f"({payload['version']}, model {payload['configured_model']})"
+                    )
+                else:
+                    console.print(f"[red]✗[/red] Codex runtime is not ready: {payload['reason']}")
+                    if payload.get("recovery_command"):
+                        console.print(f"  Recovery: {payload['recovery_command']}")
+                if not payload["ready"]:
+                    raise typer.Exit(1)
+                return
             entry.plugin.validate()
-            console.print(f"[green]✓[/green] Plugin '{name}' validated successfully")
+            if json_output:
+                sys.stdout.write(
+                    json.dumps(
+                        {"schema_version": 1, "plugin": name, "ready": True},
+                        sort_keys=True,
+                    )
+                    + "\n"
+                )
+            else:
+                console.print(f"[green]✓[/green] Plugin '{name}' validated successfully")
+        except typer.Exit:
+            raise
         except PluginValidationError as e:
             console.print(f"[red]✗[/red] Plugin '{name}' validation failed:")
             for error in e.errors:
@@ -424,3 +516,19 @@ def validate_plugin(
             sys.exit(1)
         else:
             console.print(f"[green]✓[/green] All {validated_count} plugins validated successfully")
+
+
+@app.command("configure")
+def configure_plugin(
+    name: str = typer.Argument(..., help="Plugin name to configure"),
+    key: str = typer.Argument(..., help="Plugin configuration key"),
+    value: str = typer.Argument(..., help="Configuration value"),
+) -> None:
+    """Persist one typed plugin configuration value."""
+    manager = PluginConfigManager(ConfigManager())
+    try:
+        manager.set_plugin_config_value(name, key, value)
+    except ValueError as exc:
+        console.print(f"[red]✗[/red] {exc}")
+        raise typer.Exit(1) from exc
+    console.print(f"[green]✓[/green] Set {name}.{key}")

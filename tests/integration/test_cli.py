@@ -453,6 +453,129 @@ class TestCLIFetchMachineOutput:
         assert "Inkwell Extraction Pipeline" not in result.stdout
         assert "Inkwell Extraction Pipeline" in result.stderr
 
+    def test_fetch_json_codex_result_has_runtime_and_unknown_cost(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """Codex fields are additive and aggregate cost remains honest."""
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+        output_dir = tmp_path / "episode-dir"
+        output_dir.mkdir()
+        pipeline_result = _sample_pipeline_result(output_dir)
+        extraction = pipeline_result.extraction_results[0]
+        extraction.provider = "codex"
+        extraction.model = "explicit-model"
+        extraction.cost_usd = 0.0
+        extraction.cost_known = False
+        extraction.billing = {"mode": "runtime_managed", "amount_usd": None}
+        extraction.runtime = {
+            "kind": "codex-cli",
+            "version": "0.144.6",
+            "protocol_version": 1,
+            "requested_model": "explicit-model",
+            "effective_model": "explicit-model",
+            "usage": {
+                "input_tokens": 10,
+                "cached_input_tokens": 0,
+                "output_tokens": 4,
+                "reasoning_output_tokens": 0,
+            },
+        }
+        pipeline_result.extraction_cost_usd = 0.0
+        pipeline_result.extraction_cost_known = False
+
+        async def fake_process(*_args, **_kwargs):
+            return pipeline_result
+
+        monkeypatch.setattr("inkwell.pipeline.PipelineOrchestrator.process_episode", fake_process)
+        result = runner.invoke(
+            app,
+            [
+                "fetch",
+                "https://example.com/episode.mp3",
+                "--json",
+                "--output-dir",
+                str(tmp_path),
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        payload = json.loads(result.stdout)
+        template = payload["templates"][0]
+        assert template["provider"] == "codex"
+        assert template["cost_known"] is False
+        assert template["billing"]["mode"] == "runtime_managed"
+        assert template["runtime"]["effective_model"] == "explicit-model"
+        assert payload["summary"]["total_cost_known"] is False
+        assert payload["summary"]["unknown_cost_operations"] == 1
+
+    def test_fetch_json_codex_configuration_failure_is_structured(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """Explicit Codex selection fails closed with a stable JSON error."""
+        monkeypatch.setattr(
+            "inkwell.cli.ConfigManager",
+            lambda: ConfigManager(config_dir=tmp_path),
+        )
+
+        result = runner.invoke(
+            app,
+            [
+                "fetch",
+                "https://example.com/episode.mp3",
+                "--extractor",
+                "codex",
+                "--json",
+                "--output-dir",
+                str(tmp_path),
+            ],
+        )
+
+        assert result.exit_code == 1
+        payload = json.loads(result.stdout)
+        assert payload["command"] == "fetch"
+        assert payload["status"] == "error"
+        assert payload["summary"] == {
+            "requested": 1,
+            "succeeded": 0,
+            "failed": 1,
+            "total_cost_usd": 0,
+            "total_cost_known": True,
+            "unknown_cost_operations": 0,
+        }
+        assert payload["errors"] == [
+            {
+                "code": "model_required",
+                "message": "The Codex extractor requires an explicit model.",
+                "suggestion": (
+                    "Run `inkwell plugins configure codex model MODEL_ID`, then validate it."
+                ),
+            }
+        ]
+        assert "Traceback" not in result.stdout
+
+    def test_fetch_error_json_preserves_completed_results(self, tmp_path: Path) -> None:
+        """A later failure retains accurate request and completed-result accounting."""
+        from inkwell.cli import _fetch_error_json_payload
+
+        output_dir = tmp_path / "episode-dir"
+        output_dir.mkdir()
+        payload = _fetch_error_json_payload(
+            ValidationError("second episode failed"),
+            requested=2,
+            completed_results=[_sample_pipeline_result(output_dir)],
+        )
+
+        assert payload["summary"] == {
+            "requested": 2,
+            "succeeded": 1,
+            "failed": 1,
+            "total_cost_usd": 0.02,
+            "total_cost_known": True,
+            "unknown_cost_operations": 0,
+        }
+        assert payload["files"][0]["filename"] == "summary.md"
+        assert payload["results"][0]["status"] == "success"
+
     def test_fetch_plain_stdout_is_only_output_directory_path(
         self, tmp_path: Path, monkeypatch
     ) -> None:

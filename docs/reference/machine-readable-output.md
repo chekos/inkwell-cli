@@ -192,6 +192,43 @@ Example response:
 
 For feed runs with `--count`, `results` contains one entry per processed episode.
 
+Codex template entries add runtime and monetary provenance:
+
+```json
+{
+  "provider": "codex",
+  "model": "MODEL_ID",
+  "from_cache": false,
+  "cost_usd": 0.0,
+  "cost_known": false,
+  "billing": {
+    "mode": "runtime_managed",
+    "amount_usd": null
+  },
+  "runtime": {
+    "kind": "codex-cli",
+    "version": "0.144.6",
+    "protocol_version": 1,
+    "requested_model": "MODEL_ID",
+    "effective_model": "MODEL_ID",
+    "auth_class": "chatgpt",
+    "billing_class": "runtime_managed",
+    "usage": {
+      "input_tokens": 0,
+      "cached_input_tokens": 0,
+      "output_tokens": 0,
+      "reasoning_output_tokens": 0
+    }
+  }
+}
+```
+
+The version and model above are illustrative values from one run. Scripts must
+read the returned values. When `cost_known` is false, numeric `cost_usd` exists
+only for schema-v1 compatibility and does not mean the operation was free.
+`summary.total_cost_known` and `summary.unknown_cost_operations` prevent a
+partial known sum from being mistaken for complete spend.
+
 For generic article URLs, `input.kind` is `article` after local extraction
 succeeds. Local PDFs use `pdf`, and local OCR images use `image`. These sources
 skip media transcription; the transcription section reports text-style attempts

@@ -63,6 +63,7 @@ nav:
       - Testing: user-guide/plugins/testing.md
       - Publishing: user-guide/plugins/publishing.md
       - Security: user-guide/plugins/security.md
+    - Local Codex Extraction: user-guide/local-codex-extraction.md
 
   - Reference:
     - Overview: reference/index.md
@@ -72,6 +73,7 @@ nav:
     - Cache Behavior: reference/cache.md
     - Templates: reference/templates.md
     - Configuration Options: reference/config-options.md
+    - Local Agent Runtime: reference/agent-runtime.md
     - Transcription Attempt Policy: reference/transcription-attempt-policy.md
     - Troubleshooting: reference/troubleshooting.md
 

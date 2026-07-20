@@ -168,6 +168,33 @@ extraction:
   cache_days: 0    # No caching
 ```
 
+### Local Codex extraction plugin
+
+Codex is configured under the plugin namespace and has no model default:
+
+```yaml
+plugins:
+  codex:
+    enabled: true
+    priority: 0
+    config:
+      executable: codex
+      model: MODEL_ID
+      timeout_seconds: 180
+      max_input_bytes: 8000000
+      max_stdout_bytes: 8388608
+      max_stderr_bytes: 1048576
+```
+
+Prefer the typed CLI to editing YAML:
+
+```bash
+inkwell plugins configure codex model MODEL_ID
+inkwell plugins validate codex --json
+```
+
+See [Local Codex Extraction](../user-guide/local-codex-extraction.md).
+
 ---
 
 ## Interview Settings

@@ -491,7 +491,8 @@ class TestExtractionEngineExtract:
                 transcript="Test transcript",
                 metadata={},
             )
-            assert result2.provider == "cache"
+            assert result2.provider == "gemini"
+            assert result2.from_cache is True
             assert result2.cost_usd == 0.0
             assert mock_extract.call_count == 1  # Not called again
 

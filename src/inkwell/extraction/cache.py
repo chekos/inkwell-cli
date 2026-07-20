@@ -17,7 +17,7 @@ from inkwell.utils.cache import FileCache
 
 logger = logging.getLogger(__name__)
 
-EXTRACTION_CACHE_FORMAT_VERSION = 2
+EXTRACTION_CACHE_FORMAT_VERSION = 3
 EXTRACTION_OUTPUT_SCHEMA_VERSION = "extraction-result:v1"
 UNKNOWN_CACHE_KEY_PART = "unknown"
 
@@ -88,6 +88,7 @@ class ExtractionCache:
         model: str | None = None,
         prompt_hash: str | None = None,
         output_schema_version: str | None = None,
+        runtime_identity: str | None = None,
     ) -> dict[str, Any]:
         """Build explicit extraction cache-key inputs."""
         return {
@@ -99,6 +100,7 @@ class ExtractionCache:
             "model": model or UNKNOWN_CACHE_KEY_PART,
             "prompt_hash": prompt_hash or UNKNOWN_CACHE_KEY_PART,
             "output_schema_version": output_schema_version or EXTRACTION_OUTPUT_SCHEMA_VERSION,
+            "runtime_identity": runtime_identity or UNKNOWN_CACHE_KEY_PART,
         }
 
     def _make_key(
@@ -110,6 +112,7 @@ class ExtractionCache:
         model: str | None = None,
         prompt_hash: str | None = None,
         output_schema_version: str | None = None,
+        runtime_identity: str | None = None,
     ) -> str:
         """Generate cache key from template and transcript.
 
@@ -137,6 +140,7 @@ class ExtractionCache:
             model,
             prompt_hash,
             output_schema_version,
+            runtime_identity,
         )
         return self._hash_text(self._canonical_json(payload))
 
@@ -176,6 +180,7 @@ class ExtractionCache:
         model: str | None = None,
         prompt_hash: str | None = None,
         output_schema_version: str | None = None,
+        runtime_identity: str | None = None,
     ) -> str | None:
         """Get cached extraction result.
 
@@ -199,6 +204,7 @@ class ExtractionCache:
             model,
             prompt_hash,
             output_schema_version,
+            runtime_identity,
         )
         cache_file = self.cache_dir / f"{cache_key}.json"
 
@@ -235,6 +241,7 @@ class ExtractionCache:
             model,
             prompt_hash,
             output_schema_version,
+            runtime_identity,
         )
 
     async def set(
@@ -248,6 +255,7 @@ class ExtractionCache:
         model: str | None = None,
         prompt_hash: str | None = None,
         output_schema_version: str | None = None,
+        runtime_identity: str | None = None,
     ) -> None:
         """Store extraction result in cache.
 
@@ -269,6 +277,7 @@ class ExtractionCache:
             model,
             prompt_hash,
             output_schema_version,
+            runtime_identity,
         )
 
         # Override serializer temporarily to include template metadata
@@ -287,6 +296,7 @@ class ExtractionCache:
                         output_schema_version or EXTRACTION_OUTPUT_SCHEMA_VERSION
                     ),
                     "transcript_hash": key_components["transcript_hash"],
+                    "runtime_identity": runtime_identity or UNKNOWN_CACHE_KEY_PART,
                     "key_components": key_components,
                 }
             )
@@ -303,6 +313,7 @@ class ExtractionCache:
                 model,
                 prompt_hash,
                 output_schema_version,
+                runtime_identity,
                 value=result,
             )
         finally:
@@ -318,6 +329,7 @@ class ExtractionCache:
         model: str | None = None,
         prompt_hash: str | None = None,
         output_schema_version: str | None = None,
+        runtime_identity: str | None = None,
     ) -> bool:
         """Delete cached extraction result.
 
@@ -341,6 +353,7 @@ class ExtractionCache:
             model,
             prompt_hash,
             output_schema_version,
+            runtime_identity,
         )
 
     async def clear(self) -> int:

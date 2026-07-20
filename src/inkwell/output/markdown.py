@@ -144,12 +144,16 @@ class MarkdownOutput(OutputPlugin):
             "date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
             "extracted_with": result.provider,
             "cost_usd": round(result.cost_usd, 4),
+            "cost_known": result.cost_known,
+            "billing": result.billing,
         }
         if result.model:
             frontmatter_data["model"] = result.model
         if result.bypassed:
             frontmatter_data["extraction_bypassed"] = True
             frontmatter_data["bypass_reason"] = result.bypass_reason
+        if result.runtime:
+            frontmatter_data["runtime"] = result.runtime
 
         if "episode_url" in episode_metadata:
             frontmatter_data["url"] = episode_metadata["episode_url"]

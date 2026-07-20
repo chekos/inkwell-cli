@@ -228,7 +228,9 @@ def _read_text_source_file(path: Path) -> str:
 
 def _print_json_payload(payload: dict[str, Any]) -> None:
     """Print a JSON payload to stdout with stable formatting."""
-    print(json.dumps(payload, indent=2, sort_keys=True))
+    # Deliberate machine-readable command output, not an application log sink.
+    sys.stdout.write(json.dumps(payload, indent=2, sort_keys=True))
+    sys.stdout.write("\n")
 
 
 def _validate_machine_output_options(*, json_output: bool, plain: bool) -> None:
@@ -346,7 +348,11 @@ def _fetch_result_payload(result: PipelineResult) -> dict[str, Any]:
             "bypass_reason": extraction_result.bypass_reason,
             "from_cache": extraction_result.from_cache,
             "cost_usd": extraction_result.cost_usd,
+            "cost_known": extraction_result.cost_known,
+            "billing": extraction_result.billing,
+            "runtime": extraction_result.runtime,
             "error": extraction_result.error,
+            "error_code": extraction_result.error_code,
         }
         for extraction_result in result.extraction_results
     ]
@@ -379,6 +385,10 @@ def _fetch_result_payload(result: PipelineResult) -> dict[str, Any]:
             "extraction_usd": result.extraction_cost_usd,
             "interview_usd": result.interview_cost_usd,
             "total_usd": transcript_result.cost_usd + result.total_cost_usd,
+            "total_known": result.total_cost_known,
+            "unknown_operations": sum(
+                1 for item in result.extraction_results if not item.cost_known
+            ),
         },
         "interview": {
             "completed": result.interview_result is not None,
@@ -420,6 +430,10 @@ def _fetch_json_payload(
             "succeeded": len(result_payloads),
             "failed": 0,
             "total_cost_usd": sum(item["costs"]["total_usd"] for item in result_payloads),
+            "total_cost_known": all(item["costs"]["total_known"] for item in result_payloads),
+            "unknown_cost_operations": sum(
+                item["costs"]["unknown_operations"] for item in result_payloads
+            ),
         },
         "files": files,
         "templates": templates,
@@ -429,6 +443,50 @@ def _fetch_json_payload(
         },
         "results": result_payloads,
         "errors": [],
+        "warnings": [],
+    }
+
+
+def _fetch_error_json_payload(
+    error: InkwellError,
+    *,
+    requested: int,
+    completed_results: list[PipelineResult],
+) -> dict[str, Any]:
+    """Build the stable fetch failure envelope without exposing provider output."""
+    result_payloads = [_fetch_result_payload(result) for result in completed_results]
+    files = [file for item in result_payloads for file in item["output"]["files"]]
+    templates = [template for item in result_payloads for template in item["templates"]]
+    succeeded = len(result_payloads)
+    requested = max(requested, succeeded + 1)
+    return {
+        "schema_version": 1,
+        "command": "fetch",
+        "status": "error",
+        "summary": {
+            "requested": requested,
+            "succeeded": succeeded,
+            "failed": requested - succeeded,
+            "total_cost_usd": sum(item["costs"]["total_usd"] for item in result_payloads),
+            "total_cost_known": all(item["costs"]["total_known"] for item in result_payloads),
+            "unknown_cost_operations": sum(
+                item["costs"]["unknown_operations"] for item in result_payloads
+            ),
+        },
+        "files": files,
+        "templates": templates,
+        "cache_hits": {
+            "transcripts": sum(1 for item in result_payloads if item["cache_hits"]["transcript"]),
+            "extractions": sum(item["cache_hits"]["extractions"] for item in result_payloads),
+        },
+        "results": result_payloads,
+        "errors": [
+            {
+                "code": str(error.details.get("code", "inkwell_error")),
+                "message": error.message,
+                "suggestion": error.suggestion,
+            }
+        ],
         "warnings": [],
     }
 
@@ -1479,7 +1537,7 @@ def fetch_command(
     extractor: str | None = typer.Option(
         None,
         "--extractor",
-        help="Force specific extraction plugin (e.g., claude, gemini)",
+        help="Force extraction plugin: claude, gemini, or explicit local codex",
         envvar="INKWELL_EXTRACTOR",
     ),
     transcriber: str | None = typer.Option(
@@ -1552,6 +1610,8 @@ def fetch_command(
 
         inkwell fetch https://... --extractor claude  # Force Claude extractor
 
+        inkwell fetch ./source.txt --extractor codex --force-extraction  # Explicit local Codex
+
         inkwell fetch https://... --transcriber gemini  # Force Gemini transcriber
 
         inkwell fetch ./scan.png  # Local OCR into normal note output
@@ -1563,7 +1623,8 @@ def fetch_command(
         nonlocal url_or_feed
         machine_output = json_output or plain or extract_only
         status_console = err_console if machine_output else console
-        processed_results = []
+        processed_results: list[PipelineResult] = []
+        requested_count = 1
         extract_transcripts: list[str] = []
         extract_output_paths: list[Path] = []
         extract_used_filenames: set[str] = set()
@@ -1590,6 +1651,21 @@ def fetch_command(
 
             manager = ConfigManager()
             config = manager.load_config()
+            selected_extractor = extractor or os.environ.get("INKWELL_EXTRACTOR")
+            if selected_extractor == "codex":
+                codex_plugin = config.plugins.get("codex")
+                configured_model = (
+                    codex_plugin.config.get("model") if codex_plugin is not None else None
+                )
+                if not isinstance(configured_model, str) or not configured_model.strip():
+                    raise ConfigError(
+                        "The Codex extractor requires an explicit model.",
+                        details={"code": "model_required", "extractor": "codex"},
+                        suggestion=(
+                            "Run `inkwell plugins configure codex model MODEL_ID`, "
+                            "then validate it."
+                        ),
+                    )
             base_output_dir = output_dir or config.default_output_dir
 
             # --feed-name is metadata for --save-feed; it has no meaning
@@ -1853,6 +1929,7 @@ def fetch_command(
             episodes_to_process: list[Episode | None] = (
                 list(selected_episodes) if selected_episodes is not None else [None]
             )
+            requested_count = len(episodes_to_process)
 
             # Process each episode
             for ep in episodes_to_process:
@@ -2119,12 +2196,31 @@ def fetch_command(
                 table.add_row("Templates:", f"{len(result.extraction_results)}")
 
                 if result.interview_result:
-                    table.add_row("Extraction cost:", f"${result.extraction_cost_usd:.4f}")
+                    extraction_cost_display = (
+                        f"${result.extraction_cost_usd:.4f}"
+                        if getattr(result, "extraction_cost_known", True)
+                        else "unknown (runtime-managed)"
+                    )
+                    table.add_row("Extraction cost:", extraction_cost_display)
                     table.add_row("Interview cost:", f"${result.interview_cost_usd:.4f}")
-                    table.add_row("Total cost:", f"${result.total_cost_usd:.4f}")
+                    table.add_row(
+                        "Total cost:",
+                        (
+                            f"${result.total_cost_usd:.4f}"
+                            if getattr(result, "total_cost_known", True)
+                            else "partial known total; runtime-managed amount unknown"
+                        ),
+                    )
                     table.add_row("Interview:", "✓ Completed")
                 else:
-                    table.add_row("Total cost:", f"${result.extraction_cost_usd:.4f}")
+                    table.add_row(
+                        "Total cost:",
+                        (
+                            f"${result.extraction_cost_usd:.4f}"
+                            if getattr(result, "extraction_cost_known", True)
+                            else "unknown (runtime-managed)"
+                        ),
+                    )
 
                 table.add_row("Output:", output_display)
 
@@ -2218,6 +2314,15 @@ def fetch_command(
             status_console.print(f"\n[red]✗[/red] {e}")
             sys.exit(1)
         except InkwellError as e:
+            if json_output and not plain:
+                _print_json_payload(
+                    _fetch_error_json_payload(
+                        e,
+                        requested=requested_count,
+                        completed_results=processed_results,
+                    )
+                )
+                raise typer.Exit(1) from e
             # Print message and suggestion separately so agents parsing
             # line-by-line can capture both cleanly (matches add_feed's pattern).
             status_console.print(f"\n[red]✗[/red] {e.message}")
@@ -2305,7 +2410,9 @@ def costs_command(
                 date_str = usage.timestamp.strftime("%Y-%m-%d %H:%M")
                 episode_str = usage.episode_title or "-"
                 tokens_str = f"{usage.total_tokens:,}"
-                cost_str = f"${usage.cost_usd:.4f}"
+                cost_str = (
+                    f"${usage.cost_usd:.4f}" if usage.cost_known else "unknown (runtime-managed)"
+                )
 
                 table.add_row(
                     date_str,
@@ -2317,7 +2424,12 @@ def costs_command(
                 )
 
             console.print(table)
-            console.print(f"\n[bold]Total:[/bold] ${sum(u.cost_usd for u in recent_usage):.4f}")
+            known_subtotal = sum(u.cost_usd for u in recent_usage if u.cost_known)
+            unknown_count = sum(1 for u in recent_usage if not u.cost_known)
+            total_label = f"${known_subtotal:.4f}"
+            if unknown_count:
+                total_label += f" known + {unknown_count} runtime-managed"
+            console.print(f"\n[bold]Total:[/bold] {total_label}")
             return
 
         since = None
@@ -2347,9 +2459,10 @@ def costs_command(
         stats_table.add_row("Total Tokens:", f"{summary.total_tokens:,}")
         stats_table.add_row("Input Tokens:", f"{summary.total_input_tokens:,}")
         stats_table.add_row("Output Tokens:", f"{summary.total_output_tokens:,}")
-        stats_table.add_row(
-            "Total Cost:", f"[bold yellow]${summary.total_cost_usd:.4f}[/bold yellow]"
-        )
+        total_cost_label = f"${summary.total_cost_usd:.4f}"
+        if not summary.total_cost_known:
+            total_cost_label += f" known + {summary.unknown_cost_operations} runtime-managed"
+        stats_table.add_row("Total Cost:", f"[bold yellow]{total_cost_label}[/bold yellow]")
 
         console.print(Panel(stats_table, title="Overall", border_style="blue"))
 
@@ -2358,7 +2471,7 @@ def costs_command(
             console.print("\n[bold]By Provider:[/bold]")
             provider_table = Table(show_header=False, box=None, padding=(0, 2))
             provider_table.add_column("Provider", style="magenta")
-            provider_table.add_column("Cost", style="yellow", justify="right")
+            provider_table.add_column("Known Cost", style="yellow", justify="right")
 
             for prov, cost in sorted(
                 summary.costs_by_provider.items(), key=lambda x: x[1], reverse=True
@@ -2372,7 +2485,7 @@ def costs_command(
             console.print("\n[bold]By Operation:[/bold]")
             op_table = Table(show_header=False, box=None, padding=(0, 2))
             op_table.add_column("Operation", style="blue")
-            op_table.add_column("Cost", style="yellow", justify="right")
+            op_table.add_column("Known Cost", style="yellow", justify="right")
 
             for op, cost in sorted(
                 summary.costs_by_operation.items(), key=lambda x: x[1], reverse=True
@@ -2386,7 +2499,7 @@ def costs_command(
             console.print("\n[bold]By Episode (Top 10):[/bold]")
             episode_table = Table(show_header=False, box=None, padding=(0, 2))
             episode_table.add_column("Episode", style="green", max_width=50)
-            episode_table.add_column("Cost", style="yellow", justify="right")
+            episode_table.add_column("Known Cost", style="yellow", justify="right")
 
             sorted_episodes = sorted(
                 summary.costs_by_episode.items(), key=lambda x: x[1], reverse=True

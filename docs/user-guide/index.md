@@ -31,6 +31,9 @@ All configuration options, file locations, and environment variables.
 ### [Plugin Development](plugins/index.md)
 Extend Inkwell with custom plugins for extraction, transcription, and output formats. Create and publish your own plugins.
 
+### [Local Codex Extraction](local-codex-extraction.md)
+Explicitly delegate local extraction to a user-installed Codex CLI without copying credentials or changing automatic provider routing.
+
 ---
 
 ## Quick Reference

@@ -228,7 +228,8 @@ def _read_text_source_file(path: Path) -> str:
 
 def _print_json_payload(payload: dict[str, Any]) -> None:
     """Print a JSON payload to stdout with stable formatting."""
-    print(json.dumps(payload, indent=2, sort_keys=True))
+    sys.stdout.write(json.dumps(payload, indent=2, sort_keys=True))
+    sys.stdout.write("\n")
 
 
 def _validate_machine_output_options(*, json_output: bool, plain: bool) -> None:
@@ -2295,7 +2296,7 @@ def fetch_command(
             sys.exit(1)
         except InkwellError as e:
             if json_output and not plain:
-                print(json.dumps(_fetch_error_json_payload(e), indent=2))
+                _print_json_payload(_fetch_error_json_payload(e))
                 raise typer.Exit(1) from e
             # Print message and suggestion separately so agents parsing
             # line-by-line can capture both cleanly (matches add_feed's pattern).

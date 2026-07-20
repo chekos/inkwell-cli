@@ -451,7 +451,8 @@ def validate_plugin(
                         "required_capabilities": [],
                     }
                 if json_output:
-                    typer.echo(json.dumps(payload, sort_keys=True))
+                    sys.stdout.write(json.dumps(payload, sort_keys=True))
+                    sys.stdout.write("\n")
                 elif payload["ready"]:
                     console.print(
                         "[green]✓[/green] Codex runtime is ready "
@@ -466,15 +467,12 @@ def validate_plugin(
                 return
             entry.plugin.validate()
             if json_output:
-                typer.echo(
+                sys.stdout.write(
                     json.dumps(
-                        {
-                            "schema_version": 1,
-                            "plugin": name,
-                            "ready": True,
-                        },
+                        {"schema_version": 1, "plugin": name, "ready": True},
                         sort_keys=True,
                     )
+                    + "\n"
                 )
             else:
                 console.print(f"[green]✓[/green] Plugin '{name}' validated successfully")

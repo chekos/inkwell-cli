@@ -229,7 +229,6 @@ def _read_text_source_file(path: Path) -> str:
 def _print_json_payload(payload: dict[str, Any]) -> None:
     """Print a JSON payload to stdout with stable formatting."""
     # Deliberate machine-readable command output, not an application log sink.
-    # codeql[py/clear-text-logging-sensitive-data]
     sys.stdout.write(json.dumps(payload, indent=2, sort_keys=True))
     sys.stdout.write("\n")
 

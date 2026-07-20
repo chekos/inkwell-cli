@@ -391,60 +391,79 @@ def validate_plugin(
             sys.exit(1)
 
         try:
-            if name == "codex":
+            if name in {"claude-code", "codex"}:
+                from inkwell.agent_runtime import ClaudeCodeRuntimeBackend, CodexRuntimeBackend
+                from inkwell.agent_runtime.models import RuntimeErrorCode
+                from inkwell.extraction.extractors.claude_code import ClaudeCodeExtractor
                 from inkwell.extraction.extractors.codex import CodexExtractor
 
                 config_manager = ConfigManager()
-                configured = PluginConfigManager(config_manager).get_plugin_config("codex")
-                plugin = entry.plugin
-                if not isinstance(plugin, CodexExtractor):
-                    plugin = CodexExtractor(lazy_init=True)
+                configured = PluginConfigManager(config_manager).get_plugin_config(name)
                 config_values = dict(configured.config) if configured else {}
+                runtime_plugin: ClaudeCodeExtractor | CodexExtractor
+                probe_backend: ClaudeCodeRuntimeBackend | CodexRuntimeBackend
+                if name == "claude-code":
+                    runtime_plugin = (
+                        entry.plugin
+                        if isinstance(entry.plugin, ClaudeCodeExtractor)
+                        else ClaudeCodeExtractor(lazy_init=True)
+                    )
+                    probe_backend = ClaudeCodeRuntimeBackend(
+                        str(config_values.get("executable", "claude"))
+                    )
+                    default_executable = "claude"
+                    runtime_name = "claude-code-cli"
+                    runtime_label = "Local Claude"
+                else:
+                    runtime_plugin = (
+                        entry.plugin
+                        if isinstance(entry.plugin, CodexExtractor)
+                        else CodexExtractor(lazy_init=True)
+                    )
+                    probe_backend = CodexRuntimeBackend(
+                        str(config_values.get("executable", "codex"))
+                    )
+                    default_executable = "codex"
+                    runtime_name = "codex-cli"
+                    runtime_label = "Codex"
                 try:
                     if config_values.get("model"):
-                        plugin.configure(config_values)
-                        readiness = asyncio.run(plugin.readiness())
+                        runtime_plugin.configure(config_values)
+                        readiness = asyncio.run(runtime_plugin.readiness())
                     else:
-                        from inkwell.agent_runtime.codex import CodexRuntimeBackend
-                        from inkwell.agent_runtime.models import RuntimeErrorCode
-
-                        readiness = asyncio.run(
-                            CodexRuntimeBackend(
-                                str(config_values.get("executable", "codex"))
-                            ).probe()
-                        ).model_copy(
+                        readiness = asyncio.run(probe_backend.probe()).model_copy(
                             update={
                                 "ready": False,
                                 "error_code": RuntimeErrorCode.MODEL_REQUIRED,
-                                "reason": "An explicit Codex model is required.",
+                                "reason": f"An explicit {runtime_label} model is required.",
                                 "recovery_command": (
-                                    "inkwell plugins configure codex model MODEL_ID"
+                                    f"inkwell plugins configure {name} model MODEL_ID"
                                 ),
                             }
                         )
                     payload = {
                         **readiness.model_dump(mode="json"),
-                        "plugin": "codex",
+                        "plugin": name,
                         "configured_model": config_values.get("model"),
                         "model_policy": "explicit_required",
                     }
                 except Exception as exc:
                     payload = {
                         "schema_version": 1,
-                        "plugin": "codex",
-                        "runtime": "codex-cli",
+                        "plugin": name,
+                        "runtime": runtime_name,
                         "ready": False,
                         "installed": False,
                         "authenticated": False,
                         "supported": False,
-                        "executable": config_values.get("executable", "codex"),
+                        "executable": config_values.get("executable", default_executable),
                         "version": None,
                         "auth_class": None,
                         "configured_model": config_values.get("model"),
                         "model_policy": "explicit_required",
                         "reason": str(exc),
                         "recovery_command": (
-                            "inkwell plugins configure codex model MODEL_ID"
+                            f"inkwell plugins configure {name} model MODEL_ID"
                             if not config_values.get("model")
                             else None
                         ),
@@ -455,11 +474,13 @@ def validate_plugin(
                     sys.stdout.write("\n")
                 elif payload["ready"]:
                     console.print(
-                        "[green]✓[/green] Codex runtime is ready "
+                        f"[green]✓[/green] {runtime_label} runtime is ready "
                         f"({payload['version']}, model {payload['configured_model']})"
                     )
                 else:
-                    console.print(f"[red]✗[/red] Codex runtime is not ready: {payload['reason']}")
+                    console.print(
+                        f"[red]✗[/red] {runtime_label} runtime is not ready: {payload['reason']}"
+                    )
                     if payload.get("recovery_command"):
                         console.print(f"  Recovery: {payload['recovery_command']}")
                 if not payload["ready"]:

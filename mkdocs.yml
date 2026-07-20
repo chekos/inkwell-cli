@@ -64,6 +64,7 @@ nav:
       - Publishing: user-guide/plugins/publishing.md
       - Security: user-guide/plugins/security.md
     - Local Codex Extraction: user-guide/local-codex-extraction.md
+    - Local Claude Extraction: user-guide/local-claude-extraction.md
 
   - Reference:
     - Overview: reference/index.md

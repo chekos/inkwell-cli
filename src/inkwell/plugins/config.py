@@ -7,7 +7,7 @@ plugin enable/disable state to the configuration file.
 from inkwell.config.manager import ConfigManager
 from inkwell.config.schema import PluginConfig
 
-_CODEX_CONFIG_FIELDS: dict[str, tuple[type, float | int | None, float | int | None]] = {
+_LOCAL_RUNTIME_CONFIG_FIELDS: dict[str, tuple[type, float | int | None, float | int | None]] = {
     "executable": (str, None, None),
     "model": (str, None, None),
     "timeout_seconds": (float, 1, 3600),
@@ -19,13 +19,13 @@ _CODEX_CONFIG_FIELDS: dict[str, tuple[type, float | int | None, float | int | No
 
 def coerce_plugin_config_value(name: str, key: str, value: object) -> object:
     """Validate known built-in plugin configuration values."""
-    if name != "codex":
+    if name not in {"claude-code", "codex"}:
         return value
-    spec = _CODEX_CONFIG_FIELDS.get(key)
+    spec = _LOCAL_RUNTIME_CONFIG_FIELDS.get(key)
     if spec is None:
         raise ValueError(
-            f"Unknown Codex configuration key '{key}'. "
-            f"Valid keys: {', '.join(sorted(_CODEX_CONFIG_FIELDS))}"
+            f"Unknown {name} configuration key '{key}'. "
+            f"Valid keys: {', '.join(sorted(_LOCAL_RUNTIME_CONFIG_FIELDS))}"
         )
     expected, minimum, maximum = spec
     try:
@@ -130,7 +130,7 @@ class PluginConfigManager:
         if name not in config.plugins:
             config.plugins[name] = PluginConfig(
                 enabled=True,
-                priority=0 if name == "codex" else 50,
+                priority=0 if name in {"claude-code", "codex"} else 50,
                 config={key: value},
             )
         else:

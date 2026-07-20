@@ -195,6 +195,32 @@ inkwell plugins validate codex --json
 
 See [Local Codex Extraction](../user-guide/local-codex-extraction.md).
 
+### Local Claude extraction plugin
+
+Local Claude extraction is separately named `claude-code` so it cannot be
+confused with the direct Anthropic API provider named `claude`:
+
+```yaml
+plugins:
+  claude-code:
+    enabled: true
+    priority: 0
+    config:
+      executable: claude
+      model: sonnet
+      timeout_seconds: 180
+      max_input_bytes: 8000000
+      max_stdout_bytes: 8388608
+      max_stderr_bytes: 1048576
+```
+
+```bash
+inkwell plugins configure claude-code model sonnet
+inkwell plugins validate claude-code --json
+```
+
+See [Local Claude Extraction](../user-guide/local-claude-extraction.md).
+
 ---
 
 ## Interview Settings

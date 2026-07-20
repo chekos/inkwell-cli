@@ -1,7 +1,8 @@
 # Local Agent Runtime Reference
 
 The `inkwell.agent_runtime` package provides a provider-neutral contract for
-bounded local runtime delegation. Version 1 ships one backend: `codex-cli`.
+bounded local runtime delegation. Version 1 ships `codex-cli` and
+`claude-code-cli` backends.
 
 ## Runtime Contract
 
@@ -96,3 +97,33 @@ The stdout object uses schema version 1 and includes:
 Version values are examples of observed output, not compiled requirements.
 Compatibility is checked against the runtime profile in the installed Inkwell
 version.
+
+## Claude Code Invocation Profile
+
+The `claude-code` extraction plugin uses documented noninteractive `claude -p`
+with stdin, a private mode-0700 temporary cwd, an explicit model, JSON Schema,
+and single-result JSON. It enables safe mode, supplies an empty built-in tool
+list, denies MCP tools, supplies a strict empty MCP configuration, selects
+`dontAsk`, disables skills/slash commands, disables session persistence, and
+loads no user/project/local setting sources.
+
+The backend deliberately does not use `--bare`: that mode skips saved
+OAuth/keychain authentication. Its minimal child environment retains `HOME` for
+the CLI's saved login but removes Anthropic keys/tokens, setup tokens,
+cloud-provider selectors/credentials, and other provider secrets. Readiness
+accepts only `authMethod: claude.ai` with `apiProvider: firstParty`; no account
+or organization fields survive parsing.
+
+Success requires exit code 0, a `result` object with `subtype: success`,
+`is_error != true`, one reported effective model, present structured output,
+JSON Schema validation, and application validation. Multiple model-usage keys
+are treated as ambiguous fallback and rejected. Usage, requested/effective
+model, attempts, runtime version, duration, sanitized auth class, and
+subscription-limit billing class are preserved.
+
+```bash
+inkwell plugins validate claude-code --json
+```
+
+Local Claude extraction remains explicit-only and local-only. The direct
+Anthropic API plugin is still named `claude` and is unchanged.

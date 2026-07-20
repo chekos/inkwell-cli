@@ -64,7 +64,7 @@ inkwell fetch URL --category tech
 
 ## Providers
 
-Inkwell supports two AI providers for extraction:
+Inkwell supports two direct API providers for automatic extraction:
 
 ### Gemini (Default)
 
@@ -94,6 +94,12 @@ inkwell fetch URL --provider gemini
 # Use Claude for everything (highest quality)
 inkwell fetch URL --provider claude
 ```
+
+Local CLI users may instead make an explicit, non-fallback choice of
+`--extractor codex` or `--extractor claude-code`. See [Local Codex
+Extraction](local-codex-extraction.md) and [Local Claude
+Extraction](local-claude-extraction.md). These backends never run in hosted
+workers and never enter automatic provider routing.
 
 ---
 

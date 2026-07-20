@@ -10,7 +10,7 @@ import os
 import re
 import time
 import warnings
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from ..config.precedence import resolve_config_value
 from ..config.schema import ExtractionConfig
@@ -40,6 +40,7 @@ if TYPE_CHECKING:
     from ..utils.costs import CostTracker
 
 logger = logging.getLogger(__name__)
+_LOCAL_RUNTIME_PROVIDERS = {"claude-code", "codex"}
 
 
 def _sanitize_error_message(message: str) -> str:
@@ -273,6 +274,7 @@ class ExtractionEngine:
 
         builtin_extractors = {
             "claude": "inkwell.extraction.extractors.claude:ClaudeExtractor",
+            "claude-code": ("inkwell.extraction.extractors.claude_code:ClaudeCodeExtractor"),
             "codex": "inkwell.extraction.extractors.codex:CodexExtractor",
             "gemini": "inkwell.extraction.extractors.gemini:GeminiExtractor",
         }
@@ -386,7 +388,7 @@ class ExtractionEngine:
             ),
             "prompt_hash": self._template_prompt_hash(template),
             "output_schema_version": self._output_schema_version(template),
-            "runtime_identity": "unknown" if provider == "codex" else "direct",
+            "runtime_identity": ("unknown" if provider in _LOCAL_RUNTIME_PROVIDERS else "direct"),
         }
 
     def _provider_name_for_extractor(self, extractor: BaseExtractor) -> str:
@@ -415,7 +417,7 @@ class ExtractionEngine:
         if override:
             return override
 
-        if template.model_preference:
+        if template.model_preference and template.model_preference not in _LOCAL_RUNTIME_PROVIDERS:
             return template.model_preference
 
         if "quote" in template.name.lower():
@@ -455,7 +457,7 @@ class ExtractionEngine:
 
     async def _runtime_identity_for_extractor(self, extractor: BaseExtractor) -> str:
         """Resolve runtime compatibility identity before cache access."""
-        if self._provider_name_for_extractor(extractor) != "codex":
+        if self._provider_name_for_extractor(extractor) not in _LOCAL_RUNTIME_PROVIDERS:
             return "direct"
         cache_identity = getattr(extractor, "cache_identity", None)
         if callable(cache_identity):
@@ -471,13 +473,13 @@ class ExtractionEngine:
         transcript: str,
         metadata: dict[str, Any],
     ) -> ExtractorOutput:
-        """Use the metadata seam for Codex and preserve legacy provider behavior."""
+        """Use the metadata seam for local runtimes and preserve API behavior."""
         provider = self._provider_name_for_extractor(extractor)
         model = self._model_name_for_extractor(extractor)
-        if provider == "codex":
+        if provider in _LOCAL_RUNTIME_PROVIDERS:
             output = await extractor.extract_with_metadata(template, transcript, metadata)
             if not isinstance(output, ExtractorOutput):
-                raise TypeError("Codex extractor returned invalid typed metadata")
+                raise TypeError("Local runtime extractor returned invalid typed metadata")
             return output
         raw_content = await extractor.extract(template, transcript, metadata)
         cost = extractor.estimate_cost(template, len(transcript))
@@ -696,9 +698,9 @@ class ExtractionEngine:
                         episode_title=metadata.get("episode_title"),
                         template_name=template.name,
                     )
-                elif output.provider == "codex":
+                elif output.provider in _LOCAL_RUNTIME_PROVIDERS:
                     self.cost_tracker.add_runtime_usage(
-                        provider="codex",
+                        provider=cast(Literal["codex", "claude-code"], output.provider),
                         model=output.model,
                         operation="extraction",
                         input_tokens=output.input_tokens,
@@ -869,9 +871,9 @@ class ExtractionEngine:
                             episode_title=metadata.get("episode_title"),
                             template_name=template.name,
                         )
-                    elif output.provider == "codex":
+                    elif output.provider in _LOCAL_RUNTIME_PROVIDERS:
                         self.cost_tracker.add_runtime_usage(
-                            provider="codex",
+                            provider=cast(Literal["codex", "claude-code"], output.provider),
                             model=output.model,
                             operation="extraction",
                             input_tokens=output.input_tokens,
@@ -1397,7 +1399,7 @@ class ExtractionEngine:
             ValueError: If no extractor plugins are available
         """
         # Template's explicit preference
-        if template.model_preference and template.model_preference != "codex":
+        if template.model_preference and template.model_preference not in _LOCAL_RUNTIME_PROVIDERS:
             plugin = self.extraction_registry.get(template.model_preference)
             if plugin:
                 return plugin
@@ -1405,7 +1407,7 @@ class ExtractionEngine:
         enabled_plugins = [
             (name, plugin)
             for name, plugin in self.extraction_registry.get_enabled()
-            if name != "codex"
+            if name not in _LOCAL_RUNTIME_PROVIDERS
         ]
 
         if not enabled_plugins:

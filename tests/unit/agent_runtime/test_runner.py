@@ -1,6 +1,7 @@
 """Bounded subprocess and environment-policy tests."""
 
 import asyncio
+import json
 import os
 import stat
 import sys
@@ -68,6 +69,27 @@ async def test_runner_delivers_prompt_over_stdin_not_argv(tmp_path: Path) -> Non
     assert marker in output
     assert marker not in " ".join([str(script), "--fixed-flag"])
     assert str(tmp_path) in output
+
+
+@pytest.mark.asyncio
+async def test_runner_preserves_documented_empty_string_arguments(tmp_path: Path) -> None:
+    script = _write_script(
+        tmp_path / "argv.py",
+        "import json, sys\nprint(json.dumps(sys.argv[1:]))\n",
+    )
+
+    result = await run_bounded_process(
+        [str(script), "--tools", ""],
+        stdin=b"",
+        cwd=tmp_path,
+        env=build_minimal_environment(),
+        timeout_seconds=5,
+        max_stdout_bytes=4096,
+        max_stderr_bytes=4096,
+        max_line_bytes=4096,
+    )
+
+    assert json.loads(result.stdout) == ["--tools", ""]
 
 
 @pytest.mark.asyncio
@@ -201,3 +223,35 @@ async def test_runner_cancellation_is_typed(tmp_path: Path) -> None:
 
     assert raised.value.code == RuntimeErrorCode.CANCELLED
     assert os.name != "posix" or task.done()
+
+
+@pytest.mark.asyncio
+async def test_runner_cancellation_during_process_creation_is_typed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    creation_started = asyncio.Event()
+
+    async def wait_during_creation(*_args: object, **_kwargs: object) -> None:
+        creation_started.set()
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", wait_during_creation)
+    task = asyncio.create_task(
+        run_bounded_process(
+            ["runtime"],
+            stdin=b"",
+            cwd=tmp_path,
+            env=build_minimal_environment(),
+            timeout_seconds=60,
+            max_stdout_bytes=1024,
+            max_stderr_bytes=1024,
+            max_line_bytes=1024,
+        )
+    )
+    await creation_started.wait()
+    task.cancel()
+
+    with pytest.raises(RuntimeInvocationError) as raised:
+        await task
+
+    assert raised.value.code == RuntimeErrorCode.CANCELLED

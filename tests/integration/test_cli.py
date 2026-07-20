@@ -553,6 +553,40 @@ class TestCLIFetchMachineOutput:
         ]
         assert "Traceback" not in result.stdout
 
+    def test_fetch_json_claude_code_configuration_failure_is_structured(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """Explicit Local Claude selection requires a configured model."""
+        monkeypatch.setattr(
+            "inkwell.cli.ConfigManager",
+            lambda: ConfigManager(config_dir=tmp_path),
+        )
+
+        result = runner.invoke(
+            app,
+            [
+                "fetch",
+                "https://example.com/episode.mp3",
+                "--extractor",
+                "claude-code",
+                "--json",
+                "--output-dir",
+                str(tmp_path),
+            ],
+        )
+
+        assert result.exit_code == 1
+        payload = json.loads(result.stdout)
+        assert payload["errors"] == [
+            {
+                "code": "model_required",
+                "message": "The Local Claude extractor requires an explicit model.",
+                "suggestion": (
+                    "Run `inkwell plugins configure claude-code model MODEL_ID`, then validate it."
+                ),
+            }
+        ]
+
     def test_fetch_error_json_preserves_completed_results(self, tmp_path: Path) -> None:
         """A later failure retains accurate request and completed-result accounting."""
         from inkwell.cli import _fetch_error_json_payload

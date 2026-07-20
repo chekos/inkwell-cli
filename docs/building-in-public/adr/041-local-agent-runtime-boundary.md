@@ -60,6 +60,10 @@ interview backend work are outside this decision.
 4. Add Claude Code subscription execution simultaneously.
    - Rejected: the policy boundary remains unresolved and is tracked separately.
 
+The policy boundary was subsequently cleared and accepted under the narrower
+conditions in ADR 042. This historical decision remains the origin of the
+provider-neutral runtime contract.
+
 ## References
 
 - Research and decision epic: #119

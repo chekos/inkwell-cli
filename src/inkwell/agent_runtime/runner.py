@@ -77,6 +77,20 @@ class _OutputLimitExceededError(Exception):
     pass
 
 
+def _close_process_output_transports(process: asyncio.subprocess.Process) -> None:
+    """Close unread pipe transports so process.wait cannot hang after a limit."""
+    transport = getattr(process, "_transport", None)
+    if transport is None:
+        return
+    get_pipe_transport = getattr(transport, "get_pipe_transport", None)
+    if not callable(get_pipe_transport):
+        return
+    for fd in (1, 2):
+        pipe_transport = get_pipe_transport(fd)
+        if pipe_transport is not None:
+            pipe_transport.close()
+
+
 async def _read_bounded(
     stream: asyncio.StreamReader,
     *,
@@ -163,17 +177,23 @@ async def run_bounded_process(
     term_grace_seconds: float = 2.0,
 ) -> ProcessResult:
     """Run an argv list with bounded I/O and deterministic group cleanup."""
-    if not argv or not all(isinstance(part, str) and part for part in argv):
-        raise ValueError("argv must be a non-empty sequence of strings")
-    process = await asyncio.create_subprocess_exec(
-        *argv,
-        stdin=asyncio.subprocess.PIPE,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-        cwd=cwd,
-        env=dict(env),
-        start_new_session=os.name == "posix",
-    )
+    if not argv or not all(isinstance(part, str) for part in argv):
+        raise ValueError("argv must be a non-empty sequence containing only strings")
+    try:
+        process = await asyncio.create_subprocess_exec(
+            *argv,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            cwd=cwd,
+            env=dict(env),
+            start_new_session=os.name == "posix",
+        )
+    except asyncio.CancelledError as exc:
+        raise RuntimeInvocationError(
+            RuntimeErrorCode.CANCELLED,
+            "Local runtime invocation was cancelled.",
+        ) from exc
     assert process.stdin is not None
     assert process.stdout is not None
     assert process.stderr is not None
@@ -201,6 +221,7 @@ async def run_bounded_process(
         )
         return ProcessResult(process.returncode or 0, stdout, stderr)
     except _OutputLimitExceededError as exc:
+        _close_process_output_transports(process)
         await _terminate_process_group(process, grace_seconds=term_grace_seconds)
         raise RuntimeInvocationError(
             RuntimeErrorCode.OUTPUT_TOO_LARGE,

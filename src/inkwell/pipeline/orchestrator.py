@@ -299,7 +299,7 @@ class PipelineOrchestrator:
         )
 
         selected_extractor = options.extractor or os.environ.get("INKWELL_EXTRACTOR")
-        if selected_extractor == "codex" and extraction_summary.failed:
+        if selected_extractor in {"claude-code", "codex"} and extraction_summary.failed:
             failed_result = next(
                 (result for result in extraction_results if not result.success),
                 None,
@@ -313,10 +313,12 @@ class PipelineOrchestrator:
                 (
                     failed_result.error
                     if failed_result and failed_result.error
-                    else "Local Codex extraction failed."
+                    else "Local runtime extraction failed."
                 ),
-                details={"code": error_code, "extractor": "codex"},
-                suggestion="Run `inkwell plugins validate codex --json` and retry.",
+                details={"code": error_code, "extractor": selected_extractor},
+                suggestion=(
+                    f"Run `inkwell plugins validate {selected_extractor} --json` and retry."
+                ),
             )
 
         if progress_callback:
@@ -603,9 +605,9 @@ class PipelineOrchestrator:
         )
 
         selected_extractor = extractor_override or os.environ.get("INKWELL_EXTRACTOR")
-        if selected_extractor == "codex" and not self.allow_local_runtime:
+        if selected_extractor in {"claude-code", "codex"} and not self.allow_local_runtime:
             raise InkwellError(
-                "The Codex extractor is local-only and cannot run in hosted workers.",
+                "Local Claude/Codex extractors cannot run in hosted workers.",
                 details={"code": "local_runtime_hosted_forbidden"},
                 suggestion="Use the default Claude/Gemini provider for hosted imports.",
             )

@@ -91,7 +91,7 @@ class APIUsage(BaseModel):
         default_factory=lambda: str(uuid4()), description="Unique identifier for this usage record"
     )
 
-    provider: Literal["gemini", "claude", "youtube", "codex"] = Field(
+    provider: Literal["gemini", "claude", "youtube", "codex", "claude-code"] = Field(
         ..., description="API/runtime provider"
     )
     model: str = Field(..., description="Model used (e.g., gemini-2.5-flash)")
@@ -437,7 +437,7 @@ class CostTracker:
     def add_runtime_usage(
         self,
         *,
-        provider: Literal["codex"],
+        provider: Literal["codex", "claude-code"],
         model: str,
         operation: Literal["extraction"],
         input_tokens: int,

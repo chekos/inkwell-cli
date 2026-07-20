@@ -446,23 +446,39 @@ def _fetch_json_payload(
     }
 
 
-def _fetch_error_json_payload(error: InkwellError) -> dict[str, Any]:
+def _fetch_error_json_payload(
+    error: InkwellError,
+    *,
+    requested: int,
+    completed_results: list[PipelineResult],
+) -> dict[str, Any]:
     """Build the stable fetch failure envelope without exposing provider output."""
+    result_payloads = [_fetch_result_payload(result) for result in completed_results]
+    files = [file for item in result_payloads for file in item["output"]["files"]]
+    templates = [template for item in result_payloads for template in item["templates"]]
+    succeeded = len(result_payloads)
+    requested = max(requested, succeeded + 1)
     return {
         "schema_version": 1,
         "command": "fetch",
         "status": "error",
         "summary": {
-            "requested": 0,
-            "succeeded": 0,
-            "failed": 1,
-            "total_cost_usd": 0.0,
-            "total_cost_known": True,
-            "unknown_cost_operations": 0,
+            "requested": requested,
+            "succeeded": succeeded,
+            "failed": requested - succeeded,
+            "total_cost_usd": sum(item["costs"]["total_usd"] for item in result_payloads),
+            "total_cost_known": all(item["costs"]["total_known"] for item in result_payloads),
+            "unknown_cost_operations": sum(
+                item["costs"]["unknown_operations"] for item in result_payloads
+            ),
         },
-        "files": [],
-        "templates": [],
-        "results": [],
+        "files": files,
+        "templates": templates,
+        "cache_hits": {
+            "transcripts": sum(1 for item in result_payloads if item["cache_hits"]["transcript"]),
+            "extractions": sum(item["cache_hits"]["extractions"] for item in result_payloads),
+        },
+        "results": result_payloads,
         "errors": [
             {
                 "code": str(error.details.get("code", "inkwell_error")),
@@ -1606,7 +1622,8 @@ def fetch_command(
         nonlocal url_or_feed
         machine_output = json_output or plain or extract_only
         status_console = err_console if machine_output else console
-        processed_results = []
+        processed_results: list[PipelineResult] = []
+        requested_count = 1
         extract_transcripts: list[str] = []
         extract_output_paths: list[Path] = []
         extract_used_filenames: set[str] = set()
@@ -1911,6 +1928,7 @@ def fetch_command(
             episodes_to_process: list[Episode | None] = (
                 list(selected_episodes) if selected_episodes is not None else [None]
             )
+            requested_count = len(episodes_to_process)
 
             # Process each episode
             for ep in episodes_to_process:
@@ -2296,7 +2314,13 @@ def fetch_command(
             sys.exit(1)
         except InkwellError as e:
             if json_output and not plain:
-                _print_json_payload(_fetch_error_json_payload(e))
+                _print_json_payload(
+                    _fetch_error_json_payload(
+                        e,
+                        requested=requested_count,
+                        completed_results=processed_results,
+                    )
+                )
                 raise typer.Exit(1) from e
             # Print message and suggestion separately so agents parsing
             # line-by-line can capture both cleanly (matches add_feed's pattern).

@@ -115,6 +115,29 @@ async def test_runner_timeout_terminates_process_group(tmp_path: Path) -> None:
     assert raised.value.code == RuntimeErrorCode.TIMEOUT
 
 
+@pytest.mark.asyncio
+async def test_runner_timeout_includes_blocked_stdin_transfer(tmp_path: Path) -> None:
+    script = _write_script(
+        tmp_path / "ignore-stdin.py",
+        "import time\ntime.sleep(30)\n",
+    )
+
+    with pytest.raises(RuntimeInvocationError) as raised:
+        await run_bounded_process(
+            [str(script)],
+            stdin=b"x" * 2_000_000,
+            cwd=tmp_path,
+            env=build_minimal_environment(),
+            timeout_seconds=0.05,
+            max_stdout_bytes=1024,
+            max_stderr_bytes=1024,
+            max_line_bytes=1024,
+            term_grace_seconds=0.05,
+        )
+
+    assert raised.value.code == RuntimeErrorCode.TIMEOUT
+
+
 @pytest.mark.skipif(os.name != "posix", reason="process-group proof is POSIX-specific")
 @pytest.mark.asyncio
 async def test_timeout_terminates_descendant_processes(tmp_path: Path) -> None:

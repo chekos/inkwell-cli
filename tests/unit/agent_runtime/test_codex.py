@@ -327,3 +327,27 @@ def test_parser_runs_application_validator(tmp_path: Path) -> None:
         )
 
     assert raised.value.code == RuntimeErrorCode.APPLICATION_INVALID
+
+
+def test_parser_rejects_oversized_final_document(tmp_path: Path) -> None:
+    backend = CodexRuntimeBackend("codex")
+    result_file = tmp_path / "result.json"
+    result_file.write_bytes(b"x" * 2048)
+    request = RuntimeRequest(
+        prompt="task",
+        output_schema={"type": "object"},
+        requested_model="expected-model",
+        max_stdout_bytes=1024,
+    )
+
+    with pytest.raises(RuntimeInvocationError) as raised:
+        backend._parse_response(
+            b'{"type":"turn.completed"}\n',
+            result_file=result_file,
+            request=request,
+            version="0.144.6",
+            auth_class="chatgpt",
+            duration_seconds=0.1,
+        )
+
+    assert raised.value.code == RuntimeErrorCode.OUTPUT_TOO_LARGE

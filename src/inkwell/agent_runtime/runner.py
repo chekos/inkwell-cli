@@ -100,6 +100,24 @@ async def _read_bounded(
         chunks.append(chunk)
 
 
+async def _write_stdin(
+    stream: asyncio.StreamWriter,
+    payload: bytes,
+) -> None:
+    """Write and close stdin while tolerating a child that exits early."""
+    try:
+        stream.write(payload)
+        await stream.drain()
+    except (BrokenPipeError, ConnectionResetError):
+        pass
+    finally:
+        stream.close()
+        try:
+            await stream.wait_closed()
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+
+
 async def _terminate_process_group(
     process: asyncio.subprocess.Process,
     *,
@@ -174,13 +192,10 @@ async def run_bounded_process(
         )
     )
     wait_task = asyncio.create_task(process.wait())
-    completion = asyncio.gather(wait_task, stdout_task, stderr_task)
+    stdin_task = asyncio.create_task(_write_stdin(process.stdin, stdin))
+    completion = asyncio.gather(stdin_task, wait_task, stdout_task, stderr_task)
     try:
-        process.stdin.write(stdin)
-        await process.stdin.drain()
-        process.stdin.close()
-        await process.stdin.wait_closed()
-        _, stdout, stderr = await asyncio.wait_for(
+        _, _, stdout, stderr = await asyncio.wait_for(
             asyncio.shield(completion),
             timeout=timeout_seconds,
         )

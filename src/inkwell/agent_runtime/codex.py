@@ -352,8 +352,15 @@ class CodexRuntimeBackend:
                 "Codex CLI did not emit a completed terminal event.",
             )
         try:
-            final_value = json.loads(result_file.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as exc:
+            if result_file.stat().st_size > request.max_stdout_bytes:
+                raise RuntimeInvocationError(
+                    RuntimeErrorCode.OUTPUT_TOO_LARGE,
+                    "Local runtime output exceeded the configured safety limit.",
+                )
+            final_value = json.loads(result_file.read_bytes().decode("utf-8"))
+        except RuntimeInvocationError:
+            raise
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise RuntimeInvocationError(
                 RuntimeErrorCode.MALFORMED_PROTOCOL,
                 "Codex CLI did not write a parseable final document.",

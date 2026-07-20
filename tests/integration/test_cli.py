@@ -534,6 +534,14 @@ class TestCLIFetchMachineOutput:
         payload = json.loads(result.stdout)
         assert payload["command"] == "fetch"
         assert payload["status"] == "error"
+        assert payload["summary"] == {
+            "requested": 1,
+            "succeeded": 0,
+            "failed": 1,
+            "total_cost_usd": 0,
+            "total_cost_known": True,
+            "unknown_cost_operations": 0,
+        }
         assert payload["errors"] == [
             {
                 "code": "model_required",
@@ -544,6 +552,29 @@ class TestCLIFetchMachineOutput:
             }
         ]
         assert "Traceback" not in result.stdout
+
+    def test_fetch_error_json_preserves_completed_results(self, tmp_path: Path) -> None:
+        """A later failure retains accurate request and completed-result accounting."""
+        from inkwell.cli import _fetch_error_json_payload
+
+        output_dir = tmp_path / "episode-dir"
+        output_dir.mkdir()
+        payload = _fetch_error_json_payload(
+            ValidationError("second episode failed"),
+            requested=2,
+            completed_results=[_sample_pipeline_result(output_dir)],
+        )
+
+        assert payload["summary"] == {
+            "requested": 2,
+            "succeeded": 1,
+            "failed": 1,
+            "total_cost_usd": 0.02,
+            "total_cost_known": True,
+            "unknown_cost_operations": 0,
+        }
+        assert payload["files"][0]["filename"] == "summary.md"
+        assert payload["results"][0]["status"] == "success"
 
     def test_fetch_plain_stdout_is_only_output_directory_path(
         self, tmp_path: Path, monkeypatch

@@ -113,11 +113,13 @@ async def _terminate_process_group(
         else:  # pragma: no cover - exercised on Windows CI when available
             process.terminate()
     except ProcessLookupError:
+        await process.wait()
         return
+    grace_wait = asyncio.create_task(process.wait())
     try:
-        await asyncio.wait_for(process.wait(), timeout=grace_seconds)
+        await asyncio.wait_for(asyncio.shield(grace_wait), timeout=grace_seconds)
         return
-    except TimeoutError:
+    except asyncio.TimeoutError:
         pass
     try:
         if os.name == "posix":
@@ -125,8 +127,9 @@ async def _terminate_process_group(
         else:  # pragma: no cover
             process.kill()
     except ProcessLookupError:
+        await grace_wait
         return
-    await process.wait()
+    await grace_wait
 
 
 async def run_bounded_process(
@@ -171,13 +174,14 @@ async def run_bounded_process(
         )
     )
     wait_task = asyncio.create_task(process.wait())
+    completion = asyncio.gather(wait_task, stdout_task, stderr_task)
     try:
         process.stdin.write(stdin)
         await process.stdin.drain()
         process.stdin.close()
         await process.stdin.wait_closed()
         _, stdout, stderr = await asyncio.wait_for(
-            asyncio.gather(wait_task, stdout_task, stderr_task),
+            asyncio.shield(completion),
             timeout=timeout_seconds,
         )
         return ProcessResult(process.returncode or 0, stdout, stderr)
@@ -187,7 +191,7 @@ async def run_bounded_process(
             RuntimeErrorCode.OUTPUT_TOO_LARGE,
             "Local runtime output exceeded the configured safety limit.",
         ) from exc
-    except TimeoutError as exc:
+    except asyncio.TimeoutError as exc:
         await _terminate_process_group(process, grace_seconds=term_grace_seconds)
         raise RuntimeInvocationError(
             RuntimeErrorCode.TIMEOUT,
@@ -200,7 +204,12 @@ async def run_bounded_process(
             "Local runtime invocation was cancelled.",
         ) from exc
     finally:
-        for task in (wait_task, stdout_task, stderr_task):
-            if not task.done():
-                task.cancel()
-        await asyncio.gather(wait_task, stdout_task, stderr_task, return_exceptions=True)
+        if process.returncode is None:
+            await _terminate_process_group(process, grace_seconds=term_grace_seconds)
+        await asyncio.gather(completion, return_exceptions=True)
+        # asyncio has no public Process.close(). Closing its transport prevents
+        # unread, limit-exceeded pipes from surviving the event loop on Python 3.10.
+        transport = getattr(process, "_transport", None)
+        if transport is not None:
+            transport.close()
+        await asyncio.sleep(0)

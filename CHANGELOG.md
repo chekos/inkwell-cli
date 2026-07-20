@@ -5,6 +5,30 @@ All notable changes to Inkwell CLI will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [0.24.0] - 2026-07-20
+
+### Added
+
+- Explicit, local-only Codex CLI extraction through `--extractor codex` or
+  `INKWELL_EXTRACTOR=codex`.
+- Secret-free `inkwell plugins validate codex --json` readiness diagnostics and
+  typed `inkwell plugins configure codex ...` settings.
+- A provider-neutral local agent-runtime contract with bounded subprocess I/O,
+  private workspaces, fail-closed tool controls, schema validation, cancellation,
+  sanitized errors, and runtime/model provenance.
+- Runtime-aware extraction cache keys and honest `runtime_managed` monetary
+  state for subscription-backed work whose per-call USD amount is unknown.
+
+### Security
+
+- Codex child processes receive a scrubbed allowlisted environment, never a PTY
+  or shell command, and receive prompts only through stdin.
+- Codex remains opt-in and is never used by automatic provider routing or the
+  hosted Modal worker. Inkwell does not inspect, copy, refresh, or broker Codex
+  authentication state.
+
 ## [1.0.0] - 2025-11-13
 
 ### 🎉 v1.0.0 - Production Release

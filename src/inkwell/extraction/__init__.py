@@ -16,6 +16,7 @@ from .models import (
     ExtractedContent,
     ExtractionResult,
     ExtractionTemplate,
+    ExtractorOutput,
     TemplateVariable,
 )
 
@@ -24,6 +25,7 @@ __all__ = [
     "TemplateVariable",
     "ExtractedContent",
     "ExtractionResult",
+    "ExtractorOutput",
     "ExtractionCache",
     "EXTRACTION_CACHE_FORMAT_VERSION",
     "EXTRACTION_OUTPUT_SCHEMA_VERSION",

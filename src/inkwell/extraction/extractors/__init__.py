@@ -26,6 +26,7 @@ from .base import BaseExtractor
 __all__ = [
     "BaseExtractor",
     "ClaudeExtractor",
+    "CodexExtractor",
     "GeminiExtractor",
 ]
 
@@ -62,5 +63,10 @@ def __getattr__(name: str) -> type:
             stacklevel=2,
         )
         return GeminiExtractor
+
+    if name == "CodexExtractor":
+        from .codex import CodexExtractor
+
+        return CodexExtractor
 
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

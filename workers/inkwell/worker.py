@@ -296,7 +296,7 @@ async def _process_with_pipeline(
     progress_callback: Callable[[str, dict[str, Any]], None],
 ) -> PipelineResult:
     config = build_worker_config(output_dir)
-    orchestrator = PipelineOrchestrator(config)
+    orchestrator = PipelineOrchestrator(config, allow_local_runtime=False)
     episode_title = await _resolve_episode_title(payload.url)
     options = PipelineOptions(
         url=payload.url,

@@ -7,6 +7,43 @@ plugin enable/disable state to the configuration file.
 from inkwell.config.manager import ConfigManager
 from inkwell.config.schema import PluginConfig
 
+_CODEX_CONFIG_FIELDS: dict[str, tuple[type, float | int | None, float | int | None]] = {
+    "executable": (str, None, None),
+    "model": (str, None, None),
+    "timeout_seconds": (float, 1, 3600),
+    "max_input_bytes": (int, 1, 10_000_000),
+    "max_stdout_bytes": (int, 1024, 64 * 1024 * 1024),
+    "max_stderr_bytes": (int, 1024, 16 * 1024 * 1024),
+}
+
+
+def coerce_plugin_config_value(name: str, key: str, value: object) -> object:
+    """Validate known built-in plugin configuration values."""
+    if name != "codex":
+        return value
+    spec = _CODEX_CONFIG_FIELDS.get(key)
+    if spec is None:
+        raise ValueError(
+            f"Unknown Codex configuration key '{key}'. "
+            f"Valid keys: {', '.join(sorted(_CODEX_CONFIG_FIELDS))}"
+        )
+    expected, minimum, maximum = spec
+    try:
+        if expected is str:
+            parsed: object = str(value).strip()
+            if not parsed:
+                raise ValueError("value must not be empty")
+        else:
+            parsed = expected(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"Invalid value for codex.{key}") from exc
+    if isinstance(parsed, (int, float)):
+        if minimum is not None and parsed < minimum:
+            raise ValueError(f"codex.{key} must be at least {minimum:g}")
+        if maximum is not None and parsed > maximum:
+            raise ValueError(f"codex.{key} must be at most {maximum:g}")
+    return parsed
+
 
 class PluginConfigManager:
     """Manages persistent plugin configuration.
@@ -88,9 +125,14 @@ class PluginConfigManager:
             key: Configuration key within the plugin's config dict.
             value: Configuration value to set.
         """
+        value = coerce_plugin_config_value(name, key, value)
         config = self._config.load_config()
         if name not in config.plugins:
-            config.plugins[name] = PluginConfig(config={key: value})
+            config.plugins[name] = PluginConfig(
+                enabled=True,
+                priority=0 if name == "codex" else 50,
+                config={key: value},
+            )
         else:
             config.plugins[name].config[key] = value
         self._config.save_config(config)

@@ -55,8 +55,14 @@ class PipelineResult:
     interview_result: SimpleInterviewResult | None
     extraction_cost_usd: float
     interview_cost_usd: float
+    extraction_cost_known: bool = True
 
     @property
     def total_cost_usd(self) -> float:
         """Calculate total cost across all pipeline stages."""
         return self.extraction_cost_usd + self.interview_cost_usd
+
+    @property
+    def total_cost_known(self) -> bool:
+        """Whether the numeric total represents every operation."""
+        return self.extraction_cost_known

@@ -91,7 +91,9 @@ class APIUsage(BaseModel):
         default_factory=lambda: str(uuid4()), description="Unique identifier for this usage record"
     )
 
-    provider: Literal["gemini", "claude", "youtube"] = Field(..., description="API provider")
+    provider: Literal["gemini", "claude", "youtube", "codex"] = Field(
+        ..., description="API/runtime provider"
+    )
     model: str = Field(..., description="Model used (e.g., gemini-2.5-flash)")
     operation: Literal["transcription", "extraction", "tag_generation", "interview"] = Field(
         ..., description="Type of operation"
@@ -104,6 +106,8 @@ class APIUsage(BaseModel):
 
     # Cost
     cost_usd: float = Field(0.0, ge=0, description="Cost in USD")
+    cost_known: bool = Field(True, description="Whether cost_usd is complete")
+    billing_mode: Literal["known", "estimated", "runtime_managed"] = "known"
 
     # Context
     timestamp: datetime = Field(default_factory=now_utc, description="When operation occurred")
@@ -136,6 +140,8 @@ class CostSummary(BaseModel):
     total_output_tokens: int = Field(0, ge=0)
     total_tokens: int = Field(0, ge=0)
     total_cost_usd: float = Field(0.0, ge=0)
+    total_cost_known: bool = True
+    unknown_cost_operations: int = Field(0, ge=0)
 
     # Breakdown by provider
     costs_by_provider: dict[str, float] = Field(default_factory=dict)
@@ -165,6 +171,9 @@ class CostSummary(BaseModel):
             summary.total_output_tokens += usage.output_tokens
             summary.total_tokens += usage.total_tokens
             summary.total_cost_usd += usage.cost_usd
+            if not usage.cost_known:
+                summary.total_cost_known = False
+                summary.unknown_cost_operations += 1
 
             # Breakdown by provider
             provider = usage.provider
@@ -424,6 +433,33 @@ class CostTracker:
         self.track(usage)
 
         return cost_usd
+
+    def add_runtime_usage(
+        self,
+        *,
+        provider: Literal["codex"],
+        model: str,
+        operation: Literal["extraction"],
+        input_tokens: int,
+        output_tokens: int,
+        episode_title: str | None = None,
+        template_name: str | None = None,
+    ) -> None:
+        """Persist token usage whose monetary amount is runtime-managed."""
+        self.track(
+            APIUsage(
+                provider=provider,
+                model=model,
+                operation=operation,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                cost_usd=0.0,
+                cost_known=False,
+                billing_mode="runtime_managed",
+                episode_title=episode_title,
+                template_name=template_name,
+            )
+        )
 
     def get_session_cost(self) -> float:
         """Get total cost for current session.

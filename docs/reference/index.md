@@ -25,6 +25,9 @@ Available extraction templates, their outputs, and how to customize them.
 ### [Configuration Options](config-options.md)
 All configuration options with defaults, types, and descriptions.
 
+### [Local Agent Runtime](agent-runtime.md)
+Typed readiness, invocation, error, isolation, provenance, and billing contracts for local runtime backends.
+
 ### [Transcription Attempt Policy](transcription-attempt-policy.md)
 Developer-facing reference for transcription fallback ordering and future provider policy work.
 

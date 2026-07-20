@@ -152,7 +152,7 @@ class ConfigManager:
         """
         if not self.config_file.exists():
             self._create_default_config()
-            return DEFAULT_GLOBAL_CONFIG
+            return DEFAULT_GLOBAL_CONFIG.model_copy(deep=True)
 
         try:
             data = yaml.safe_load(self.config_file.read_text(encoding="utf-8")) or {}

@@ -70,6 +70,46 @@ class TestExtractionCache:
         assert await cache.get("summary", "1.1", "transcript") is None
 
     @pytest.mark.asyncio
+    async def test_runtime_identity_invalidates_cache(self, temp_cache_dir: Path) -> None:
+        """Exact local runtime identity prevents false cross-version hits."""
+        cache = ExtractionCache(cache_dir=temp_cache_dir)
+        common = {
+            "provider": "codex",
+            "model": "explicit-model",
+            "prompt_hash": "prompt",
+            "output_schema_version": "markdown:schema",
+        }
+        await cache.set(
+            "summary",
+            "1.0",
+            "transcript",
+            "runtime-a",
+            runtime_identity="codex-cli:0.144.6:protocol=1:model=explicit-model",
+            **common,
+        )
+
+        assert (
+            await cache.get(
+                "summary",
+                "1.0",
+                "transcript",
+                runtime_identity="codex-cli:0.144.6:protocol=1:model=explicit-model",
+                **common,
+            )
+            == "runtime-a"
+        )
+        assert (
+            await cache.get(
+                "summary",
+                "1.0",
+                "transcript",
+                runtime_identity="codex-cli:0.145.0:protocol=1:model=explicit-model",
+                **common,
+            )
+            is None
+        )
+
+    @pytest.mark.asyncio
     async def test_different_transcripts_separate_cache(self, temp_cache_dir: Path) -> None:
         """Test that different transcripts have separate cache entries."""
         cache = ExtractionCache(cache_dir=temp_cache_dir)

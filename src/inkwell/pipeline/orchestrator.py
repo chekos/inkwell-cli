@@ -5,6 +5,7 @@ separated from CLI presentation concerns.
 """
 
 import logging
+import os
 from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -61,7 +62,7 @@ class PipelineOrchestrator:
         >>> print(f"Cost: ${result.total_cost_usd:.4f}")
     """
 
-    def __init__(self, config: GlobalConfig):
+    def __init__(self, config: GlobalConfig, *, allow_local_runtime: bool = True):
         """Initialize the pipeline orchestrator.
 
         Args:
@@ -69,6 +70,7 @@ class PipelineOrchestrator:
         """
         self.config = config
         self.cost_tracker = CostTracker()
+        self.allow_local_runtime = allow_local_runtime
 
     def _filter_templates_for_incremental(
         self,
@@ -296,6 +298,27 @@ class PipelineOrchestrator:
             force_extraction=options.force_extraction,
         )
 
+        selected_extractor = options.extractor or os.environ.get("INKWELL_EXTRACTOR")
+        if selected_extractor == "codex" and extraction_summary.failed:
+            failed_result = next(
+                (result for result in extraction_results if not result.success),
+                None,
+            )
+            error_code = (
+                failed_result.error_code
+                if failed_result and failed_result.error_code
+                else "runtime_failed"
+            )
+            raise InkwellError(
+                (
+                    failed_result.error
+                    if failed_result and failed_result.error
+                    else "Local Codex extraction failed."
+                ),
+                details={"code": error_code, "extractor": "codex"},
+                suggestion="Run `inkwell plugins validate codex --json` and retry.",
+            )
+
         if progress_callback:
             progress_callback(
                 "extraction_complete",
@@ -304,6 +327,7 @@ class PipelineOrchestrator:
                     "failed": extraction_summary.failed,
                     "cached": extraction_summary.cached,
                     "cost_usd": extraction_cost,
+                    "cost_known": all(result.cost_known for result in extraction_results),
                 },
             )
 
@@ -322,6 +346,7 @@ class PipelineOrchestrator:
                 interview_result=None,
                 extraction_cost_usd=extraction_cost,
                 interview_cost_usd=0.0,
+                extraction_cost_known=True,
             )
 
         if progress_callback:
@@ -415,6 +440,7 @@ class PipelineOrchestrator:
             interview_result=interview_result,
             extraction_cost_usd=extraction_cost,
             interview_cost_usd=interview_cost,
+            extraction_cost_known=all(result.cost_known for result in extraction_results),
         )
 
     async def _transcribe(
@@ -573,7 +599,16 @@ class PipelineOrchestrator:
             cost_tracker=self.cost_tracker,
             extractor_override=extractor_override,
             force_extraction=force_extraction,
+            plugin_configs=self.config.plugins,
         )
+
+        selected_extractor = extractor_override or os.environ.get("INKWELL_EXTRACTOR")
+        if selected_extractor == "codex" and not self.allow_local_runtime:
+            raise InkwellError(
+                "The Codex extractor is local-only and cannot run in hosted workers.",
+                details={"code": "local_runtime_hosted_forbidden"},
+                suggestion="Use the default Claude/Gemini provider for hosted imports.",
+            )
 
         # Estimate cost
         estimated_cost = engine.estimate_total_cost(

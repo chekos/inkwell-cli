@@ -1,5 +1,6 @@
 """Integration tests for plugin CLI commands."""
 
+import json
 import os
 
 from typer.testing import CliRunner
@@ -65,11 +66,17 @@ class TestPluginsList:
         assert "local" in result.stdout.lower()
         assert "orientation" in result.stdout.lower()
 
+    def test_plugins_list_shows_explicit_codex_extractor(self) -> None:
+        result = runner.invoke(app, ["plugins", "list", "--type", "extraction", "--all"])
+
+        assert result.exit_code == 0
+        assert "codex" in result.stdout.lower()
+
     def test_plugins_list_invalid_type(self) -> None:
         """Test error handling for invalid plugin type."""
         result = runner.invoke(app, ["plugins", "list", "--type", "invalid"])
 
-        assert result.exit_code == 1
+        assert result.exit_code == 1, result.stdout
         assert "Unknown plugin type" in result.stdout or "unknown" in result.stdout.lower()
 
     def test_plugins_list_show_all_flag(self) -> None:
@@ -103,6 +110,87 @@ class TestPluginsValidate:
         # Command should complete (exit code 0 if all valid, 1 if some fail)
         # We just check it doesn't crash
         assert result.exit_code in [0, 1]
+
+    def test_validate_codex_json_is_secret_free_and_stdout_clean(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        from inkwell.agent_runtime.codex import CodexRuntimeBackend
+        from inkwell.agent_runtime.models import RuntimeReadiness
+
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+        monkeypatch.setenv("OPENAI_API_KEY", "must-not-appear")
+
+        async def fake_probe(_self):
+            return RuntimeReadiness(
+                runtime="codex-cli",
+                ready=True,
+                installed=True,
+                authenticated=True,
+                supported=True,
+                executable="/fake/codex",
+                version="0.144.6",
+                auth_class="chatgpt",
+                required_capabilities=["shell_tool"],
+            )
+
+        monkeypatch.setattr(CodexRuntimeBackend, "probe", fake_probe)
+        configured = runner.invoke(
+            app,
+            ["plugins", "configure", "codex", "model", "explicit-model"],
+        )
+        result = runner.invoke(app, ["plugins", "validate", "codex", "--json"])
+
+        assert configured.exit_code == 0
+        assert result.exit_code == 0
+        payload = json.loads(result.stdout)
+        assert payload["ready"] is True
+        assert payload["configured_model"] == "explicit-model"
+        assert payload["auth_class"] == "chatgpt"
+        assert "must-not-appear" not in result.stdout
+
+    def test_validate_codex_json_failure_is_one_clean_object(self, tmp_path, monkeypatch) -> None:
+        from inkwell.agent_runtime.codex import CodexRuntimeBackend
+        from inkwell.agent_runtime.models import RuntimeReadiness
+        from inkwell.config.manager import ConfigManager
+
+        monkeypatch.setattr(
+            "inkwell.cli_plugins.ConfigManager",
+            lambda: ConfigManager(config_dir=tmp_path / "config"),
+        )
+
+        async def fake_probe(_self):
+            return RuntimeReadiness(
+                runtime="codex-cli",
+                ready=True,
+                installed=True,
+                authenticated=True,
+                supported=True,
+                executable="/fake/codex",
+                version="0.144.6",
+                auth_class="chatgpt",
+            )
+
+        monkeypatch.setattr(CodexRuntimeBackend, "probe", fake_probe)
+        result = runner.invoke(app, ["plugins", "validate", "codex", "--json"])
+
+        assert result.exit_code == 1, result.stdout
+        payload = json.loads(result.stdout)
+        assert payload["ready"] is False
+        assert payload["error_code"] == "runtime_model_required"
+        assert "validation error" not in result.stdout
+
+
+class TestPluginsConfigure:
+    def test_configure_codex_rejects_out_of_bounds_value(self, tmp_path, monkeypatch) -> None:
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+
+        result = runner.invoke(
+            app,
+            ["plugins", "configure", "codex", "timeout_seconds", "0"],
+        )
+
+        assert result.exit_code == 1
+        assert "at least" in result.stdout
 
 
 class TestPluginsEnable:

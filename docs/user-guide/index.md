@@ -34,6 +34,9 @@ Extend Inkwell with custom plugins for extraction, transcription, and output for
 ### [Local Codex Extraction](local-codex-extraction.md)
 Explicitly delegate local extraction to a user-installed Codex CLI without copying credentials or changing automatic provider routing.
 
+### [Local Claude Extraction](local-claude-extraction.md)
+Use your local Claude CLI for explicit extraction while keeping authentication owned by Claude Code.
+
 ---
 
 ## Quick Reference

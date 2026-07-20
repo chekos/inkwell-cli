@@ -22,7 +22,8 @@ Current health baseline:
 - Multi-tier transcription: cache → YouTube transcripts → Gemini YouTube URL/audio fallback
 - Transcript-only extraction for media workflows
 - Local audio/video ingestion plus local text/markdown, image/PDF OCR, and stdin extraction
-- Template-based LLM extraction with Claude/Gemini providers
+- Template-based LLM extraction with Claude/Gemini APIs plus explicit local
+  Codex and Claude CLI backends
 - Interactive interview mode
 - Obsidian-friendly markdown with frontmatter, wikilinks, and tags
 - JSON/plain output modes for scripting `fetch` and `transcribe`
@@ -339,12 +340,12 @@ inkwell transcribe https://youtube.com/watch?v=xyz --plain
 
 See the [machine-readable output reference](./docs/reference/machine-readable-output.md) for envelope examples and the stdout/stderr contract.
 
-Local CLI users may explicitly delegate extraction to their separately
-installed and authenticated Codex CLI. Configure a current model with
-`inkwell plugins configure codex model MODEL_ID`, validate with
-`inkwell plugins validate codex --json`, then use `--extractor codex`.
-Direct Claude/Gemini APIs remain the defaults and the only hosted path. See
-[Local Codex Extraction](./docs/user-guide/local-codex-extraction.md).
+Local CLI users may explicitly delegate extraction to a separately installed
+Codex or Claude CLI. Use `--extractor codex` for Local Codex extraction or
+`--extractor claude-code` for Local Claude extraction after configuring and
+validating an explicit model. Direct Claude/Gemini APIs remain the defaults and
+the only hosted path. See [Local Codex Extraction](./docs/user-guide/local-codex-extraction.md)
+and [Local Claude Extraction](./docs/user-guide/local-claude-extraction.md).
 
 ### Cache Management
 

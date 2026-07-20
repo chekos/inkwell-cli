@@ -37,7 +37,8 @@ Podcast and source processing:
 
 LLM and AI:
 
-- Content extraction: Claude and Gemini APIs
+- Content extraction: Claude and Gemini APIs plus explicit local Codex/Claude
+  CLI backends
 - Interview mode: Anthropic SDK via `AsyncAnthropic`
 - Prompt-configured extraction templates in `src/inkwell/templates/`
 
@@ -53,6 +54,8 @@ System requirements:
 - Tesseract plus the `ocr` Python extra for optional local image/PDF OCR
 - Google AI API key for Gemini transcription and fallback paths
 - Anthropic API key for Claude extraction or interview mode
+- Separately installed and authenticated Claude CLI for optional Local Claude
+  extraction
 
 ## Development Setup
 
@@ -138,7 +141,8 @@ Key components:
   images, selectable or image-based PDFs, local media, and stdin where supported.
 - Transcription: YouTube transcripts, Gemini public YouTube URL fallback, Gemini
   audio fallback, and transcript caching.
-- Extraction: YAML template selection and Claude/Gemini provider routing.
+- Extraction: YAML template selection, Claude/Gemini API routing, and explicit
+  local Codex/Claude CLI backends.
 - Interview: interactive Claude-powered reflective Q&A.
 - Output: episode-scoped Markdown files with `.metadata.yaml`.
 - Plugins: extraction, transcription, and output plugin registries.

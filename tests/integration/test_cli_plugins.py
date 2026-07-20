@@ -72,6 +72,12 @@ class TestPluginsList:
         assert result.exit_code == 0
         assert "codex" in result.stdout.lower()
 
+    def test_plugins_list_shows_local_claude_extractor(self) -> None:
+        result = runner.invoke(app, ["plugins", "list", "--type", "extraction", "--all"])
+
+        assert result.exit_code == 0
+        assert "claude-code" in result.stdout.lower()
+
     def test_plugins_list_invalid_type(self) -> None:
         """Test error handling for invalid plugin type."""
         result = runner.invoke(app, ["plugins", "list", "--type", "invalid"])
@@ -179,6 +185,45 @@ class TestPluginsValidate:
         assert payload["error_code"] == "runtime_model_required"
         assert "validation error" not in result.stdout
 
+    def test_validate_claude_code_json_is_secret_free(self, tmp_path, monkeypatch) -> None:
+        from inkwell.agent_runtime.claude_code import ClaudeCodeRuntimeBackend
+        from inkwell.agent_runtime.models import RuntimeReadiness
+        from inkwell.config.manager import ConfigManager
+
+        monkeypatch.setattr(
+            "inkwell.cli_plugins.ConfigManager",
+            lambda: ConfigManager(config_dir=tmp_path / "config"),
+        )
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "must-not-appear")
+
+        async def fake_probe(_self):
+            return RuntimeReadiness(
+                runtime="claude-code-cli",
+                ready=True,
+                installed=True,
+                authenticated=True,
+                supported=True,
+                executable="/fake/claude",
+                version="2.1.215",
+                auth_class="claude_subscription",
+                required_capabilities=["safe-mode"],
+            )
+
+        monkeypatch.setattr(ClaudeCodeRuntimeBackend, "probe", fake_probe)
+        configured = runner.invoke(
+            app,
+            ["plugins", "configure", "claude-code", "model", "sonnet"],
+        )
+        result = runner.invoke(app, ["plugins", "validate", "claude-code", "--json"])
+
+        assert configured.exit_code == 0
+        assert result.exit_code == 0
+        payload = json.loads(result.stdout)
+        assert payload["plugin"] == "claude-code"
+        assert payload["configured_model"] == "sonnet"
+        assert payload["auth_class"] == "claude_subscription"
+        assert "must-not-appear" not in result.stdout
+
 
 class TestPluginsConfigure:
     def test_configure_codex_rejects_out_of_bounds_value(self, tmp_path, monkeypatch) -> None:
@@ -191,6 +236,17 @@ class TestPluginsConfigure:
 
         assert result.exit_code == 1
         assert "at least" in result.stdout
+
+    def test_configure_claude_code_rejects_unknown_value(self, tmp_path, monkeypatch) -> None:
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+
+        result = runner.invoke(
+            app,
+            ["plugins", "configure", "claude-code", "api_key", "forbidden"],
+        )
+
+        assert result.exit_code == 1
+        assert "Unknown claude-code configuration key" in result.stdout
 
 
 class TestPluginsEnable:

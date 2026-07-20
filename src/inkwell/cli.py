@@ -1537,7 +1537,7 @@ def fetch_command(
     extractor: str | None = typer.Option(
         None,
         "--extractor",
-        help="Force extraction plugin: claude, gemini, or explicit local codex",
+        help=("Force extraction plugin: claude, gemini, or explicit local claude-code/codex"),
         envvar="INKWELL_EXTRACTOR",
     ),
     transcriber: str | None = typer.Option(
@@ -1612,6 +1612,8 @@ def fetch_command(
 
         inkwell fetch ./source.txt --extractor codex --force-extraction  # Explicit local Codex
 
+        inkwell fetch ./source.txt --extractor claude-code --force-extraction  # Local Claude
+
         inkwell fetch https://... --transcriber gemini  # Force Gemini transcriber
 
         inkwell fetch ./scan.png  # Local OCR into normal note output
@@ -1652,17 +1654,26 @@ def fetch_command(
             manager = ConfigManager()
             config = manager.load_config()
             selected_extractor = extractor or os.environ.get("INKWELL_EXTRACTOR")
-            if selected_extractor == "codex":
-                codex_plugin = config.plugins.get("codex")
+            if selected_extractor in {"claude-code", "codex"}:
+                local_plugin = config.plugins.get(selected_extractor)
                 configured_model = (
-                    codex_plugin.config.get("model") if codex_plugin is not None else None
+                    local_plugin.config.get("model") if local_plugin is not None else None
                 )
                 if not isinstance(configured_model, str) or not configured_model.strip():
+                    message = (
+                        "The Local Claude extractor requires an explicit model."
+                        if selected_extractor == "claude-code"
+                        else "The Codex extractor requires an explicit model."
+                    )
                     raise ConfigError(
-                        "The Codex extractor requires an explicit model.",
-                        details={"code": "model_required", "extractor": "codex"},
+                        message,
+                        details={
+                            "code": "model_required",
+                            "extractor": selected_extractor,
+                        },
                         suggestion=(
-                            "Run `inkwell plugins configure codex model MODEL_ID`, "
+                            f"Run `inkwell plugins configure {selected_extractor} "
+                            "model MODEL_ID`, "
                             "then validate it."
                         ),
                     )

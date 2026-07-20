@@ -89,6 +89,7 @@ inkwell = "inkwell.cli:app"
 # Third-party plugins can register their own entry points
 [project.entry-points."inkwell.plugins.extraction"]
 claude = "inkwell.extraction.extractors.claude:ClaudeExtractor"
+claude-code = "inkwell.extraction.extractors.claude_code:ClaudeCodeExtractor"
 codex = "inkwell.extraction.extractors.codex:CodexExtractor"
 gemini = "inkwell.extraction.extractors.gemini:GeminiExtractor"
 

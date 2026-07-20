@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.0] - 2026-07-20
+
+### Added
+
+- Explicit Local Claude extraction through the separately installed and already
+  authenticated Claude CLI with `--extractor claude-code`.
+- Secret-free `claude --version` and `claude auth status --json` readiness,
+  explicit requested/effective model provenance, subscription-limit billing
+  state, runtime-aware caching, and an opt-in authenticated smoke.
+
+### Security
+
+- Local Claude runs only through bounded `claude -p` stdin in a private
+  workspace with tools, MCP, customization, slash commands, and session
+  persistence disabled.
+- Anthropic API keys/tokens, setup tokens, cloud-provider selectors/credentials,
+  and provider secrets are scrubbed so only Claude CLI's saved first-party
+  subscription login can be used. The backend is explicit-only, local-only, and
+  unavailable in hosted workers.
+
 ## [0.24.0] - 2026-07-20
 
 ### Added

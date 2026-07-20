@@ -5,8 +5,10 @@ from pathlib import Path
 import pytest
 
 from inkwell.config.schema import GlobalConfig
+from inkwell.output.models import EpisodeMetadata
 from inkwell.pipeline.models import PipelineOptions
 from inkwell.pipeline.orchestrator import PipelineOrchestrator
+from inkwell.utils.errors import InkwellError
 
 
 def _orchestrator(tmp_path: Path) -> PipelineOrchestrator:
@@ -92,3 +94,31 @@ def test_template_safe_episode_url_uses_placeholder_for_local_sources(tmp_path: 
     assert orchestrator._template_safe_episode_url("https://example.com/episode.mp3") == (
         "https://example.com/episode.mp3"
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("extractor", ["claude-code", "codex"])
+async def test_hosted_pipeline_rejects_local_runtime_extractors(
+    tmp_path: Path, extractor: str
+) -> None:
+    config = GlobalConfig(default_output_dir=tmp_path)
+    orchestrator = PipelineOrchestrator(config, allow_local_runtime=False)
+    metadata = EpisodeMetadata(
+        podcast_name="Test",
+        episode_title="Boundary",
+        episode_url="https://example.com/episode",
+        transcription_source="text",
+    )
+
+    with pytest.raises(InkwellError, match="hosted workers") as raised:
+        await orchestrator._extract_content(
+            templates=[],
+            transcript="source",
+            metadata=metadata,
+            provider=None,
+            skip_cache=False,
+            dry_run=True,
+            extractor_override=extractor,
+        )
+
+    assert raised.value.details["code"] == "local_runtime_hosted_forbidden"

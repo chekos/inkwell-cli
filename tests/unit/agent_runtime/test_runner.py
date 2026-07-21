@@ -24,6 +24,7 @@ def test_environment_is_allowlisted_and_secret_shaped_names_are_denied() -> None
     child = build_minimal_environment(
         {
             "HOME": "/safe/home",
+            "USER": "safe-user",
             "PATH": "/safe/bin",
             "LANG": "en_US.UTF-8",
             "HTTPS_PROXY": "http://proxy.invalid",
@@ -38,6 +39,7 @@ def test_environment_is_allowlisted_and_secret_shaped_names_are_denied() -> None
 
     assert child == {
         "HOME": "/safe/home",
+        "USER": "safe-user",
         "PATH": "/safe/bin",
         "LANG": "en_US.UTF-8",
         "HTTPS_PROXY": "http://proxy.invalid",

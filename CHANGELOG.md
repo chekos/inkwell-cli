@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.1] - 2026-07-20
+
+### Fixed
+
+- Preserve the non-secret `USER` environment value required for Claude Code to
+  discover a macOS Keychain-backed subscription login while continuing to scrub
+  API keys, tokens, cloud credentials, and unrelated environment values.
+- Clarify that `runtime_not_authenticated` can mean the current sandbox cannot
+  access the saved login, so users are not incorrectly told to authenticate
+  again when the normal host CLI is already logged in.
+- Accept Claude's documented terminal result when it reports a uniquely
+  identifiable primary model plus auxiliary safe-mode model work, preserving
+  every reported model and total token usage while rejecting ambiguous fallback.
+
 ## [0.25.0] - 2026-07-20
 
 ### Added

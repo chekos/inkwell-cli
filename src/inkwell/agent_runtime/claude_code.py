@@ -73,6 +73,54 @@ def _int_field(value: Any) -> int:
     return max(0, value)
 
 
+def _parse_model_usage(
+    model_usage: Any,
+    raw_usage: Any,
+) -> tuple[str, RuntimeUsage, list[str]]:
+    """Identify the primary model and retain tokens from auxiliary model work."""
+    if not isinstance(model_usage, dict) or not model_usage or not isinstance(raw_usage, dict):
+        raise RuntimeInvocationError(
+            RuntimeErrorCode.MODEL_MISMATCH,
+            "Claude CLI did not report usable model provenance.",
+        )
+
+    primary_input_tokens = _int_field(raw_usage.get("input_tokens")) + _int_field(
+        raw_usage.get("cache_creation_input_tokens")
+    )
+    primary_output_tokens = _int_field(raw_usage.get("output_tokens"))
+    candidates: list[str] = []
+    parsed_entries: list[tuple[str, dict[str, Any]]] = []
+    for model, details in model_usage.items():
+        if not isinstance(model, str) or not model.strip() or not isinstance(details, dict):
+            raise RuntimeInvocationError(
+                RuntimeErrorCode.MODEL_MISMATCH,
+                "Claude CLI reported invalid model provenance.",
+            )
+        parsed_entries.append((model, details))
+        if (
+            _int_field(details.get("inputTokens")) == primary_input_tokens
+            and _int_field(details.get("outputTokens")) == primary_output_tokens
+        ):
+            candidates.append(model)
+
+    if len(candidates) != 1:
+        raise RuntimeInvocationError(
+            RuntimeErrorCode.MODEL_MISMATCH,
+            "Claude CLI did not identify one primary effective model.",
+        )
+
+    effective_model = candidates[0]
+    usage = RuntimeUsage(
+        input_tokens=sum(_int_field(details.get("inputTokens")) for _, details in parsed_entries),
+        cached_input_tokens=sum(
+            _int_field(details.get("cacheReadInputTokens")) for _, details in parsed_entries
+        ),
+        output_tokens=sum(_int_field(details.get("outputTokens")) for _, details in parsed_entries),
+    )
+    auxiliary_models = sorted(model for model, _ in parsed_entries if model != effective_model)
+    return effective_model, usage, auxiliary_models
+
+
 class ClaudeCodeRuntimeBackend:
     """Invoke a separately installed Claude CLI using saved subscription OAuth."""
 
@@ -158,10 +206,19 @@ class ClaudeCodeRuntimeBackend:
             reason=(
                 None
                 if ready
-                else "Claude CLI does not report a saved first-party subscription login."
+                else (
+                    "Claude CLI did not expose a saved first-party subscription login "
+                    "to this process."
+                )
             ),
             recovery_command=(
-                None if ready else "Authenticate Claude Code independently, then retry validation."
+                None
+                if ready
+                else (
+                    "Run `claude auth status --json` in the same host context. If it "
+                    "reports logged in, rerun Inkwell outside a sandbox with macOS "
+                    "Keychain access; do not re-authenticate solely from this diagnostic."
+                )
             ),
             required_capabilities=required,
         )
@@ -315,18 +372,10 @@ class ClaudeCodeRuntimeBackend:
                 "Claude CLI did not emit structured terminal output.",
             )
 
-        model_usage = payload.get("modelUsage")
-        if not isinstance(model_usage, dict) or len(model_usage) != 1:
-            raise RuntimeInvocationError(
-                RuntimeErrorCode.MODEL_MISMATCH,
-                "Claude CLI did not report exactly one effective model.",
-            )
-        effective_model = next(iter(model_usage))
-        if not isinstance(effective_model, str) or not effective_model.strip():
-            raise RuntimeInvocationError(
-                RuntimeErrorCode.MODEL_MISMATCH,
-                "Claude CLI reported an invalid effective model.",
-            )
+        raw_usage = payload.get("usage")
+        effective_model, usage, auxiliary_models = _parse_model_usage(
+            payload.get("modelUsage"), raw_usage
+        )
 
         final_value = payload["structured_output"]
         try:
@@ -345,16 +394,6 @@ class ClaudeCodeRuntimeBackend:
                     "Claude CLI final output failed application validation.",
                 ) from exc
 
-        raw_usage = payload.get("usage")
-        raw_usage = raw_usage if isinstance(raw_usage, dict) else {}
-        usage = RuntimeUsage(
-            input_tokens=(
-                _int_field(raw_usage.get("input_tokens"))
-                + _int_field(raw_usage.get("cache_creation_input_tokens"))
-            ),
-            cached_input_tokens=_int_field(raw_usage.get("cache_read_input_tokens")),
-            output_tokens=_int_field(raw_usage.get("output_tokens")),
-        )
         num_turns = _int_field(payload.get("num_turns"))
         if num_turns < 1:
             raise RuntimeInvocationError(
@@ -374,7 +413,10 @@ class ClaudeCodeRuntimeBackend:
             final_value=final_value,
             terminal_status="completed",
             lifecycle_events=["result.success"],
-            attempts=[f"claude-code:{effective_model}:turns={num_turns}"],
+            attempts=[
+                f"claude-code:{effective_model}:turns={num_turns}",
+                *(f"claude-code-auxiliary:{model}" for model in auxiliary_models),
+            ],
             usage=usage,
             provenance=provenance,
             billing=RuntimeBilling(mode="runtime_managed", amount_usd=None),

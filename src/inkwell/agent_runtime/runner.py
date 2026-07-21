@@ -14,6 +14,7 @@ from .models import RuntimeErrorCode, RuntimeInvocationError
 
 _ALLOWED_EXACT_ENV = {
     "HOME",
+    "USER",
     "CODEX_HOME",
     "PATH",
     "LANG",

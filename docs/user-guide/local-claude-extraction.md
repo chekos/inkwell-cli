@@ -19,9 +19,12 @@ inkwell plugins validate claude-code --json
 ```
 
 The requested value may be a current Claude CLI alias or full model identifier.
-The result and cache provenance record both that requested value and the single
-effective model reported by Claude Code. Multiple reported models fail closed;
-Inkwell does not enable `--fallback-model`.
+The result and cache provenance record both that requested value and the primary
+effective model whose token usage matches Claude's terminal result. Claude may
+also report auxiliary model work, such as a safe-mode classifier; Inkwell keeps
+those model identifiers in the attempt record and includes their tokens in total
+usage. Ambiguous primary-model metadata fails closed. Inkwell does not enable
+`--fallback-model`.
 
 Optional bounded settings mirror Local Codex extraction:
 
@@ -36,6 +39,12 @@ Validation calls only `claude --version` and `claude auth status --json`. It
 records installed/authenticated/supported state and the sanitized auth class;
 it discards account, organization, subscription-tier, and credential fields.
 Validation does not perform inference or start an authentication flow.
+
+On macOS, Claude Code's saved login is Keychain-backed. A sandboxed launcher
+may be unable to see that login even when `claude auth status --json` succeeds
+in your normal terminal. Treat that as a process-isolation diagnostic, not a
+logout: run validation from the same unsandboxed host context, and do not log
+in again solely because a sandbox reports `runtime_not_authenticated`.
 
 ## Use Your Local Claude CLI
 

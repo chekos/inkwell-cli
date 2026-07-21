@@ -26,12 +26,14 @@ def _fake_claude(
     subtype: str = "success",
     model_usage: dict[str, object] | None = None,
     structured_output: dict[str, object] | None = None,
+    required_user: str | None = None,
 ) -> Path:
     auth_exit = 0 if logged_in else 1
     models = model_usage or {
         "claude-sonnet-4-5-20250929": {
             "inputTokens": 14,
-            "outputTokens": 5,
+            "cacheReadInputTokens": 3,
+            "outputTokens": 4,
             "costUSD": 0.01,
         }
     }
@@ -46,6 +48,7 @@ if args == ["--version"]:
     print("{version} (Claude Code)")
     raise SystemExit(0)
 if args == ["auth", "status", "--json"]:
+    assert {required_user!r} is None or os.environ.get("USER") == {required_user!r}
     print(json.dumps({{
         "loggedIn": {logged_in!r},
         "authMethod": {auth_method!r},
@@ -135,6 +138,18 @@ async def test_probe_reports_only_subscription_readiness(tmp_path: Path) -> None
 
 
 @pytest.mark.asyncio
+async def test_probe_preserves_user_for_keychain_auth_discovery(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("USER", "keychain-user")
+    readiness = await ClaudeCodeRuntimeBackend(
+        str(_fake_claude(tmp_path / "claude", required_user="keychain-user"))
+    ).probe()
+
+    assert readiness.ready is True
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("auth_method", "api_provider"),
     [("api_key", "firstParty"), ("oauth_token", "firstParty"), ("claude.ai", "bedrock")],
@@ -171,6 +186,7 @@ async def test_probe_distinguishes_missing_logged_out_and_version_drift(tmp_path
 
     assert missing.error_code == RuntimeErrorCode.MISSING_EXECUTABLE
     assert logged_out.error_code == RuntimeErrorCode.NOT_AUTHENTICATED
+    assert "do not re-authenticate solely" in (logged_out.recovery_command or "")
     assert old.error_code == RuntimeErrorCode.UNSUPPORTED_VERSION
 
 
@@ -260,12 +276,49 @@ async def test_success_subtype_with_is_error_is_rejected(tmp_path: Path) -> None
 
 
 @pytest.mark.asyncio
-async def test_multiple_effective_models_fail_closed(tmp_path: Path) -> None:
+async def test_auxiliary_model_usage_preserves_primary_and_total_tokens(tmp_path: Path) -> None:
     backend = ClaudeCodeRuntimeBackend(
         str(
             _fake_claude(
                 tmp_path / "claude",
-                model_usage={"primary": {}, "fallback": {}},
+                model_usage={
+                    "claude-haiku-4-5": {
+                        "inputTokens": 2,
+                        "cacheReadInputTokens": 0,
+                        "outputTokens": 1,
+                    },
+                    "claude-sonnet-5": {
+                        "inputTokens": 14,
+                        "cacheReadInputTokens": 3,
+                        "outputTokens": 4,
+                    },
+                },
+            )
+        )
+    )
+
+    response = await backend.invoke(_request())
+
+    assert response.provenance.effective_model == "claude-sonnet-5"
+    assert response.usage.input_tokens == 16
+    assert response.usage.cached_input_tokens == 3
+    assert response.usage.output_tokens == 5
+    assert response.attempts == [
+        "claude-code:claude-sonnet-5:turns=1",
+        "claude-code-auxiliary:claude-haiku-4-5",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_ambiguous_primary_model_fails_closed(tmp_path: Path) -> None:
+    backend = ClaudeCodeRuntimeBackend(
+        str(
+            _fake_claude(
+                tmp_path / "claude",
+                model_usage={
+                    "primary": {"inputTokens": 14, "outputTokens": 4},
+                    "fallback": {"inputTokens": 14, "outputTokens": 4},
+                },
             )
         )
     )

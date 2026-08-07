@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Accept non-fatal Codex item-level error notifications when the turn later
+  completes with valid structured output, while preserving terminal and output
+  validation failures.
+
 ## [0.25.1] - 2026-07-20
 
 ### Fixed

@@ -1,0 +1,4 @@
+{"type":"thread.started","thread_id":"fixture"}
+{"type":"turn.started"}
+{"type":"item.completed","item":{"type":"error","message":"Skill descriptions were shortened to fit the skills context budget. Codex can still see every skill, but some descriptions are shorter. Disable unused skills or plugins to leave more room for the rest."}}
+{"type":"turn.completed","usage":{"input_tokens":12,"cached_input_tokens":2,"output_tokens":4,"reasoning_output_tokens":1}}

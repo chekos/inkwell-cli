@@ -12,6 +12,8 @@ from inkwell.agent_runtime.codex import (
 )
 from inkwell.agent_runtime.models import RuntimeErrorCode, RuntimeInvocationError, RuntimeRequest
 
+FIXTURES_DIR = Path(__file__).parents[2] / "fixtures"
+
 
 def _fake_codex(
     path: Path,
@@ -286,6 +288,15 @@ def test_parser_rejects_malformed_failed_and_schema_invalid_output(tmp_path: Pat
             auth_class="chatgpt",
             duration_seconds=0.1,
         )
+    with pytest.raises(RuntimeInvocationError) as fatal:
+        backend._parse_response(
+            b'{"type":"error","message":"unrecoverable stream error"}\n',
+            result_file=result_file,
+            request=request,
+            version="0.144.6",
+            auth_class="chatgpt",
+            duration_seconds=0.1,
+        )
     with pytest.raises(RuntimeInvocationError) as schema:
         backend._parse_response(
             b'{"type":"turn.completed"}\n',
@@ -298,7 +309,41 @@ def test_parser_rejects_malformed_failed_and_schema_invalid_output(tmp_path: Pat
 
     assert malformed.value.code == RuntimeErrorCode.MALFORMED_PROTOCOL
     assert failed.value.code == RuntimeErrorCode.TURN_FAILED
+    assert fatal.value.code == RuntimeErrorCode.TURN_FAILED
     assert schema.value.code == RuntimeErrorCode.SCHEMA_INVALID
+
+
+def test_parser_accepts_nonfatal_error_item_when_turn_completes(tmp_path: Path) -> None:
+    backend = CodexRuntimeBackend("codex")
+    result_file = tmp_path / "result.json"
+    result_file.write_text('{"content":"safe result"}', encoding="utf-8")
+    request = RuntimeRequest(
+        prompt="task",
+        output_schema={
+            "type": "object",
+            "properties": {"content": {"type": "string"}},
+            "required": ["content"],
+        },
+        requested_model="expected-model",
+    )
+
+    response = backend._parse_response(
+        (FIXTURES_DIR / "codex_skill_budget_warning.jsonl").read_bytes(),
+        result_file=result_file,
+        request=request,
+        version="0.147.0",
+        auth_class="chatgpt",
+        duration_seconds=0.1,
+    )
+
+    assert response.terminal_status == "completed"
+    assert response.final_value == {"content": "safe result"}
+    assert response.lifecycle_events == [
+        "thread.started",
+        "turn.started",
+        "item.completed",
+        "turn.completed",
+    ]
 
 
 def test_parser_runs_application_validator(tmp_path: Path) -> None:

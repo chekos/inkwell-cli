@@ -63,9 +63,10 @@ grace period, sends KILL if needed, awaits the group leader and output drains,
 and removes the temporary workspace.
 
 Success requires exit code 0, a `turn.completed` JSONL event, a parseable final
-document, JSON Schema validation, and application validation. `turn.failed`,
-`error`, malformed/truncated output, oversized output, or missing terminal state
-fails the request and is never cached.
+document, JSON Schema validation, and application validation. Item-level error
+notifications remain lifecycle metadata and do not override a later successful
+turn. `turn.failed`, a top-level `error`, malformed/truncated output, oversized
+output, or missing terminal state fails the request and is never cached.
 
 ## Readiness JSON
 

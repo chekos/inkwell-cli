@@ -326,13 +326,9 @@ class CodexRuntimeBackend:
                     RuntimeErrorCode.MODEL_MISMATCH,
                     "Codex CLI reported an unexpected effective model.",
                 )
-            item = event.get("item")
-            item_failed = (
-                event_type == "item.completed"
-                and isinstance(item, dict)
-                and item.get("type") == "error"
-            )
-            if event_type in {"turn.failed", "error"} or item_failed:
+            # Error items are non-fatal notifications. The turn-level lifecycle
+            # events are authoritative for whether the invocation succeeded.
+            if event_type in {"turn.failed", "error"}:
                 raise RuntimeInvocationError(
                     RuntimeErrorCode.TURN_FAILED,
                     "Codex CLI reported a failed turn.",

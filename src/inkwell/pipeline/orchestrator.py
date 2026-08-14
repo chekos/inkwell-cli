@@ -8,7 +8,7 @@ import logging
 import os
 from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 import yaml
 
@@ -188,6 +188,7 @@ class PipelineOrchestrator:
             options.url,
             source_text=options.source_text,
             source_kind=options.source_kind,
+            source_transcript_source=options.source_transcript_source,
             auth_username=options.auth_username,
             auth_password=options.auth_password,
             progress_callback=transcription_progress,
@@ -320,6 +321,18 @@ class PipelineOrchestrator:
                     f"Run `inkwell plugins validate {selected_extractor} --json` and retry."
                 ),
             )
+        if extraction_summary.failed:
+            failed_templates = sorted(
+                result.template_name for result in extraction_results if not result.success
+            )
+            raise InkwellError(
+                "One or more extraction templates failed; no capture package was written",
+                details={"code": "extraction_failed", "templates": failed_templates},
+                suggestion=(
+                    "Review the extraction provider error and retry. Failed templates: "
+                    + ", ".join(failed_templates)
+                ),
+            )
 
         if progress_callback:
             progress_callback(
@@ -373,6 +386,8 @@ class PipelineOrchestrator:
                 transcript=transcript.full_text,
                 transcript_summary=transcript.summary,
             )
+
+        self._validate_artifact_contract(episode_output, selected_templates)
 
         if progress_callback:
             progress_callback(
@@ -445,11 +460,38 @@ class PipelineOrchestrator:
             extraction_cost_known=all(result.cost_known for result in extraction_results),
         )
 
+    def _validate_artifact_contract(
+        self,
+        episode_output: EpisodeOutput,
+        selected_templates: list["ExtractionTemplate"],
+    ) -> None:
+        """Fail closed unless the complete selected capture package exists."""
+        required_paths = [
+            episode_output.directory / ".metadata.yaml",
+            episode_output.directory / "_transcript.md",
+            *(episode_output.directory / f"{template.name}.md" for template in selected_templates),
+        ]
+        missing = [
+            path.name
+            for path in required_paths
+            if not path.is_file() or not path.read_text(encoding="utf-8").strip()
+        ]
+        if missing:
+            raise InkwellError(
+                "Capture did not produce the complete artifact package",
+                details={"code": "incomplete_artifact_package", "missing": sorted(set(missing))},
+                suggestion=(
+                    "Review the extraction errors, then retry with --overwrite. "
+                    f"Missing or empty: {', '.join(sorted(set(missing)))}"
+                ),
+            )
+
     async def _transcribe(
         self,
         url: str,
         source_text: str | None = None,
         source_kind: str | None = None,
+        source_transcript_source: Literal["text", "tiktok"] | None = None,
         auth_username: str | None = None,
         auth_password: str | None = None,
         progress_callback: Callable[[str, dict], None] | None = None,
@@ -479,7 +521,7 @@ class PipelineOrchestrator:
 
             transcript = Transcript(
                 segments=[TranscriptSegment(text=text, start=0.0, duration=0.0)],
-                source="text",
+                source=source_transcript_source or "text",
                 language="und",
                 episode_url=url,
                 word_count=len(text.split()),

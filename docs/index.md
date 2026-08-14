@@ -28,6 +28,12 @@ That's it! Your structured notes are now in `~/inkwell-notes/`.
 ### Automatic Transcription
 Inkwell first checks for free YouTube transcripts. For public YouTube videos where cloud workers are blocked from captions or downloads, it can ask Gemini to process bounded clips directly from the public video URL. For other sources, it downloads audio and uses Gemini as the final transcription fallback.
 
+TikTok short and canonical video URLs are first-class inputs. Inkwell resolves
+the canonical creator/video URL, prefers public embedded WebVTT captions, and
+falls back to media transcription when captions are unavailable or unusable.
+Stable source and transcript provenance is retained without saving signed CDN
+URLs.
+
 ### Local Image And PDF Text Extraction
 
 Selectable PDF text is reused directly. With the optional OCR extra, images and

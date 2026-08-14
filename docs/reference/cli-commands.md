@@ -254,7 +254,7 @@ inkwell fetch <SOURCE> [OPTIONS]
 
 | Argument | Required | Description |
 |----------|----------|-------------|
-| `SOURCE` | Yes | Feed name, YouTube/media/article URL, local audio/video, text, image, or PDF file, or `-` for stdin text. See [Supported Inputs](supported-inputs.md). |
+| `SOURCE` | Yes | Feed name, YouTube/TikTok/media/article URL, local audio/video, text, image, or PDF file, or `-` for stdin text. See [Supported Inputs](supported-inputs.md). |
 
 ### Options
 
@@ -294,6 +294,9 @@ inkwell fetch <SOURCE> [OPTIONS]
 ```bash
 # From URL
 inkwell fetch https://youtube.com/watch?v=xyz
+
+# From a TikTok short or canonical video URL (captions first, then media fallback)
+inkwell fetch https://www.tiktok.com/t/abc --extractor codex
 
 # From local audio/video
 inkwell fetch ~/Downloads/interview.mp3

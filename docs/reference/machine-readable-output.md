@@ -38,7 +38,7 @@ JSON responses include:
 
 Treat `schema_version` as the compatibility guard for scripts. New optional fields may be added over time, but incompatible shape changes should use a new schema version.
 
-`input.kind` identifies the routed source shape. Common values include `saved_feed`, `youtube`, `direct_media`, `article`, `pdf`, `local_file`, `stdin`, and `unknown_url`.
+`input.kind` identifies the routed source shape. Common values include `saved_feed`, `youtube`, `tiktok`, `direct_media`, `article`, `pdf`, `local_file`, `stdin`, and `unknown_url`.
 
 ---
 

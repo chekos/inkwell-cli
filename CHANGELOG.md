@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Add first-class TikTok short and canonical URL ingestion with public embedded
+  WebVTT captions, stable source/transcript provenance, and media transcription
+  fallback when captions are missing or unusable.
+
+### Fixed
+
+- Fail structured captures when metadata, transcript, or any selected template
+  artifact is missing or empty, preventing zero-artifact local-text runs from
+  reporting success.
+
+### Security
+
+- Keep signed TikTok caption CDN URLs ephemeral, restrict caption requests to
+  HTTPS TikTok-owned hosts, and omit URL queries and browser/session state from
+  persisted provenance.
+
 ## [0.25.2] - 2026-08-06
 
 ### Fixed

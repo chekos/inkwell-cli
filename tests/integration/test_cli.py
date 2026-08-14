@@ -1676,6 +1676,395 @@ class TestCLIFetchSaveFeed:
         assert seen["source_kind"] == "local_text"
         assert seen["episode_title"] == "notes"
 
+    def test_fetch_local_text_incomplete_artifacts_exits_nonzero(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """The CLI propagates the pipeline's complete-package failure."""
+        from inkwell.utils.errors import InkwellError
+
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+        local_text = tmp_path / "notes.txt"
+        local_text.write_text("Text that must not false-succeed.", encoding="utf-8")
+
+        async def fail_process(*_args, **_kwargs):
+            raise InkwellError(
+                "Capture did not produce the complete artifact package",
+                details={"code": "incomplete_artifact_package"},
+            )
+
+        monkeypatch.setattr("inkwell.pipeline.PipelineOrchestrator.process_episode", fail_process)
+        result = runner.invoke(app, ["fetch", str(local_text), "--output-dir", str(tmp_path)])
+
+        assert result.exit_code != 0
+        assert "complete artifact package" in result.output
+
+    @pytest.mark.parametrize("with_captions", [True, False])
+    def test_fetch_tiktok_routes_canonical_source_and_provenance(
+        self, tmp_path: Path, monkeypatch, with_captions: bool
+    ) -> None:
+        from inkwell.ingestion.tiktok import TikTokSource
+
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+        supplied = "https://www.tiktok.com/t/ZTDLJ84Cq/"
+        canonical = "https://www.tiktok.com/@amber.figlow/video/7673547653170351373"
+        resolved = TikTokSource(
+            supplied_url=supplied,
+            canonical_url=canonical,
+            creator="amber.figlow",
+            video_id="7673547653170351373",
+            caption="A durable workflow",
+            duration_seconds=681,
+            transcript_text="[00:00] Caption text" if with_captions else None,
+            transcript_language="en" if with_captions else None,
+            transcript_auto_generated=True if with_captions else None,
+        )
+        monkeypatch.setattr("inkwell.cli.resolve_tiktok_source", lambda _url: resolved)
+        output_dir = tmp_path / "episode-dir"
+        output_dir.mkdir()
+        seen: dict[str, object] = {}
+
+        async def fake_process(_orchestrator, options, *_args, **_kwargs):
+            seen["options"] = options
+            return _sample_pipeline_result(output_dir)
+
+        monkeypatch.setattr("inkwell.pipeline.PipelineOrchestrator.process_episode", fake_process)
+        result = runner.invoke(
+            app,
+            ["fetch", supplied, "--dry-run", "--output-dir", str(tmp_path)],
+        )
+
+        assert result.exit_code == 0, result.output
+        options = seen["options"]
+        assert options.url == canonical  # type: ignore[union-attr]
+        assert options.source_text == resolved.transcript_text  # type: ignore[union-attr]
+        assert options.source_kind == (  # type: ignore[union-attr]
+            "tiktok_captions" if with_captions else "tiktok_media"
+        )
+        assert options.source_transcript_source == (  # type: ignore[union-attr]
+            "tiktok" if with_captions else None
+        )
+        assert options.source_metadata["supplied_url"] == supplied  # type: ignore[union-attr,index]
+        assert options.source_metadata["canonical_url"] == canonical  # type: ignore[union-attr,index]
+
+    def test_fetch_tiktok_fixture_writes_complete_private_package(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """Exercise the real adapter, orchestrator, and output manager together."""
+        import httpx
+        import yaml
+
+        from inkwell.extraction.models import (
+            ExtractedContent,
+            ExtractionResult,
+            ExtractionSummary,
+        )
+        from inkwell.ingestion.tiktok import resolve_tiktok_source
+
+        fixtures = Path(__file__).parents[1] / "fixtures"
+        page = (fixtures / "tiktok_video.html").read_text()
+        captions = (fixtures / "tiktok_captions.vtt").read_text()
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.url.host == "www.tiktok.com" and request.url.path.startswith("/t/"):
+                return httpx.Response(
+                    302,
+                    headers={
+                        "location": (
+                            "https://www.tiktok.com/@amber.figlow/video/7673547653170351373"
+                        )
+                    },
+                )
+            if request.url.host == "www.tiktok.com":
+                return httpx.Response(200, text=page)
+            return httpx.Response(200, text=captions)
+
+        async def fake_extract(_self, **kwargs):
+            results = [
+                ExtractionResult(
+                    episode_url="https://www.tiktok.com/@amber.figlow/video/7673547653170351373",
+                    template_name=template.name,
+                    template_version=template.version,
+                    success=True,
+                    extracted_content=ExtractedContent(
+                        template_name=template.name,
+                        content=f"Verified {template.name} output.",
+                    ),
+                    bypassed=True,
+                    bypass_reason="fixture integration",
+                )
+                for template in kwargs["templates"]
+            ]
+            return (
+                results,
+                ExtractionSummary(
+                    total=len(results),
+                    successful=len(results),
+                    failed=0,
+                    cached=0,
+                    attempts=[],
+                ),
+                0.0,
+            )
+
+        config_dir = tmp_path / "config"
+        config_dir.mkdir()
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: config_dir)
+        monkeypatch.setattr("inkwell.pipeline.PipelineOrchestrator._extract_content", fake_extract)
+        supplied = "https://www.tiktok.com/t/ZTDLJ84Cq/?utm_source=copy"
+        with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+            monkeypatch.setattr(
+                "inkwell.cli.resolve_tiktok_source",
+                lambda url: resolve_tiktok_source(url, client=client),
+            )
+            result = runner.invoke(
+                app,
+                [
+                    "fetch",
+                    supplied,
+                    "--output-dir",
+                    str(tmp_path / "captures"),
+                    "--templates",
+                    "summary,quotes,key-concepts,tools-mentioned",
+                    "--plain",
+                ],
+            )
+
+        assert result.exit_code == 0, result.output
+        capture_dir = Path(result.stdout.strip())
+        expected = {
+            ".metadata.yaml",
+            "_transcript.md",
+            "summary.md",
+            "quotes.md",
+            "key-concepts.md",
+            "tools-mentioned.md",
+        }
+        assert expected <= {path.name for path in capture_dir.iterdir()}
+        for name in expected:
+            assert (capture_dir / name).read_text(encoding="utf-8").strip()
+
+        metadata = yaml.safe_load((capture_dir / ".metadata.yaml").read_text())
+        provenance = metadata["custom_fields"]["source_extraction"]
+        assert metadata["episode_url"] == (
+            "https://www.tiktok.com/@amber.figlow/video/7673547653170351373"
+        )
+        assert provenance["supplied_url"] == "https://www.tiktok.com/t/ZTDLJ84Cq/"
+        assert provenance["transcript_method"] == "embedded_webvtt"
+        package_text = "\n".join(
+            path.read_text(encoding="utf-8") for path in capture_dir.iterdir() if path.is_file()
+        )
+        assert "[00:00] Hello from Inkwell" in package_text
+        assert "x-expires" not in package_text
+        assert "v16-sign" not in package_text
+        assert "utm_source" not in package_text
+
+    def test_fetch_tiktok_unsafe_redirect_fails_before_pipeline(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        import httpx
+
+        from inkwell.ingestion.tiktok import resolve_tiktok_source
+
+        requested_hosts: list[str] = []
+        pipeline_called = False
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            requested_hosts.append(request.url.host or "")
+            return httpx.Response(302, headers={"location": "http://127.0.0.1/private"})
+
+        async def unexpected_pipeline(*_args, **_kwargs):
+            nonlocal pipeline_called
+            pipeline_called = True
+            raise AssertionError("pipeline must not run after an unsafe redirect")
+
+        config_dir = tmp_path / "config"
+        config_dir.mkdir()
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: config_dir)
+        monkeypatch.setattr(
+            "inkwell.pipeline.PipelineOrchestrator.process_episode", unexpected_pipeline
+        )
+        with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+            monkeypatch.setattr(
+                "inkwell.cli.resolve_tiktok_source",
+                lambda url: resolve_tiktok_source(url, client=client),
+            )
+            result = runner.invoke(app, ["fetch", "https://www.tiktok.com/t/unsafe/"])
+
+        assert result.exit_code != 0
+        assert "redirect location was rejected" in result.output
+        assert requested_hosts == ["www.tiktok.com"]
+        assert pipeline_called is False
+
+    def test_fetch_tiktok_media_fallback_writes_complete_package(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        import httpx
+        import yaml
+
+        from inkwell.extraction.models import (
+            ExtractedContent,
+            ExtractionResult,
+            ExtractionSummary,
+        )
+        from inkwell.ingestion.tiktok import resolve_tiktok_source
+
+        fixtures = Path(__file__).parents[1] / "fixtures"
+        page = (
+            (fixtures / "tiktok_video.html")
+            .read_text()
+            .replace(
+                '"subtitleInfos":[{"LanguageCodeName":"eng-US","Url":"https://v16-sign.tiktokcdn.com/caption.vtt?x-expires=secret","isAutoGenerated":true}]',
+                '"subtitleInfos":[]',
+            )
+        )
+
+        def handler(_request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, text=page)
+
+        async def fake_transcribe(_self, episode_url, **_kwargs):
+            result = _sample_transcription_result(from_cache=False)
+            assert result.transcript is not None
+            result.transcript.episode_url = episode_url
+            result.transcript.source = "gemini"
+            result.attempts = ["cache", "gemini_audio"]
+            return result
+
+        async def fake_extract(_self, **kwargs):
+            results = [
+                ExtractionResult(
+                    episode_url=("https://www.tiktok.com/@amber.figlow/video/7673547653170351373"),
+                    template_name=template.name,
+                    template_version=template.version,
+                    success=True,
+                    extracted_content=ExtractedContent(
+                        template_name=template.name,
+                        content=f"Verified {template.name} fallback output.",
+                    ),
+                )
+                for template in kwargs["templates"]
+            ]
+            return (
+                results,
+                ExtractionSummary(
+                    total=len(results),
+                    successful=len(results),
+                    failed=0,
+                    cached=0,
+                    attempts=[],
+                ),
+                0.0,
+            )
+
+        config_dir = tmp_path / "config"
+        config_dir.mkdir()
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: config_dir)
+        monkeypatch.setattr(
+            "inkwell.transcription.TranscriptionManager.transcribe", fake_transcribe
+        )
+        monkeypatch.setattr("inkwell.pipeline.PipelineOrchestrator._extract_content", fake_extract)
+        with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+            monkeypatch.setattr(
+                "inkwell.cli.resolve_tiktok_source",
+                lambda url: resolve_tiktok_source(url, client=client),
+            )
+            result = runner.invoke(
+                app,
+                [
+                    "fetch",
+                    "https://www.tiktok.com/@amber.figlow/video/7673547653170351373",
+                    "--output-dir",
+                    str(tmp_path / "captures"),
+                    "--templates",
+                    "summary,quotes,key-concepts,tools-mentioned",
+                    "--plain",
+                ],
+            )
+
+        assert result.exit_code == 0, result.output
+        capture_dir = Path(result.stdout.strip())
+        assert {
+            ".metadata.yaml",
+            "_transcript.md",
+            "summary.md",
+            "quotes.md",
+            "key-concepts.md",
+            "tools-mentioned.md",
+        } <= {path.name for path in capture_dir.iterdir()}
+        metadata = yaml.safe_load((capture_dir / ".metadata.yaml").read_text())
+        provenance = metadata["custom_fields"]["source_extraction"]
+        assert provenance["transcript_method"] == "media_fallback"
+        assert metadata["transcription_source"] == "gemini"
+        package_text = "\n".join(
+            path.read_text(encoding="utf-8") for path in capture_dir.iterdir() if path.is_file()
+        )
+        assert "x-expires" not in package_text
+        assert "v16-sign" not in package_text
+
+    def test_fetch_local_text_writes_complete_selected_contract(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        from inkwell.extraction.models import (
+            ExtractedContent,
+            ExtractionResult,
+            ExtractionSummary,
+        )
+
+        async def fake_extract(_self, **kwargs):
+            results = [
+                ExtractionResult(
+                    episode_url="https://local.inkwell/source",
+                    template_name=template.name,
+                    template_version=template.version,
+                    success=True,
+                    extracted_content=ExtractedContent(
+                        template_name=template.name,
+                        content=f"Verified {template.name} output.",
+                    ),
+                )
+                for template in kwargs["templates"]
+            ]
+            return (
+                results,
+                ExtractionSummary(
+                    total=len(results),
+                    successful=len(results),
+                    failed=0,
+                    cached=0,
+                    attempts=[],
+                ),
+                0.0,
+            )
+
+        config_dir = tmp_path / "config"
+        config_dir.mkdir()
+        monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: config_dir)
+        monkeypatch.setattr("inkwell.pipeline.PipelineOrchestrator._extract_content", fake_extract)
+        source = tmp_path / "source.txt"
+        source.write_text("A supported local-text capture.", encoding="utf-8")
+        result = runner.invoke(
+            app,
+            [
+                "fetch",
+                str(source),
+                "--output-dir",
+                str(tmp_path / "captures"),
+                "--templates",
+                "summary,quotes,key-concepts,tools-mentioned",
+                "--plain",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        capture_dir = Path(result.stdout.strip())
+        assert {
+            ".metadata.yaml",
+            "_transcript.md",
+            "summary.md",
+            "quotes.md",
+            "key-concepts.md",
+            "tools-mentioned.md",
+        } <= {path.name for path in capture_dir.iterdir()}
+
     def test_fetch_local_pdf_routes_source_text_to_pipeline(
         self, tmp_path: Path, monkeypatch
     ) -> None:

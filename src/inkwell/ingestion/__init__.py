@@ -11,6 +11,7 @@ from .source_extractors import (
     extract_source_text_from_pdf,
     extract_text_from_pdf,
 )
+from .tiktok import TikTokSource, is_tiktok_url, parse_webvtt, resolve_tiktok_source
 
 __all__ = [
     "ContentSource",
@@ -24,5 +25,9 @@ __all__ = [
     "extract_article_text_from_url",
     "extract_source_text_from_image",
     "extract_source_text_from_pdf",
+    "TikTokSource",
+    "is_tiktok_url",
+    "parse_webvtt",
+    "resolve_tiktok_source",
     "extract_text_from_pdf",
 ]

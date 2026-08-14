@@ -3,6 +3,8 @@
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from inkwell.ingestion import ContentSourceKind, InputResolver
 
 
@@ -31,6 +33,20 @@ def test_resolves_youtube_url() -> None:
     assert source.kind == ContentSourceKind.YOUTUBE
     assert source.is_url is True
     assert source.url == "https://www.youtube.com/watch?v=abc123"
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://www.tiktok.com/t/ZTDLJ84Cq/",
+        "https://www.tiktok.com/@amber.figlow/video/7673547653170351373",
+        "https://vm.tiktok.com/fixture/",
+    ],
+)
+def test_resolves_tiktok_urls(url: str) -> None:
+    source = InputResolver().resolve(url)
+    assert source.kind == ContentSourceKind.TIKTOK
+    assert source.is_url is True
 
 
 def test_resolves_scheme_less_youtube_url() -> None:

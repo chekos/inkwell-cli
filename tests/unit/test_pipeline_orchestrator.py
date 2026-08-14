@@ -82,6 +82,20 @@ async def test_transcribe_source_text_bypasses_media_transcription(tmp_path: Pat
     assert result.cost_usd == 0.0
 
 
+@pytest.mark.asyncio
+async def test_transcribe_tiktok_captions_preserves_first_class_source(tmp_path: Path) -> None:
+    orchestrator = _orchestrator(tmp_path)
+    result = await orchestrator._transcribe(
+        "https://www.tiktok.com/@creator/video/123",
+        source_text="[00:00] Caption text",
+        source_kind="tiktok_captions",
+        source_transcript_source="tiktok",
+    )
+    assert result.transcript is not None
+    assert result.transcript.source == "tiktok"
+    assert result.attempts == ["tiktok_captions"]
+
+
 def test_template_safe_episode_url_uses_placeholder_for_local_sources(tmp_path: Path) -> None:
     orchestrator = _orchestrator(tmp_path)
 
@@ -94,6 +108,27 @@ def test_template_safe_episode_url_uses_placeholder_for_local_sources(tmp_path: 
     assert orchestrator._template_safe_episode_url("https://example.com/episode.mp3") == (
         "https://example.com/episode.mp3"
     )
+
+
+def test_artifact_contract_rejects_zero_artifact_false_success(tmp_path: Path) -> None:
+    from inkwell.output.models import EpisodeOutput
+
+    orchestrator = _orchestrator(tmp_path)
+    output_dir = tmp_path / "local-files" / "capture"
+    output_dir.mkdir(parents=True)
+    metadata = EpisodeMetadata(
+        podcast_name="Local Files",
+        episode_title="capture",
+        episode_url=str(tmp_path / "capture.txt"),
+        transcription_source="text",
+    )
+    output = EpisodeOutput(metadata=metadata, output_dir=output_dir, files=[])
+
+    with pytest.raises(InkwellError, match="complete artifact package") as raised:
+        orchestrator._validate_artifact_contract(output, [])
+
+    assert raised.value.details["code"] == "incomplete_artifact_package"
+    assert raised.value.details["missing"] == [".metadata.yaml", "_transcript.md"]
 
 
 @pytest.mark.asyncio
@@ -122,3 +157,45 @@ async def test_hosted_pipeline_rejects_local_runtime_extractors(
         )
 
     assert raised.value.details["code"] == "local_runtime_hosted_forbidden"
+
+
+@pytest.mark.asyncio
+async def test_local_text_failed_extraction_writes_no_package(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from inkwell.extraction.models import ExtractionResult, ExtractionSummary
+    from inkwell.extraction.templates import TemplateLoader
+
+    orchestrator = _orchestrator(tmp_path)
+    summary_template = TemplateLoader().load_template("summary")
+    monkeypatch.setattr(orchestrator, "_select_templates", lambda **_kwargs: [summary_template])
+
+    async def failed_extract(**_kwargs):
+        result = ExtractionResult(
+            episode_url="https://local.inkwell/source",
+            template_name="summary",
+            template_version=summary_template.version,
+            success=False,
+            error="provider rejected extraction",
+        )
+        return (
+            [result],
+            ExtractionSummary(total=1, successful=0, failed=1, cached=0, attempts=[]),
+            0.0,
+        )
+
+    monkeypatch.setattr(orchestrator, "_extract_content", failed_extract)
+
+    with pytest.raises(InkwellError, match="no capture package was written") as raised:
+        await orchestrator.process_episode(
+            PipelineOptions(
+                url=str(tmp_path / "notes.txt"),
+                source_text="Local text must fail closed.",
+                source_kind="local_text",
+                episode_title="notes",
+                podcast_name="Local Files",
+            )
+        )
+
+    assert raised.value.details["code"] == "extraction_failed"
+    assert not list(tmp_path.rglob(".metadata.yaml"))

@@ -1,0 +1,14 @@
+WEBVTT
+
+00:00:00.000 --> 00:00:02.000
+Hello from <c>Inkwell</c>
+
+00:00:02.000 --> 00:00:04.000
+Hello from Inkwell with a multiline
+caption &amp; safe text
+
+00:00:04.000 --> 00:00:05.000
+caption &amp; safe text
+
+00:00:05.000 --> 00:00:07.500 align:start position:0%
+without duplicated speech

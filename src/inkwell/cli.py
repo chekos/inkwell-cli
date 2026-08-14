@@ -7,7 +7,7 @@ import os
 import sys
 from datetime import timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import parse_qs, urlparse
 
 import typer
@@ -37,6 +37,7 @@ from inkwell.ingestion import (
     extract_article_text_from_url,
     extract_source_text_from_image,
     extract_source_text_from_pdf,
+    resolve_tiktok_source,
 )
 from inkwell.pipeline import PipelineOptions, PipelineOrchestrator, PipelineResult
 from inkwell.transcription import CostEstimate, TranscriptionManager, TranscriptionResult
@@ -1464,7 +1465,11 @@ def cache_command(
 @app.command("fetch")
 def fetch_command(
     url_or_feed: str = typer.Argument(
-        ..., help="Episode URL, configured feed name, or local media/document/image file"
+        ...,
+        help=(
+            "Episode URL (including YouTube or TikTok), configured feed name, "
+            "or local media/document/image file"
+        ),
     ),
     output_dir: Path | None = typer.Option(
         None, "--output-dir", "-o", help="Base directory for output (default: ~/inkwell-notes)"
@@ -1598,6 +1603,8 @@ def fetch_command(
 
         inkwell fetch https://youtube.com/watch?v=xyz
 
+        inkwell fetch https://www.tiktok.com/t/abc --extractor codex
+
         inkwell fetch https://example.com/ep1.mp3 --templates summary,quotes
 
         inkwell fetch https://... --category tech --provider claude
@@ -1712,6 +1719,7 @@ def fetch_command(
             ep: Episode | None = None
             source_text: str | None = None
             source_kind: str | None = None
+            source_transcript_source: Literal["text", "tiktok"] | None = None
             source_metadata: dict[str, Any] | None = None
             source_episode_title: str | None = None
             source_podcast_name: str | None = None
@@ -1836,6 +1844,24 @@ def fetch_command(
                 source_episode_title = "stdin"
                 source_podcast_name = "Stdin"
                 url = "stdin://input"
+
+            elif input_source.kind == ContentSourceKind.TIKTOK:
+                supplied_tiktok_url = input_source.url or input_source.value
+                tiktok_source = resolve_tiktok_source(supplied_tiktok_url)
+                url = tiktok_source.canonical_url
+                source_text = tiktok_source.transcript_text
+                source_kind = "tiktok_captions" if source_text is not None else "tiktok_media"
+                if source_text is not None:
+                    source_transcript_source = "tiktok"
+                source_metadata = tiktok_source.provenance()
+                source_episode_title = tiktok_source.title
+                source_podcast_name = tiktok_source.podcast_name
+                input_source = ContentSource(
+                    raw_input=input_source.raw_input,
+                    kind=ContentSourceKind.TIKTOK,
+                    value=url,
+                    url=url,
+                )
 
             elif input_source.kind == ContentSourceKind.URL:
                 source_url = input_source.url or input_source.value
@@ -2071,6 +2097,7 @@ def fetch_command(
                     podcast_name=podcast_name or detected_podcast_name,
                     source_text=source_text,
                     source_kind=source_kind,
+                    source_transcript_source=source_transcript_source,
                     source_metadata=source_metadata,
                     extractor=extractor,
                     transcriber=transcriber,

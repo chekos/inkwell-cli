@@ -19,6 +19,11 @@ Source-text inputs such as local text/markdown, stdin, locally extracted
 articles, images, and PDFs bypass this policy entirely and enter extraction as
 text. Optional OCR is an ingestion plugin, not a transcription attempt.
 
+TikTok is resolved before this policy. A usable public embedded WebVTT track
+enters extraction as timestamped source text. If captions are absent, expired,
+or malformed, the canonical public video URL enters the normal Gemini audio
+fallback. Signed CDN URLs are ephemeral adapter details and are not persisted.
+
 ---
 
 ## Attempt Types

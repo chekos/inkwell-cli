@@ -10,6 +10,7 @@ Inkwell is still a structured knowledge-note tool for podcast and media learning
 |-------|---------|--------|-------|----------------|
 | Saved feed | `inkwell fetch syntax --latest` | Supported | RSS feed selection, then episode media processing | Structured episode note directory |
 | YouTube video URL | `inkwell fetch https://youtube.com/watch?v=abc` | Supported | YouTube metadata, captions, Gemini URL fallback, then audio fallback | Structured episode note directory |
+| TikTok video URL | `inkwell fetch https://www.tiktok.com/t/abc` | Supported | Resolve canonical video, use public embedded WebVTT captions, then media transcription fallback | Structured source note directory |
 | YouTube channel URL | `inkwell add https://youtube.com/@creator --feed-name creator` | Supported for feed add | Resolved to YouTube media RSS | Saved feed |
 | Direct media URL | `inkwell fetch https://example.com/episode.mp3` | Supported | Media transcription, then extraction templates | Structured episode note directory |
 | Web article URL | `inkwell fetch https://example.com/article` | Supported for readable HTML pages | Local HTML fetch and cleanup, then extraction templates | Structured source note directory |
@@ -34,6 +35,16 @@ Direct media detection is conservative. Inkwell recognizes common audio/video ex
 ```
 
 Generic HTTP(S) pages that do not look like YouTube or direct media are treated as article URLs and must return readable HTML.
+
+TikTok short and canonical `@creator/video/{id}` URLs have a dedicated source
+adapter. Inkwell resolves short links, reads stable public video metadata, and
+prefers an embedded WebVTT caption track. Empty, malformed, expired, or rejected
+caption tracks fall back to public media download and the configured
+transcriber. Private, removed, or region-blocked videos fail clearly when
+neither route is available. Expiring caption/media CDN URLs are never written
+to metadata or logs; `.metadata.yaml` retains the supplied and canonical TikTok
+URLs, creator, video ID, caption, duration, language, auto-generated status, and
+the transcript method when those stable fields are available.
 
 ---
 
@@ -88,6 +99,9 @@ unusual layouts, low-resolution scans, and missing language packs can still
 produce incomplete results.
 
 This keeps the output shape consistent: markdown notes, metadata, templates, and optional interview support.
+Successful structured runs are validated before the CLI reports completion.
+The metadata, transcript, and every selected template artifact must exist and
+be nonempty; a zero-artifact local-text or media run exits non-zero.
 
 ---
 

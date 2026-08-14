@@ -28,6 +28,7 @@ class ContentSourceKind(str, Enum):
     STDIN = "stdin"
     DIRECT_MEDIA = "direct_media"
     YOUTUBE = "youtube"
+    TIKTOK = "tiktok"
     ARTICLE = "article"
     PDF = "pdf"
     IMAGE = "image"
@@ -59,6 +60,7 @@ class ContentSource:
             ContentSourceKind.URL,
             ContentSourceKind.DIRECT_MEDIA,
             ContentSourceKind.YOUTUBE,
+            ContentSourceKind.TIKTOK,
             ContentSourceKind.ARTICLE,
         }
 
@@ -91,6 +93,7 @@ class InputResolver:
         ".webm",
     }
     _YOUTUBE_HOSTS = {"youtu.be", "youtube.com", "www.youtube.com", "m.youtube.com"}
+    _TIKTOK_HOSTS = {"tiktok.com", "www.tiktok.com", "m.tiktok.com", "vm.tiktok.com"}
     _SUPPORTED_URL_SCHEMES = {"http", "https"}
 
     def __init__(self, saved_feeds: dict[str, Any] | None = None) -> None:
@@ -194,6 +197,8 @@ class InputResolver:
         normalized_host = host.lower()
         if normalized_host in self._YOUTUBE_HOSTS:
             return ContentSourceKind.YOUTUBE
+        if normalized_host in self._TIKTOK_HOSTS:
+            return ContentSourceKind.TIKTOK
 
         suffix = Path(path.lower()).suffix
         if suffix in self._MEDIA_EXTENSIONS:

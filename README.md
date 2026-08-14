@@ -83,8 +83,9 @@ That's it! You now have a structured markdown directory ready for Obsidian.
 You can also start from one-off media, local files, or stdin:
 
 ```bash
-# Process a YouTube or direct media URL
+# Process a YouTube, TikTok, or direct media URL
 inkwell fetch https://youtube.com/watch?v=xyz
+inkwell fetch https://www.tiktok.com/t/abc --extractor codex
 inkwell fetch https://example.com/episode.mp3
 
 # Process local audio/video

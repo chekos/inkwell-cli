@@ -83,3 +83,19 @@ def test_codex_extractor_requires_explicit_model() -> None:
 
     with pytest.raises(Exception, match="model"):
         extractor.configure({})
+
+
+@pytest.mark.asyncio
+async def test_reasoning_changes_cache_and_reaches_runtime_and_receipt() -> None:
+    class ReasoningBackend(FakeBackend):
+        async def invoke(self, request):
+            assert request.reasoning_effort == "high"
+            return await super().invoke(request)
+
+    extractor = CodexExtractor(backend=ReasoningBackend())
+    extractor.configure({"model": "explicit-model"})
+    baseline = await extractor.cache_identity()
+    extractor.configure({"model": "explicit-model", "reasoning_effort": "high"})
+    assert await extractor.cache_identity() != baseline
+    output = await extractor.extract_with_metadata(_template(), "Transcript", {})
+    assert output.runtime["requested_reasoning_effort"] == "high"

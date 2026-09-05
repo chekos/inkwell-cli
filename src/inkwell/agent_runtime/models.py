@@ -127,6 +127,7 @@ class RuntimeRequest(BaseModel):
     prompt: str
     output_schema: dict[str, Any]
     requested_model: str
+    reasoning_effort: str | None = Field(None, min_length=1, max_length=80)
     timeout_seconds: float = Field(180.0, gt=0, le=3600)
     max_input_bytes: int = Field(8_000_000, ge=1, le=10_000_000)
     max_stdout_bytes: int = Field(8_388_608, ge=1024, le=64 * 1024 * 1024)

@@ -367,3 +367,17 @@ async def test_unserializable_schema_fails_before_probe(tmp_path: Path) -> None:
         await backend.invoke(_request(output_schema={"invalid": object()}))
 
     assert raised.value.code == RuntimeErrorCode.SCHEMA_INVALID
+
+
+@pytest.mark.asyncio
+async def test_reasoning_override_is_not_silently_ignored() -> None:
+    backend = ClaudeCodeRuntimeBackend("/nonexistent/claude")
+    request = RuntimeRequest(
+        prompt="fixture",
+        output_schema={"type": "object"},
+        requested_model="model",
+        reasoning_effort="high",
+    )
+    with pytest.raises(RuntimeInvocationError) as error:
+        await backend.invoke(request)
+    assert error.value.code == RuntimeErrorCode.UNSUPPORTED_CAPABILITY

@@ -1,5 +1,6 @@
 """Codex runtime profile, probe, protocol, and isolation tests."""
 
+import json
 import stat
 import sys
 from pathlib import Path
@@ -396,3 +397,22 @@ def test_parser_rejects_oversized_final_document(tmp_path: Path) -> None:
         )
 
     assert raised.value.code == RuntimeErrorCode.OUTPUT_TOO_LARGE
+
+
+def test_reasoning_override_is_one_literal_config_value(tmp_path: Path) -> None:
+    backend = CodexRuntimeBackend("codex")
+    kwargs = {
+        "executable": "codex",
+        "workspace": tmp_path,
+        "schema_file": tmp_path / "schema",
+        "result_file": tmp_path / "result",
+        "requested_model": "model",
+    }
+    default = backend.build_argv(**kwargs)
+    assert not any("model_reasoning_effort=" in arg for arg in default)
+    argv = backend.build_argv(**kwargs, reasoning_effort="high")
+    assert 'model_reasoning_effort="high"' in argv
+    hostile = backend.build_argv(**kwargs, reasoning_effort='high"\nshell_tool=true')
+    value = next(arg for arg in hostile if arg.startswith("model_reasoning_effort="))
+    assert "\n" not in value
+    assert json.loads(value.split("=", 1)[1]) == 'high"\nshell_tool=true'

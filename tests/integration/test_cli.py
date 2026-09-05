@@ -3072,3 +3072,51 @@ class TestCLIConfigEditSecurity:
             # First argument to subprocess.run should be list starting with 'nano'
             call_args = mock_run.call_args[0][0]
             assert call_args[0] == "nano"
+
+
+@pytest.mark.parametrize("use_env", [False, True])
+def test_fetch_local_model_overrides_are_per_run(tmp_path, monkeypatch, use_env):
+    monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path / "config")
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+    manager = ConfigManager(config_dir=tmp_path / "config")
+    manager.load_config()
+    original = manager.config_file.read_bytes()
+    captured = []
+
+    async def fake_process(self, *_args, **_kwargs):
+        captured.append(self.config.plugins["codex"].config)
+        return _sample_pipeline_result(output_dir)
+
+    monkeypatch.setattr("inkwell.pipeline.PipelineOrchestrator.process_episode", fake_process)
+    if use_env:
+        monkeypatch.setenv("INKWELL_EXTRACTOR", "codex")
+    args = [
+        "fetch",
+        "https://example.com/episode.mp3",
+        "--json",
+        "--model",
+        "run-model",
+        "--reasoning-effort",
+        "high",
+        "--output-dir",
+        str(output_dir),
+    ]
+    if not use_env:
+        args += ["--extractor", "codex"]
+    result = runner.invoke(app, args)
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout)["status"] == "success"
+    assert captured == [{"model": "run-model", "reasoning_effort": "high"}]
+    assert manager.config_file.read_bytes() == original
+
+
+@pytest.mark.parametrize("extra", [[], ["--extractor", "claude-code"], ["--extract"]])
+def test_fetch_rejects_inapplicable_reasoning_before_capture(tmp_path, monkeypatch, extra):
+    monkeypatch.setattr("inkwell.utils.paths.get_config_dir", lambda: tmp_path)
+    result = runner.invoke(
+        app, ["fetch", "https://example.com/episode.mp3", "--reasoning-effort", "high", *extra]
+    )
+    assert result.exit_code == 1
+    assert "override" in result.output.lower()
+    assert "Traceback" not in result.output

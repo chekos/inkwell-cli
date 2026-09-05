@@ -100,12 +100,14 @@ async def test_explicit_codex_cache_hit_preserves_origin_provenance(tmp_path: Pa
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("effort", [None, "high"])
 async def test_batched_codex_cache_uses_same_runtime_identity_for_write_and_read(
     tmp_path: Path,
+    effort: str | None,
 ) -> None:
     backend = CountingBackend()
     extractor = CodexExtractor(backend=backend)  # type: ignore[arg-type]
-    extractor.configure({"model": "explicit-model"})
+    extractor.configure({"model": "explicit-model", "reasoning_effort": effort})
     engine = ExtractionEngine(
         cache=ExtractionCache(cache_dir=tmp_path / "cache"),
         extractor_override="codex",
@@ -125,6 +127,16 @@ async def test_batched_codex_cache_uses_same_runtime_identity_for_write_and_read
     assert second[0].from_cache is True
     assert second[0].runtime == first[0].runtime
     assert backend.invocations == 1
+
+    extractor.configure({"model": "explicit-model", "reasoning_effort": "low"})
+    changed, _ = await engine.extract_all_batched([_template()], "Transcript", {})
+    assert changed[0].from_cache is False
+    assert changed[0].runtime["requested_reasoning_effort"] == "low"
+    assert backend.invocations == 2
+    extractor.configure({"model": "explicit-model", "reasoning_effort": effort})
+    restored, _ = await engine.extract_all_batched([_template()], "Transcript", {})
+    assert restored[0].from_cache is True
+    assert backend.invocations == 2
 
 
 def test_codex_is_not_an_automatic_routing_candidate() -> None:

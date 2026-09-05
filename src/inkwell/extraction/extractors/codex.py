@@ -26,6 +26,7 @@ class CodexExtractorConfig(BaseModel):
 
     executable: str = Field("codex", min_length=1, max_length=1024)
     model: str = Field(..., min_length=1, max_length=200)
+    reasoning_effort: str | None = Field(None, min_length=1, max_length=80)
     timeout_seconds: float = Field(180.0, ge=1, le=3600)
     max_input_bytes: int = Field(8_000_000, ge=1, le=10_000_000)
     max_stdout_bytes: int = Field(8_388_608, ge=1024, le=64 * 1024 * 1024)
@@ -111,6 +112,7 @@ class CodexExtractor(ExtractionPlugin):
         return (
             f"codex-cli:{readiness.version}:protocol=1:"
             f"requested={self.typed_config.model}:effective={self.typed_config.model}:"
+            f"reasoning={json.dumps(self.typed_config.reasoning_effort)}:"
             f"auth={readiness.auth_class}:billing=runtime_managed"
         )
 
@@ -157,6 +159,7 @@ class CodexExtractor(ExtractionPlugin):
                 prompt=prompt,
                 output_schema=self._runtime_schema(template),
                 requested_model=self.typed_config.model,
+                reasoning_effort=self.typed_config.reasoning_effort,
                 timeout_seconds=self.typed_config.timeout_seconds,
                 max_input_bytes=self.typed_config.max_input_bytes,
                 max_stdout_bytes=self.typed_config.max_stdout_bytes,
@@ -168,6 +171,7 @@ class CodexExtractor(ExtractionPlugin):
         raw_content = content if isinstance(content, str) else json.dumps(content)
         runtime = {
             **response.provenance.model_dump(mode="json"),
+            "requested_reasoning_effort": self.typed_config.reasoning_effort,
             "usage": response.usage.model_dump(mode="json"),
             "attempts": response.attempts,
             "duration_seconds": response.duration_seconds,

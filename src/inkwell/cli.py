@@ -18,6 +18,7 @@ from rich.table import Table
 
 from inkwell.config.logging import setup_logging
 from inkwell.config.manager import ConfigManager, normalize_feed_name, slugify_feed_name
+from inkwell.config.overrides import with_local_extraction_overrides
 from inkwell.config.schema import AuthConfig, FeedConfig
 from inkwell.extraction.templates import TemplateLoader
 from inkwell.feeds.models import Episode
@@ -1502,6 +1503,12 @@ def fetch_command(
     provider: str | None = typer.Option(
         None, "--provider", "-p", help="LLM provider: claude, gemini, auto (default: auto)"
     ),
+    model: str | None = typer.Option(
+        None, "--model", help="Model for this run only (codex or claude-code extractor)."
+    ),
+    reasoning_effort: str | None = typer.Option(
+        None, "--reasoning-effort", help="Codex reasoning effort for this run only."
+    ),
     skip_cache: bool = typer.Option(False, "--skip-cache", help="Skip extraction cache"),
     force_extraction: bool = typer.Option(
         False,
@@ -1661,6 +1668,13 @@ def fetch_command(
             manager = ConfigManager()
             config = manager.load_config()
             selected_extractor = extractor or os.environ.get("INKWELL_EXTRACTOR")
+            if extract_only and (model is not None or reasoning_effort is not None):
+                raise ValidationError(
+                    "--extract cannot be combined with model or reasoning overrides."
+                )
+            config = with_local_extraction_overrides(
+                config, extractor=selected_extractor, model=model, reasoning_effort=reasoning_effort
+            )
             if selected_extractor in {"claude-code", "codex"}:
                 local_plugin = config.plugins.get(selected_extractor)
                 configured_model = (

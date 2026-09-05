@@ -128,3 +128,38 @@ inkwell plugins validate claude-code --json
 
 Local Claude extraction remains explicit-only and local-only. The direct
 Anthropic API plugin is still named `claude` and is unchanged.
+
+
+## Per-run extraction choices
+
+Override the saved local extractor model for one capture:
+
+```bash
+inkwell fetch ./source.txt --extractor codex --model MODEL_ID --reasoning-effort high
+inkwell fetch ./source.txt --extractor claude-code --model MODEL_ID
+```
+
+These options also respect an explicit `INKWELL_EXTRACTOR`. They never save
+configuration or enable a disabled plugin. `--reasoning-effort` applies only to
+Codex; the installed runtime validates whether the chosen model supports the
+requested value. Unsupported or ambiguous extractor choices fail before source
+capture. Transcript-only `--extract` does not accept these options.
+
+Codex passes the effort as one escaped configuration value, includes it in the
+extraction cache identity, and records `requested_reasoning_effort` in extraction
+runtime metadata. This records the request, not a claim of effective provider
+effort. Existing incremental output rules still apply: use `--overwrite` when
+you explicitly intend to regenerate already-written notes.
+
+Programmatic callers can use the same non-persistent configuration primitive:
+
+```python
+from inkwell.config.overrides import with_local_extraction_overrides
+from inkwell.pipeline import PipelineOrchestrator
+
+run_config = with_local_extraction_overrides(
+    config, extractor="codex", model="MODEL_ID", reasoning_effort="high"
+)
+pipeline = PipelineOrchestrator(run_config)
+# Pass extractor="codex" in PipelineOptions when processing the source.
+```

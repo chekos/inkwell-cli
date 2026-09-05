@@ -506,6 +506,11 @@ class ExtractionEngine:
                 f"protocol={runtime.get('protocol_version', 'unknown')}",
                 f"requested={runtime.get('requested_model', 'unknown')}",
                 f"effective={runtime.get('effective_model', 'unknown')}",
+                *(
+                    [f"reasoning={json.dumps(runtime.get('requested_reasoning_effort'))}"]
+                    if runtime.get("kind") == "codex-cli"
+                    else []
+                ),
                 f"auth={runtime.get('auth_class', 'unknown')}",
                 f"billing={runtime.get('billing_class', 'unknown')}",
             ]

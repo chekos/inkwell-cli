@@ -181,6 +181,7 @@ class CodexRuntimeBackend:
         schema_file: Path,
         result_file: Path,
         requested_model: str,
+        reasoning_effort: str | None = None,
     ) -> list[str]:
         """Construct the tested no-tool profile. Prompt input is deliberately absent."""
         argv = [
@@ -211,6 +212,8 @@ class CodexRuntimeBackend:
             "-c",
             'shell_environment_policy.inherit="none"',
         ]
+        if reasoning_effort is not None:
+            argv.extend(["-c", f"model_reasoning_effort={json.dumps(reasoning_effort)}"])
         for feature in REQUIRED_DISABLED_FEATURES:
             argv.extend(["--disable", feature])
         return argv
@@ -250,6 +253,7 @@ class CodexRuntimeBackend:
                 schema_file=schema_file,
                 result_file=result_file,
                 requested_model=request.requested_model,
+                reasoning_effort=request.reasoning_effort,
             )
             result = await run_bounded_process(
                 argv,

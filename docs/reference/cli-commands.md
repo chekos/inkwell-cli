@@ -680,3 +680,12 @@ Add to `~/.config/fish/completions/inkwell.fish`:
 ```fish
 eval (env _INKWELL_COMPLETE=fish_source inkwell)
 ```
+
+
+### Local extraction model overrides
+
+`fetch --model MODEL_ID` overrides the model for this invocation when paired
+with `--extractor codex` or `--extractor claude-code`. `--reasoning-effort VALUE`
+is available for Codex only. Neither changes saved plugin settings. See
+[per-run extraction choices](agent-runtime.md#per-run-extraction-choices) for
+cache behavior, validation, and the matching Python API.

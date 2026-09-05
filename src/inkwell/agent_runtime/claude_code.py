@@ -264,6 +264,11 @@ class ClaudeCodeRuntimeBackend:
 
     async def invoke(self, request: RuntimeRequest) -> RuntimeResponse:
         """Run Claude Code in a private workspace and validate its JSON result."""
+        if request.reasoning_effort is not None:
+            raise RuntimeInvocationError(
+                RuntimeErrorCode.UNSUPPORTED_CAPABILITY,
+                "Reasoning effort overrides are supported only by the Codex backend.",
+            )
         prompt_bytes = request.prompt.encode("utf-8")
         try:
             output_schema_json = json.dumps(

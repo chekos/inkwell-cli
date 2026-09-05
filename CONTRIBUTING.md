@@ -23,9 +23,15 @@ cd inkwell-cli
 uv sync --dev
 
 # Install git hooks (required — prevents CI failures)
-uvx pre-commit install
-uvx pre-commit install --hook-type pre-push
+uv run pre-commit install
+uv run pre-commit install --hook-type pre-push
 ```
+
+Install hooks from the project environment. `uvx` can embed a disposable cache
+interpreter in the generated hook, which stops working after cache pruning.
+After recreating `.venv`, rerun these hook-install commands. Keep the environment
+while its hooks are installed.
+
 
 Run tests:
 
